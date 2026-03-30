@@ -120,10 +120,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.cpp" />
+    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadPublishGuard.cpp" />
+    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" />
+    <ClCompile Include="src\kad_guards.tests.cpp" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
+    <ClCompile Include="src\uint128-lite.testsupport.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\TestSupport.h" />

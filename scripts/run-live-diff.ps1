@@ -136,7 +136,7 @@ function Compare-CaseSets {
         [string]$SuiteName,
 
         [Parameter(Mandatory = $true)]
-        [System.Collections.Generic.List[string]]$SummaryLines
+        [System.Collections.ArrayList]$SummaryLines
     )
 
     $allNames = @($DevResults.Keys + $OracleResults.Keys | Sort-Object -Unique)
@@ -183,7 +183,7 @@ New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 Invoke-Build -WorkspaceRoot $DevWorkspaceRoot
 Invoke-Build -WorkspaceRoot $OracleWorkspaceRoot
 
-$summaryLines = [System.Collections.Generic.List[string]]::new()
+$summaryLines = [System.Collections.ArrayList]::new()
 $failed = $false
 
 foreach ($suiteName in @('parity', 'divergence')) {

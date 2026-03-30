@@ -17,6 +17,9 @@ Runs the built test executable after a successful build.
 
 .PARAMETER OutFile
 Optional file that captures the test executable output when `-Run` is used.
+
+.PARAMETER AllowTestFailure
+Leaves the PowerShell command successful even if the test executable returns a failing exit code.
 #>
 [CmdletBinding()]
 param(
@@ -30,7 +33,9 @@ param(
 
     [switch]$Run,
 
-    [string]$OutFile
+    [string]$OutFile,
+
+    [switch]$AllowTestFailure
 )
 
 Set-StrictMode -Version Latest
@@ -135,7 +140,11 @@ if ($Run) {
     } else {
         & $binaryPath
     }
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0 -and -not $AllowTestFailure) {
         throw "The test executable failed with exit code $LASTEXITCODE."
+    }
+
+    if ($LASTEXITCODE -ne 0 -and $AllowTestFailure) {
+        Write-Warning "The test executable failed with exit code $LASTEXITCODE."
     }
 }

@@ -36,7 +36,10 @@ function Invoke-TestRun {
         [string]$WorkspaceRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$OutputPath
+        [string]$OutputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExitCodePath
     )
 
     $scriptPath = Join-Path $WorkspaceRoot 'tests\scripts\build-emule-tests.ps1'
@@ -44,7 +47,8 @@ function Invoke-TestRun {
         throw "Shared test build script not found: $scriptPath"
     }
 
-    & $scriptPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform -Run -OutFile $OutputPath
+    & $scriptPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform -Run -OutFile $OutputPath -AllowTestFailure
+    Set-Content -LiteralPath $ExitCodePath -Value $LASTEXITCODE
 }
 
 $reportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'reports'
@@ -52,14 +56,18 @@ New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 
 $devOutput = Join-Path $reportRoot 'dev-output.txt'
 $oracleOutput = Join-Path $reportRoot 'oracle-output.txt'
+$devExitCode = Join-Path $reportRoot 'dev-exit-code.txt'
+$oracleExitCode = Join-Path $reportRoot 'oracle-exit-code.txt'
 
-Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -OutputPath $devOutput
-Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -OutputPath $oracleOutput
+Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -OutputPath $devOutput -ExitCodePath $devExitCode
+Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -OutputPath $oracleOutput -ExitCodePath $oracleExitCode
 
 $devText = Get-Content -Raw -LiteralPath $devOutput
 $oracleText = Get-Content -Raw -LiteralPath $oracleOutput
+$devCode = Get-Content -Raw -LiteralPath $devExitCode
+$oracleCode = Get-Content -Raw -LiteralPath $oracleExitCode
 
-if ($devText -eq $oracleText) {
+if ($devText -eq $oracleText -and $devCode -eq $oracleCode) {
     Write-Output 'Live test outputs match between dev and oracle workspaces.'
     return
 }
@@ -67,3 +75,5 @@ if ($devText -eq $oracleText) {
 Write-Warning 'Live test outputs differ between dev and oracle workspaces.'
 Write-Output "Dev output: $devOutput"
 Write-Output "Oracle output: $oracleOutput"
+Write-Output "Dev exit code: $devCode"
+Write-Output "Oracle exit code: $oracleCode"

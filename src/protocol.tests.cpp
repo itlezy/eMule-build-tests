@@ -2,6 +2,7 @@
 #include "../include/TestSupport.h"
 #include "ProtocolGuards.h"
 #include "ProtocolParsers.h"
+#include "ServerConnectionGuards.h"
 
 namespace
 {
@@ -126,6 +127,14 @@ TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the ser
 	CHECK_EQ(span.nTotalSize, sizeof(fixture));
 }
 
+TEST_CASE("Connected-server seam accepts a cached current-server snapshot when connected")
+{
+	const void *pCurrentServer = reinterpret_cast<const void*>(1);
+	CHECK(HasConnectedServerSnapshot(true, pCurrentServer));
+	CHECK(HasConnectedServerCapability(true, pCurrentServer, true));
+	CHECK(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4661));
+}
+
 TEST_SUITE_END;
 
 TEST_SUITE_BEGIN("divergence");
@@ -220,6 +229,21 @@ TEST_CASE("Protocol parser rejects blob tags whose serialized payload exceeds th
 
 	ProtocolTagSpan span = {};
 	CHECK_FALSE(TryParseTagSpan(fixture, sizeof(fixture), &span));
+}
+
+TEST_CASE("Connected-server seam rejects a connected session that lost its current-server snapshot")
+{
+	CHECK_FALSE(HasConnectedServerSnapshot(true, NULL));
+}
+
+TEST_CASE("Connected-server seam rejects capability checks once the current-server snapshot is missing")
+{
+	CHECK_FALSE(HasConnectedServerCapability(true, NULL, true));
+}
+
+TEST_CASE("Connected-server seam rejects endpoint matches once the current-server snapshot is missing")
+{
+	CHECK_FALSE(MatchesConnectedServerEndpoint(true, NULL, 0x01020304u, 4661, 0x01020304u, 4661));
 }
 
 TEST_SUITE_END;

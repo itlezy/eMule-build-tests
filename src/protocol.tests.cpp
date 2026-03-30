@@ -1,12 +1,33 @@
 #include "../third_party/doctest/doctest.h"
 #include "../include/TestSupport.h"
 #include "ProtocolGuards.h"
+#include "ProtocolParsers.h"
 
 namespace
 {
 	static const size_t TCP_READ_BUFFER_SIZE = 2000000u;
 	static const uint32 MAX_PROTOCOL_TAGS = 256u;
 	static const uint32 IPV4_BROADCAST = 0xFFFFFFFFu;
+
+	/**
+	 * Keeps the packet fixtures readable when asserting serialized header decode paths.
+	 */
+	ProtocolPacketHeader ParsePacketHeaderFixture(const BYTE *pFixture, size_t nFixtureSize)
+	{
+		ProtocolPacketHeader header = {};
+		REQUIRE(TryParsePacketHeader(pFixture, nFixtureSize, &header));
+		return header;
+	}
+
+	/**
+	 * Keeps the tag fixtures readable when asserting serialized tag span decode paths.
+	 */
+	ProtocolTagSpan ParseTagFixture(const BYTE *pFixture, size_t nFixtureSize)
+	{
+		ProtocolTagSpan span = {};
+		REQUIRE(TryParseTagSpan(pFixture, nFixtureSize, &span));
+		return span;
+	}
 }
 
 TEST_SUITE_BEGIN("parity");
@@ -58,6 +79,53 @@ TEST_CASE("Protocol guard parses ordinary dotted IPv4 literals")
 	CHECK_EQ(nAddress, static_cast<uint32>(0x04030201u));
 }
 
+TEST_CASE("Protocol parser decodes the smallest legal packet header from serialized bytes")
+{
+	const BYTE fixture[] = {
+		OP_EDONKEYPROT,
+		0x01, 0x00, 0x00, 0x00,
+		OP_HELLO
+	};
+
+	const ProtocolPacketHeader header = ParsePacketHeaderFixture(fixture, sizeof(fixture));
+	CHECK_EQ(header.nProtocol, static_cast<uint8>(OP_EDONKEYPROT));
+	CHECK_EQ(header.nOpcode, static_cast<uint8>(OP_HELLO));
+	CHECK_EQ(header.nPacketLength, static_cast<uint32>(1));
+	CHECK_EQ(header.nPayloadLength, static_cast<uint32>(0));
+}
+
+TEST_CASE("Protocol parser decodes a named-by-id uint32 tag from serialized bytes")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_UINT32 | 0x80),
+		CT_VERSION,
+		0x34, 0x12, 0x00, 0x00
+	};
+
+	const ProtocolTagSpan span = ParseTagFixture(fixture, sizeof(fixture));
+	CHECK_EQ(span.Header.nType, static_cast<uint8>(TAGTYPE_UINT32));
+	CHECK(span.Header.bUsesNameId);
+	CHECK_EQ(span.Header.nNameId, static_cast<uint8>(CT_VERSION));
+	CHECK_EQ(span.Header.nHeaderSize, static_cast<size_t>(2));
+	CHECK_EQ(span.nValueSize, static_cast<size_t>(4));
+	CHECK_EQ(span.nTotalSize, sizeof(fixture));
+}
+
+TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the serialized bytes")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_BLOB | 0x80),
+		FT_MEDIA_ARTIST,
+		0x03, 0x00, 0x00, 0x00,
+		0xAA, 0xBB, 0xCC
+	};
+
+	const ProtocolTagSpan span = ParseTagFixture(fixture, sizeof(fixture));
+	CHECK_EQ(span.Header.nType, static_cast<uint8>(TAGTYPE_BLOB));
+	CHECK_EQ(span.nBlobSize, static_cast<uint32>(3));
+	CHECK_EQ(span.nTotalSize, sizeof(fixture));
+}
+
 TEST_SUITE_END;
 
 TEST_SUITE_BEGIN("divergence");
@@ -102,6 +170,56 @@ TEST_CASE("Protocol guard accepts the dotted broadcast IPv4 literal as a valid p
 	uint32 nAddress = 0;
 	CHECK(TryParseDottedIPv4Literal("255.255.255.255", &nAddress));
 	CHECK_EQ(nAddress, IPV4_BROADCAST);
+}
+
+TEST_CASE("Protocol parser rejects zero-length packet headers before payload math underflows")
+{
+	const BYTE fixture[] = {
+		OP_EDONKEYPROT,
+		0x00, 0x00, 0x00, 0x00,
+		OP_HELLO
+	};
+
+	ProtocolPacketHeader header = {};
+	CHECK_FALSE(TryParsePacketHeader(fixture, sizeof(fixture), &header));
+}
+
+TEST_CASE("Protocol parser rejects explicit-name tags whose serialized name bytes are truncated")
+{
+	const BYTE fixture[] = {
+		TAGTYPE_UINT8,
+		0x03, 0x00,
+		'A', 'B'
+	};
+
+	ProtocolTagHeader header = {};
+	CHECK_FALSE(TryParseTagHeader(fixture, sizeof(fixture), &header));
+}
+
+TEST_CASE("Protocol parser rejects string tags whose serialized payload is truncated")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_STRING | 0x80),
+		CT_NAME,
+		0x03, 0x00,
+		'A', 'B'
+	};
+
+	ProtocolTagSpan span = {};
+	CHECK_FALSE(TryParseTagSpan(fixture, sizeof(fixture), &span));
+}
+
+TEST_CASE("Protocol parser rejects blob tags whose serialized payload exceeds the remaining bytes")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_BLOB | 0x80),
+		FT_MEDIA_ARTIST,
+		0x04, 0x00, 0x00, 0x00,
+		0xAA, 0xBB, 0xCC
+	};
+
+	ProtocolTagSpan span = {};
+	CHECK_FALSE(TryParseTagSpan(fixture, sizeof(fixture), &span));
 }
 
 TEST_SUITE_END;

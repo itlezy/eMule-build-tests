@@ -17,6 +17,8 @@ The Visual Studio platform to build.
 #>
 [CmdletBinding()]
 param(
+    [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
+
     [string]$DevWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build',
     [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-oracle',
 
@@ -30,10 +32,27 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-BuildTag {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceRoot
+    )
+
+    $leaf = Split-Path -Leaf $WorkspaceRoot
+    if ([string]::IsNullOrWhiteSpace($leaf)) {
+        throw "Unable to derive build tag from workspace path: $WorkspaceRoot"
+    }
+
+    ($leaf -replace '[^A-Za-z0-9._-]', '_')
+}
+
 function Invoke-TestRun {
     param(
         [Parameter(Mandatory = $true)]
         [string]$WorkspaceRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BuildTag,
 
         [Parameter(Mandatory = $true)]
         [string]$SuiteName,
@@ -48,7 +67,7 @@ function Invoke-TestRun {
         [string]$ExitCodePath
     )
 
-    $binaryPath = Join-Path $WorkspaceRoot ("tests\build\{0}\{1}\emule-tests.exe" -f $Platform, $Configuration)
+    $binaryPath = Join-Path $script:testRepoRootPath ("build\{0}\{1}\{2}\emule-tests.exe" -f $BuildTag, $Platform, $Configuration)
     if (-not (Test-Path -LiteralPath $binaryPath)) {
         throw "Built test executable not found: $binaryPath"
     }
@@ -71,12 +90,13 @@ function Invoke-Build {
         [string]$WorkspaceRoot
     )
 
-    $scriptPath = Join-Path $WorkspaceRoot 'tests\scripts\build-emule-tests.ps1'
+    $scriptPath = Join-Path $script:testRepoRootPath 'scripts\build-emule-tests.ps1'
     if (-not (Test-Path -LiteralPath $scriptPath)) {
         throw "Shared test build script not found: $scriptPath"
     }
 
-    & $scriptPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform
+    $buildTag = Get-BuildTag -WorkspaceRoot $WorkspaceRoot
+    & $scriptPath -TestRepoRoot $script:testRepoRootPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform -BuildTag $buildTag
 }
 
 function Get-TestCaseResults {
@@ -174,7 +194,8 @@ function Compare-CaseSets {
     return $hasFailure
 }
 
-$reportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'reports'
+$testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
+$reportRoot = Join-Path $testRepoRootPath 'reports'
 New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 
 Invoke-Build -WorkspaceRoot $DevWorkspaceRoot
@@ -184,6 +205,8 @@ $summaryLines = [System.Collections.ArrayList]::new()
 $failed = $false
 
 foreach ($suiteName in @('parity', 'divergence')) {
+    $devBuildTag = Get-BuildTag -WorkspaceRoot $DevWorkspaceRoot
+    $oracleBuildTag = Get-BuildTag -WorkspaceRoot $OracleWorkspaceRoot
     $devXml = Join-Path $reportRoot ("dev-{0}.xml" -f $suiteName)
     $oracleXml = Join-Path $reportRoot ("oracle-{0}.xml" -f $suiteName)
     $devLog = Join-Path $reportRoot ("dev-{0}.log" -f $suiteName)
@@ -191,8 +214,8 @@ foreach ($suiteName in @('parity', 'divergence')) {
     $devExitCode = Join-Path $reportRoot ("dev-{0}-exit-code.txt" -f $suiteName)
     $oracleExitCode = Join-Path $reportRoot ("oracle-{0}-exit-code.txt" -f $suiteName)
 
-    Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -SuiteName $suiteName -XmlPath $devXml -LogPath $devLog -ExitCodePath $devExitCode
-    Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -SuiteName $suiteName -XmlPath $oracleXml -LogPath $oracleLog -ExitCodePath $oracleExitCode
+    Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -BuildTag $devBuildTag -SuiteName $suiteName -XmlPath $devXml -LogPath $devLog -ExitCodePath $devExitCode
+    Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -BuildTag $oracleBuildTag -SuiteName $suiteName -XmlPath $oracleXml -LogPath $oracleLog -ExitCodePath $oracleExitCode
 
     $devResults = Get-TestCaseResults -XmlPath $devXml -SuiteName $suiteName -WorkspaceId 'dev'
     $oracleResults = Get-TestCaseResults -XmlPath $oracleXml -SuiteName $suiteName -WorkspaceId 'oracle'

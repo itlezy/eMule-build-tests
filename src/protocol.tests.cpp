@@ -1,6 +1,6 @@
 #include "../third_party/doctest/doctest.h"
 #include "../include/TestSupport.h"
-#include "..\\eMule\\srchybrid\\ProtocolGuards.h"
+#include "ProtocolGuards.h"
 
 namespace
 {

@@ -3,8 +3,11 @@
 .SYNOPSIS
 Builds the shared standalone eMule unit-test executable for a workspace.
 
+.PARAMETER TestRepoRoot
+The root of the shared `eMule-build-tests` repository.
+
 .PARAMETER WorkspaceRoot
-The parent workspace root that contains the `eMule` and `tests` directories.
+The workspace root that contains the target `eMule` checkout.
 
 .PARAMETER Configuration
 The Visual Studio configuration to build.
@@ -26,7 +29,9 @@ Additional arguments passed to the test executable when `-Run` is used.
 #>
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
+
+    [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build'),
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
@@ -39,6 +44,8 @@ param(
     [string]$OutFile,
 
     [switch]$AllowTestFailure,
+
+    [string]$BuildTag,
 
     [string[]]$TestArguments = @()
 )
@@ -110,8 +117,27 @@ function Get-MSBuildPath {
     throw 'MSBuild.exe not found.'
 }
 
+function Get-BuildTag {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspacePath
+    )
+
+    $leaf = Split-Path -Leaf $WorkspacePath
+    if ([string]::IsNullOrWhiteSpace($leaf)) {
+        throw "Unable to derive build tag from workspace path: $WorkspacePath"
+    }
+
+    ($leaf -replace '[^A-Za-z0-9._-]', '_')
+}
+
+$testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
-$projectPath = Join-Path $workspaceRootPath 'tests\emule-tests.vcxproj'
+if ([string]::IsNullOrWhiteSpace($BuildTag)) {
+    $BuildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
+}
+
+$projectPath = Join-Path $testRepoRootPath 'emule-tests.vcxproj'
 $msbuildPath = Get-MSBuildPath
 
 $arguments = @(
@@ -119,18 +145,20 @@ $arguments = @(
     '/m',
     '/nologo',
     '/t:Build',
+    "/p:WorkspaceRoot=$workspaceRootPath",
+    "/p:BuildTag=$BuildTag",
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform"
 )
 
-Write-Output "Building $projectPath ($Platform|$Configuration)"
+Write-Output "Building $projectPath for $workspaceRootPath ($Platform|$Configuration, tag=$BuildTag)"
 & $msbuildPath @arguments
 if ($LASTEXITCODE -ne 0) {
     throw "MSBuild failed with exit code $LASTEXITCODE."
 }
 
 if ($Run) {
-    $binaryPath = Join-Path $workspaceRootPath ("tests\build\{0}\{1}\emule-tests.exe" -f $Platform, $Configuration)
+    $binaryPath = Join-Path $testRepoRootPath ("build\{0}\{1}\{2}\emule-tests.exe" -f $BuildTag, $Platform, $Configuration)
     if (-not (Test-Path -LiteralPath $binaryPath)) {
         throw "Built test executable not found: $binaryPath"
     }

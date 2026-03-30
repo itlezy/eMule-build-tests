@@ -2,6 +2,12 @@
 
 This repository is a shared workspace-level test asset for the `eMule-build` and `eMule-build-oracle` workspaces.
 
+Expected fixed layout:
+
+- `C:\prj\p2p\eMule\eMulebb\eMule-build`
+- `C:\prj\p2p\eMule\eMulebb\eMule-build-oracle`
+- `C:\prj\p2p\eMule\eMulebb\eMule-build-tests`
+
 It owns:
 
 - the standalone `emule-tests.vcxproj` project
@@ -10,7 +16,7 @@ It owns:
 - workspace-level build and live-diff scripts
 - fixture, manifest, and report directories for future protocol coverage
 
-The project is built against the local `eMule` checkout in whichever workspace invokes it. It is intentionally not a runtime dependency like the `eMule-*` third-party submodules.
+The project is built against the local `eMule` checkout in whichever workspace invokes it. It is intentionally not a runtime dependency like the `eMule-*` third-party submodules, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
 Current suite model:
 

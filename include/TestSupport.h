@@ -29,4 +29,4 @@ private:
 #define ASSERT(expression) do { if (!(expression)) throw CTestAssertException(__FILE__, __LINE__, #expression); } while (0)
 #endif
 
-#include "..\\eMule\\srchybrid\\types.h"
+#include "types.h"

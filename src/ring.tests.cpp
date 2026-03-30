@@ -24,6 +24,8 @@ static std::vector<uint64> GetDataLengths(const CRing<TransferredData> &ring)
 	return values;
 }
 
+TEST_SUITE_BEGIN("parity");
+
 TEST_CASE("CRing stores the first element after construction")
 {
 	CRing<TransferredData> ring(4, 4);
@@ -92,6 +94,10 @@ TEST_CASE("CRing preserves order when capacity grows from a wrapped state")
 	CHECK_EQ(ring.Tail().timestamp, static_cast<DWORD>(60));
 }
 
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("divergence");
+
 TEST_CASE("CRing rejects invalid logical access")
 {
 	CRing<TransferredData> ring(4, 4);
@@ -104,3 +110,5 @@ TEST_CASE("CRing rejects invalid logical access")
 	CHECK_NOTHROW(static_cast<void>(ring[0]));
 	CHECK_THROWS_AS(ring[1], CTestAssertException);
 }
+
+TEST_SUITE_END;

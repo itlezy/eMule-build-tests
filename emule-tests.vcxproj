@@ -116,6 +116,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
   </ItemGroup>

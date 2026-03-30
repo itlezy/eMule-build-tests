@@ -20,6 +20,9 @@ Optional file that captures the test executable output when `-Run` is used.
 
 .PARAMETER AllowTestFailure
 Leaves the PowerShell command successful even if the test executable returns a failing exit code.
+
+.PARAMETER TestArguments
+Additional arguments passed to the test executable when `-Run` is used.
 #>
 [CmdletBinding()]
 param(
@@ -35,7 +38,9 @@ param(
 
     [string]$OutFile,
 
-    [switch]$AllowTestFailure
+    [switch]$AllowTestFailure,
+
+    [string[]]$TestArguments = @()
 )
 
 Set-StrictMode -Version Latest
@@ -136,9 +141,9 @@ if ($Run) {
         if ($outDirectory) {
             New-Item -ItemType Directory -Path $outDirectory -Force | Out-Null
         }
-        & $binaryPath *>&1 | Tee-Object -FilePath $OutFile
+        & $binaryPath @TestArguments *>&1 | Tee-Object -FilePath $OutFile
     } else {
-        & $binaryPath
+        & $binaryPath @TestArguments
     }
     if ($LASTEXITCODE -ne 0 -and -not $AllowTestFailure) {
         throw "The test executable failed with exit code $LASTEXITCODE."

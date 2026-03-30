@@ -1,7 +1,7 @@
 #Requires -Version 7.2
 <#
 .SYNOPSIS
-Builds and runs the shared eMule test binary in two workspaces and compares the text output.
+Builds and runs the shared eMule test binary in two workspaces and compares suite-level XML results.
 
 .PARAMETER DevWorkspaceRoot
 The development workspace root.
@@ -36,10 +36,39 @@ function Invoke-TestRun {
         [string]$WorkspaceRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$OutputPath,
+        [string]$SuiteName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$XmlPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
 
         [Parameter(Mandatory = $true)]
         [string]$ExitCodePath
+    )
+
+    $binaryPath = Join-Path $WorkspaceRoot ("tests\build\{0}\{1}\emule-tests.exe" -f $Platform, $Configuration)
+    if (-not (Test-Path -LiteralPath $binaryPath)) {
+        throw "Built test executable not found: $binaryPath"
+    }
+
+    $arguments = @(
+        '--reporters=xml',
+        '--no-intro',
+        '--no-version',
+        "--test-suite=$SuiteName",
+        "--out=$XmlPath"
+    )
+
+    & $binaryPath @arguments *>&1 | Tee-Object -FilePath $LogPath
+    Set-Content -LiteralPath $ExitCodePath -Value $LASTEXITCODE
+}
+
+function Invoke-Build {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceRoot
     )
 
     $scriptPath = Join-Path $WorkspaceRoot 'tests\scripts\build-emule-tests.ps1'
@@ -47,33 +76,132 @@ function Invoke-TestRun {
         throw "Shared test build script not found: $scriptPath"
     }
 
-    & $scriptPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform -Run -OutFile $OutputPath -AllowTestFailure
-    Set-Content -LiteralPath $ExitCodePath -Value $LASTEXITCODE
+    & $scriptPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform
+}
+
+function Get-TestCaseResults {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$XmlPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SuiteName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceId
+    )
+
+    if (-not (Test-Path -LiteralPath $XmlPath)) {
+        throw "Structured test result not found: $XmlPath"
+    }
+
+    [xml]$xml = Get-Content -Raw -LiteralPath $XmlPath
+    $results = @{}
+    foreach ($testSuite in @($xml.doctest.TestSuite)) {
+        $parsedSuiteName = [string]$testSuite.name
+        if (-not $parsedSuiteName) {
+            $parsedSuiteName = $SuiteName
+        }
+
+        foreach ($testCase in @($testSuite.TestCase)) {
+            $results[[string]$testCase.name] = [PSCustomObject]@{
+                Workspace = $WorkspaceId
+                Suite = $parsedSuiteName
+                Name = [string]$testCase.name
+                Success = ([string]$testCase.OverallResultsAsserts.test_case_success) -eq 'true'
+                Failures = [int]$testCase.OverallResultsAsserts.failures
+            }
+        }
+    }
+
+    return $results
+}
+
+function Compare-CaseSets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$DevResults,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$OracleResults,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SuiteName,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.List[string]]$SummaryLines
+    )
+
+    $allNames = @($DevResults.Keys + $OracleResults.Keys | Sort-Object -Unique)
+    $hasFailure = $false
+
+    foreach ($name in $allNames) {
+        $devCase = $DevResults[$name]
+        $oracleCase = $OracleResults[$name]
+        if ($null -eq $devCase -or $null -eq $oracleCase) {
+            $SummaryLines.Add(("[FAIL] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
+            $hasFailure = $true
+            continue
+        }
+
+        if ($SuiteName -eq 'parity') {
+            if ($devCase.Success -and $oracleCase.Success) {
+                $SummaryLines.Add(("[PASS] parity: {0}" -f $name))
+            } else {
+                $SummaryLines.Add(("[FAIL] parity: {0} (dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
+                $hasFailure = $true
+            }
+            continue
+        }
+
+        if ($devCase.Success -and -not $oracleCase.Success) {
+            $SummaryLines.Add(("[PASS] divergence: {0} (dev pass, oracle fail as expected)" -f $name))
+        } elseif (-not $devCase.Success) {
+            $SummaryLines.Add(("[FAIL] divergence: {0} (dev failed)" -f $name))
+            $hasFailure = $true
+        } elseif ($oracleCase.Success) {
+            $SummaryLines.Add(("[WARN] divergence: {0} (oracle also passed)" -f $name))
+        } else {
+            $SummaryLines.Add(("[FAIL] divergence: {0} (unexpected state dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
+            $hasFailure = $true
+        }
+    }
+
+    return $hasFailure
 }
 
 $reportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'reports'
 New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 
-$devOutput = Join-Path $reportRoot 'dev-output.txt'
-$oracleOutput = Join-Path $reportRoot 'oracle-output.txt'
-$devExitCode = Join-Path $reportRoot 'dev-exit-code.txt'
-$oracleExitCode = Join-Path $reportRoot 'oracle-exit-code.txt'
+Invoke-Build -WorkspaceRoot $DevWorkspaceRoot
+Invoke-Build -WorkspaceRoot $OracleWorkspaceRoot
 
-Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -OutputPath $devOutput -ExitCodePath $devExitCode
-Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -OutputPath $oracleOutput -ExitCodePath $oracleExitCode
+$summaryLines = [System.Collections.Generic.List[string]]::new()
+$failed = $false
 
-$devText = Get-Content -Raw -LiteralPath $devOutput
-$oracleText = Get-Content -Raw -LiteralPath $oracleOutput
-$devCode = Get-Content -Raw -LiteralPath $devExitCode
-$oracleCode = Get-Content -Raw -LiteralPath $oracleExitCode
+foreach ($suiteName in @('parity', 'divergence')) {
+    $devXml = Join-Path $reportRoot ("dev-{0}.xml" -f $suiteName)
+    $oracleXml = Join-Path $reportRoot ("oracle-{0}.xml" -f $suiteName)
+    $devLog = Join-Path $reportRoot ("dev-{0}.log" -f $suiteName)
+    $oracleLog = Join-Path $reportRoot ("oracle-{0}.log" -f $suiteName)
+    $devExitCode = Join-Path $reportRoot ("dev-{0}-exit-code.txt" -f $suiteName)
+    $oracleExitCode = Join-Path $reportRoot ("oracle-{0}-exit-code.txt" -f $suiteName)
 
-if ($devText -eq $oracleText -and $devCode -eq $oracleCode) {
-    Write-Output 'Live test outputs match between dev and oracle workspaces.'
-    return
+    Invoke-TestRun -WorkspaceRoot $DevWorkspaceRoot -SuiteName $suiteName -XmlPath $devXml -LogPath $devLog -ExitCodePath $devExitCode
+    Invoke-TestRun -WorkspaceRoot $OracleWorkspaceRoot -SuiteName $suiteName -XmlPath $oracleXml -LogPath $oracleLog -ExitCodePath $oracleExitCode
+
+    $devResults = Get-TestCaseResults -XmlPath $devXml -SuiteName $suiteName -WorkspaceId 'dev'
+    $oracleResults = Get-TestCaseResults -XmlPath $oracleXml -SuiteName $suiteName -WorkspaceId 'oracle'
+    if (Compare-CaseSets -DevResults $devResults -OracleResults $oracleResults -SuiteName $suiteName -SummaryLines $summaryLines) {
+        $failed = $true
+    }
 }
 
-Write-Warning 'Live test outputs differ between dev and oracle workspaces.'
-Write-Output "Dev output: $devOutput"
-Write-Output "Oracle output: $oracleOutput"
-Write-Output "Dev exit code: $devCode"
-Write-Output "Oracle exit code: $oracleCode"
+$summaryPath = Join-Path $reportRoot 'live-diff-summary.txt'
+Set-Content -LiteralPath $summaryPath -Value $summaryLines
+$summaryLines | ForEach-Object { Write-Output $_ }
+Write-Output "Summary: $summaryPath"
+
+if ($failed) {
+    throw 'Live test comparison detected parity failures or unexpected dev regressions.'
+}

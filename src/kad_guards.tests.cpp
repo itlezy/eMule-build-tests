@@ -1,12 +1,14 @@
 #include "../third_party/doctest/doctest.h"
 #include "../include/TestSupport.h"
 
+#include <algorithm>
 #include <ctime>
 #include <cstdio>
 #include <vector>
 
 #include "kademlia/utils/FastKad.h"
 #include "kademlia/utils/KadPublishGuard.h"
+#include "kademlia/utils/NodesDatSupport.h"
 #include "kademlia/utils/SafeKad.h"
 
 namespace
@@ -44,6 +46,77 @@ namespace
 		REQUIRE(fwrite(&uResponseTimeMs, 1, sizeof uResponseTimeMs, pFile) == sizeof uResponseTimeMs);
 		REQUIRE(fwrite(&nHealthScore, 1, sizeof nHealthScore, pFile) == sizeof nHealthScore);
 		fclose(pFile);
+	}
+
+	/**
+	 * Writes a minimal v2 nodes.dat fixture with one structurally valid contact.
+	 */
+	void WriteNodesDatFixture(LPCTSTR pszPath, bool bBootstrapOnly)
+	{
+		FILE *pFile = NULL;
+		REQUIRE(_wfopen_s(&pFile, pszPath, L"wb") == 0);
+		REQUIRE(pFile != NULL);
+
+		const uint32 uStoredIP = 0x04030201u;
+		const uint16 uUDPPort = 4665;
+		const uint16 uTCPPort = 4662;
+		const uint32 uUDPKey = 0x01010101u;
+		const uint32 uUDPKeyIP = 0x02020202u;
+		const uint8 uVerified = 1;
+		const uint8 uContactVersion = 8;
+		const byte abyID[16] = { 1 };
+
+		if (bBootstrapOnly) {
+			const uint32 uHeader = 0;
+			const uint32 uVersion = 3;
+			const uint32 uEdition = 1;
+			const uint32 uCount = 1;
+			REQUIRE(fwrite(&uHeader, 1, sizeof uHeader, pFile) == sizeof uHeader);
+			REQUIRE(fwrite(&uVersion, 1, sizeof uVersion, pFile) == sizeof uVersion);
+			REQUIRE(fwrite(&uEdition, 1, sizeof uEdition, pFile) == sizeof uEdition);
+			REQUIRE(fwrite(&uCount, 1, sizeof uCount, pFile) == sizeof uCount);
+			REQUIRE(fwrite(abyID, 1, sizeof abyID, pFile) == sizeof abyID);
+			REQUIRE(fwrite(&uStoredIP, 1, sizeof uStoredIP, pFile) == sizeof uStoredIP);
+			REQUIRE(fwrite(&uUDPPort, 1, sizeof uUDPPort, pFile) == sizeof uUDPPort);
+			REQUIRE(fwrite(&uTCPPort, 1, sizeof uTCPPort, pFile) == sizeof uTCPPort);
+			REQUIRE(fwrite(&uContactVersion, 1, sizeof uContactVersion, pFile) == sizeof uContactVersion);
+		} else {
+			const uint32 uHeader = 0;
+			const uint32 uVersion = 2;
+			const uint32 uCount = 1;
+			REQUIRE(fwrite(&uHeader, 1, sizeof uHeader, pFile) == sizeof uHeader);
+			REQUIRE(fwrite(&uVersion, 1, sizeof uVersion, pFile) == sizeof uVersion);
+			REQUIRE(fwrite(&uCount, 1, sizeof uCount, pFile) == sizeof uCount);
+			REQUIRE(fwrite(abyID, 1, sizeof abyID, pFile) == sizeof abyID);
+			REQUIRE(fwrite(&uStoredIP, 1, sizeof uStoredIP, pFile) == sizeof uStoredIP);
+			REQUIRE(fwrite(&uUDPPort, 1, sizeof uUDPPort, pFile) == sizeof uUDPPort);
+			REQUIRE(fwrite(&uTCPPort, 1, sizeof uTCPPort, pFile) == sizeof uTCPPort);
+			REQUIRE(fwrite(&uContactVersion, 1, sizeof uContactVersion, pFile) == sizeof uContactVersion);
+			REQUIRE(fwrite(&uUDPKey, 1, sizeof uUDPKey, pFile) == sizeof uUDPKey);
+			REQUIRE(fwrite(&uUDPKeyIP, 1, sizeof uUDPKeyIP, pFile) == sizeof uUDPKeyIP);
+			REQUIRE(fwrite(&uVerified, 1, sizeof uVerified, pFile) == sizeof uVerified);
+		}
+
+		fclose(pFile);
+	}
+
+	/**
+	 * Reads a whole file into a byte vector for replacement assertions.
+	 */
+	std::vector<char> ReadWholeFile(LPCTSTR pszPath)
+	{
+		FILE *pFile = NULL;
+		REQUIRE(_wfopen_s(&pFile, pszPath, L"rb") == 0);
+		REQUIRE(pFile != NULL);
+		REQUIRE(_fseeki64(pFile, 0, SEEK_END) == 0);
+		const __int64 nLength = _ftelli64(pFile);
+		REQUIRE(nLength >= 0);
+		REQUIRE(_fseeki64(pFile, 0, SEEK_SET) == 0);
+
+		std::vector<char> data(static_cast<size_t>(nLength));
+		REQUIRE(fread(data.data(), 1, data.size(), pFile) == data.size());
+		fclose(pFile);
+		return data;
 	}
 }
 
@@ -105,6 +178,28 @@ TEST_CASE("Fast Kad sidecar ignores invalid files without poisoning bootstrap pr
 	::DeleteFile(strPath);
 }
 
+TEST_CASE("Fast Kad sidecar save keeps dormant node metadata outside the current routing snapshot")
+{
+	const CString strPath = CreateFastKadTempPath();
+	Kademlia::CFastKad writer;
+	const Kademlia::CUInt128 uKnownNode(41ul);
+	const Kademlia::CUInt128 uDormantNode(42ul);
+
+	writer.TrackNodeReachable(uKnownNode, 4665);
+	writer.TrackNodeFailure(uDormantNode, 4666);
+
+	std::vector<Kademlia::CFastKad::NodeKey> knownNodes;
+	knownNodes.push_back(Kademlia::CFastKad::NodeKey(uKnownNode, 4665));
+	writer.SaveNodesMetadata(strPath, knownNodes);
+
+	Kademlia::CFastKad reader;
+	reader.LoadNodesMetadata(strPath);
+	CHECK(reader.GetBootstrapPriority(uKnownNode, 4665) > 0);
+	CHECK(reader.GetBootstrapPriority(uDormantNode, 4666) > 0);
+
+	::DeleteFile(strPath);
+}
+
 TEST_CASE("Fast Kad bootstrap priority prefers recent healthy nodes and keys metadata by Kad ID plus UDP port")
 {
 	const CString strRecentPath = CreateFastKadTempPath();
@@ -128,6 +223,75 @@ TEST_CASE("Fast Kad bootstrap priority prefers recent healthy nodes and keys met
 
 	::DeleteFile(strRecentPath);
 	::DeleteFile(strStalePath);
+}
+
+TEST_CASE("Nodes.dat inspector accepts valid regular and bootstrap-only candidates")
+{
+	const CString strRegularPath = CreateFastKadTempPath();
+	const CString strBootstrapPath = CreateFastKadTempPath();
+	WriteNodesDatFixture(strRegularPath, false);
+	WriteNodesDatFixture(strBootstrapPath, true);
+
+	Kademlia::NodesDatFileInfo regularInfo;
+	Kademlia::NodesDatFileInfo bootstrapInfo;
+	CHECK(Kademlia::InspectNodesDatFile(strRegularPath, regularInfo));
+	CHECK_EQ(regularInfo.m_uUsableContacts, 1u);
+	CHECK_FALSE(regularInfo.m_bBootstrapOnly);
+	CHECK(Kademlia::InspectNodesDatFile(strBootstrapPath, bootstrapInfo));
+	CHECK_EQ(bootstrapInfo.m_uUsableContacts, 1u);
+	CHECK(bootstrapInfo.m_bBootstrapOnly);
+
+	::DeleteFile(strRegularPath);
+	::DeleteFile(strBootstrapPath);
+}
+
+TEST_CASE("Nodes.dat inspector rejects malformed files without reporting usable contacts")
+{
+	const CString strPath = CreateFastKadTempPath();
+	FILE *pFile = NULL;
+	REQUIRE(_wfopen_s(&pFile, strPath, L"wb") == 0);
+	REQUIRE(pFile != NULL);
+	const uint32 uHeader = 0;
+	const uint32 uVersion = 2;
+	const uint32 uCount = 1;
+	REQUIRE(fwrite(&uHeader, 1, sizeof uHeader, pFile) == sizeof uHeader);
+	REQUIRE(fwrite(&uVersion, 1, sizeof uVersion, pFile) == sizeof uVersion);
+	REQUIRE(fwrite(&uCount, 1, sizeof uCount, pFile) == sizeof uCount);
+	fclose(pFile);
+
+	Kademlia::NodesDatFileInfo fileInfo;
+	CHECK_FALSE(Kademlia::InspectNodesDatFile(strPath, fileInfo));
+	CHECK_EQ(fileInfo.m_uUsableContacts, 0u);
+
+	::DeleteFile(strPath);
+}
+
+TEST_CASE("Nodes.dat replacement atomically swaps the target file contents")
+{
+	const CString strTargetPath = CreateFastKadTempPath();
+	const CString strSourcePath = CreateFastKadTempPath();
+
+	FILE *pTarget = NULL;
+	REQUIRE(_wfopen_s(&pTarget, strTargetPath, L"wb") == 0);
+	REQUIRE(pTarget != NULL);
+	const char szOldData[] = "old";
+	REQUIRE(fwrite(szOldData, 1, sizeof szOldData, pTarget) == sizeof szOldData);
+	fclose(pTarget);
+
+	FILE *pSource = NULL;
+	REQUIRE(_wfopen_s(&pSource, strSourcePath, L"wb") == 0);
+	REQUIRE(pSource != NULL);
+	const char szNewData[] = "new";
+	REQUIRE(fwrite(szNewData, 1, sizeof szNewData, pSource) == sizeof szNewData);
+	fclose(pSource);
+
+	CHECK(Kademlia::ReplaceNodesDatFile(strSourcePath, strTargetPath));
+	CHECK_FALSE(::PathFileExists(strSourcePath));
+	const std::vector<char> targetData = ReadWholeFile(strTargetPath);
+	CHECK_EQ(targetData.size(), sizeof szNewData);
+	CHECK(std::equal(targetData.begin(), targetData.end(), szNewData));
+
+	::DeleteFile(strTargetPath);
 }
 
 TEST_CASE("Safe Kad bans a verified node that flips identities too quickly when strict mode is enabled")

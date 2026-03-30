@@ -122,6 +122,7 @@
   <ItemGroup>
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.cpp" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadPublishGuard.cpp" />
+    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" />
     <ClCompile Include="src\kad_guards.tests.cpp" />
     <ClCompile Include="src\protocol.tests.cpp" />

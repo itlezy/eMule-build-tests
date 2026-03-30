@@ -1,6 +1,6 @@
 # eMule Shared Tests
 
-This repository is a shared workspace-level test asset for the `eMulebb` and `eMulebb-oracle` workspaces.
+This repository is a shared workspace-level test asset for the `eMule-build` and `eMule-build-oracle` workspaces.
 
 It owns:
 
@@ -14,5 +14,5 @@ The project is built against the local `eMule` checkout in whichever workspace i
 
 Current suite model:
 
-- `parity`: cases that must pass in both the dev and oracle workspaces
-- `divergence`: cases that are expected to pass on dev and fail on the pre-refactor oracle
+- `parity`: cases that must pass in both the `eMule-build` and `eMule-build-oracle` workspaces
+- `divergence`: cases that are expected to pass on `eMule-build` and fail on the pre-refactor `eMule-build-oracle` workspace

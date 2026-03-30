@@ -17,8 +17,8 @@ The Visual Studio platform to build.
 #>
 [CmdletBinding()]
 param(
-    [string]$DevWorkspaceRoot = 'C:\prj\p2p\eMulebb',
-    [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMulebb-oracle',
+    [string]$DevWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build',
+    [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-oracle',
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',

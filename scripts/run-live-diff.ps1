@@ -103,13 +103,20 @@ function Get-TestCaseResults {
             $parsedSuiteName = $SuiteName
         }
 
+        if ($parsedSuiteName -ne $SuiteName) {
+            continue
+        }
+
         foreach ($testCase in @($testSuite.TestCase)) {
+            $overall = $testCase.OverallResultsAsserts
+            $isSkipped = ([string]$testCase.skipped) -eq 'true'
             $results[[string]$testCase.name] = [PSCustomObject]@{
                 Workspace = $WorkspaceId
                 Suite = $parsedSuiteName
                 Name = [string]$testCase.name
-                Success = ([string]$testCase.OverallResultsAsserts.test_case_success) -eq 'true'
-                Failures = [int]$testCase.OverallResultsAsserts.failures
+                Success = $null -ne $overall -and ([string]$overall.test_case_success) -eq 'true'
+                Failures = if ($null -ne $overall) { [int]$overall.failures } else { 0 }
+                Skipped = $isSkipped
             }
         }
     }

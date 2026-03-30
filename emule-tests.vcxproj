@@ -122,6 +122,7 @@
   <ItemGroup>
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
+    <ClCompile Include="src\scheduler_removal.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
   </ItemGroup>
   <ItemGroup>

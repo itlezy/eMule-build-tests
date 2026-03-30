@@ -109,7 +109,7 @@ function Get-TestCaseResults {
 
         foreach ($testCase in @($testSuite.TestCase)) {
             $overall = $testCase.OverallResultsAsserts
-            $isSkipped = ([string]$testCase.skipped) -eq 'true'
+            $isSkipped = ($testCase.GetAttribute('skipped')) -eq 'true'
             $results[[string]$testCase.name] = [PSCustomObject]@{
                 Workspace = $WorkspaceId
                 Suite = $parsedSuiteName

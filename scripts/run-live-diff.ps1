@@ -133,10 +133,7 @@ function Compare-CaseSets {
         [hashtable]$OracleResults,
 
         [Parameter(Mandatory = $true)]
-        [string]$SuiteName,
-
-        [Parameter(Mandatory = $true)]
-        [System.Collections.ArrayList]$SummaryLines
+        [string]$SuiteName
     )
 
     $allNames = @($DevResults.Keys + $OracleResults.Keys | Sort-Object -Unique)
@@ -146,30 +143,30 @@ function Compare-CaseSets {
         $devCase = $DevResults[$name]
         $oracleCase = $OracleResults[$name]
         if ($null -eq $devCase -or $null -eq $oracleCase) {
-            $SummaryLines.Add(("[FAIL] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
+            [void]$script:summaryLines.Add(("[FAIL] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
             $hasFailure = $true
             continue
         }
 
         if ($SuiteName -eq 'parity') {
             if ($devCase.Success -and $oracleCase.Success) {
-                $SummaryLines.Add(("[PASS] parity: {0}" -f $name))
+                [void]$script:summaryLines.Add(("[PASS] parity: {0}" -f $name))
             } else {
-                $SummaryLines.Add(("[FAIL] parity: {0} (dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
+                [void]$script:summaryLines.Add(("[FAIL] parity: {0} (dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
                 $hasFailure = $true
             }
             continue
         }
 
         if ($devCase.Success -and -not $oracleCase.Success) {
-            $SummaryLines.Add(("[PASS] divergence: {0} (dev pass, oracle fail as expected)" -f $name))
+            [void]$script:summaryLines.Add(("[PASS] divergence: {0} (dev pass, oracle fail as expected)" -f $name))
         } elseif (-not $devCase.Success) {
-            $SummaryLines.Add(("[FAIL] divergence: {0} (dev failed)" -f $name))
+            [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (dev failed)" -f $name))
             $hasFailure = $true
         } elseif ($oracleCase.Success) {
-            $SummaryLines.Add(("[WARN] divergence: {0} (oracle also passed)" -f $name))
+            [void]$script:summaryLines.Add(("[WARN] divergence: {0} (oracle also passed)" -f $name))
         } else {
-            $SummaryLines.Add(("[FAIL] divergence: {0} (unexpected state dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
+            [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (unexpected state dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
             $hasFailure = $true
         }
     }
@@ -199,7 +196,7 @@ foreach ($suiteName in @('parity', 'divergence')) {
 
     $devResults = Get-TestCaseResults -XmlPath $devXml -SuiteName $suiteName -WorkspaceId 'dev'
     $oracleResults = Get-TestCaseResults -XmlPath $oracleXml -SuiteName $suiteName -WorkspaceId 'oracle'
-    if (Compare-CaseSets -DevResults $devResults -OracleResults $oracleResults -SuiteName $suiteName -SummaryLines $summaryLines) {
+    if (Compare-CaseSets -DevResults $devResults -OracleResults $oracleResults -SuiteName $suiteName) {
         $failed = $true
     }
 }

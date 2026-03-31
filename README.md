@@ -29,3 +29,6 @@ Standalone probe mode:
 - by default it executes a buffered scan first and then the shared `MappedFileReader` path
 - use `--reader buffered`, `--reader mapped`, or `--reader both` to narrow the probe
 - use `--byte-limit <N>` to cap the scan length and `--progress-mib <N>` to control progress output
+- `build\<tag>\x64\Debug\emule-tests.exe --full-hash-probe "<full file path>"` runs the offline MD4 plus AICH hashing pipeline without launching `emule.exe`
+- the full-hash mode also supports `--reader buffered|mapped|both` and `--progress-mib <N>`
+- use the full-hash mode when you need to separate raw file access from higher-level `CKnownFile::CreateFromFile` work such as metadata extraction, known-file registration, or UI progress handling

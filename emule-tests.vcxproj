@@ -129,6 +129,7 @@
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" />
+    <ClCompile Include="src\full_hash_probe.cpp" />
     <ClCompile Include="src\hash_probe.cpp" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" />
@@ -141,6 +142,7 @@
     <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadSupport.h')" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\FullHashProbe.h" />
     <ClInclude Include="include\HashProbe.h" />
     <ClInclude Include="include\TestSupport.h" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />

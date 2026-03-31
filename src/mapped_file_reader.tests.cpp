@@ -1,26 +1,205 @@
 #include "../third_party/doctest/doctest.h"
 
+#include <Windows.h>
+
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <random>
 #include <string>
 #include <vector>
 
+#if defined(__has_include)
+#if __has_include("MappedFileReader.h")
 #include "MappedFileReader.h"
+#define EMULE_TEST_HAVE_MAPPED_FILE_READER 1
+#else
+#define EMULE_TEST_HAVE_MAPPED_FILE_READER 0
+#endif
+#else
+#define EMULE_TEST_HAVE_MAPPED_FILE_READER 0
+#endif
 
 namespace
 {
-	class CCollectMappedBytes : public IMappedFileRangeVisitor
+	constexpr size_t HASH_BUFFER_SIZE = 8192u;
+	constexpr size_t DEFAULT_SAMPLE_COUNT = 5u;
+	constexpr unsigned long long DEFAULT_SAMPLE_MAX_BYTES = 96ull * 1024ull * 1024ull;
+	constexpr unsigned long long DEFAULT_STABLE_AGE_MS = 60000ull;
+
+	struct CSampledFile
+	{
+		std::wstring Path;
+		unsigned long long Length = 0;
+	};
+
+	/**
+	 * @brief Updates a simple byte-for-byte checksum while the tests compare reader paths.
+	 */
+	class CFnv1a64
+	{
+	public:
+		void Add(const BYTE *pBytes, size_t nByteCount)
+		{
+			for (size_t i = 0; i < nByteCount; ++i) {
+				m_nValue ^= static_cast<unsigned long long>(pBytes[i]);
+				m_nValue *= 1099511628211ull;
+			}
+		}
+
+		unsigned long long GetValue() const
+		{
+			return m_nValue;
+		}
+
+	private:
+		unsigned long long m_nValue = 1469598103934665603ull;
+	};
+
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	class CFnvMappedVisitor : public IMappedFileRangeVisitor
 	{
 	public:
 		void OnMappedFileBytes(const BYTE *pBytes, size_t nByteCount) override
 		{
-			m_Data.insert(m_Data.end(), pBytes, pBytes + nByteCount);
+			m_Hash.Add(pBytes, nByteCount);
 		}
 
-		std::vector<BYTE> m_Data;
+		unsigned long long GetDigest() const
+		{
+			return m_Hash.GetValue();
+		}
+
+	private:
+		CFnv1a64 m_Hash;
 	};
+#endif
 
 	/**
-	 * Creates deterministic byte content so range comparisons stay readable.
+	 * @brief Reads a small integer override from the environment when present.
+	 */
+	unsigned long long GetEnvironmentUint64(LPCWSTR pszName, unsigned long long nDefaultValue)
+	{
+		WCHAR szValue[64] = {};
+		const DWORD dwLength = ::GetEnvironmentVariableW(pszName, szValue, _countof(szValue));
+		if (dwLength == 0 || dwLength >= _countof(szValue))
+			return nDefaultValue;
+
+		WCHAR *pEnd = NULL;
+		const unsigned long long nValue = _wcstoui64(szValue, &pEnd, 10);
+		return (pEnd != szValue) ? nValue : nDefaultValue;
+	}
+
+	/**
+	 * @brief Uses a caller-provided sample seed when present so dev and oracle can benchmark the same files.
+	 */
+	unsigned long long GetRuntimeSampleSeed()
+	{
+		const unsigned long long nConfiguredSeed = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_SEED", 0ull);
+		if (nConfiguredSeed != 0ull)
+			return nConfiguredSeed;
+
+		return static_cast<unsigned long long>(::GetTickCount64()) ^ static_cast<unsigned long long>(::GetCurrentProcessId());
+	}
+
+	/**
+	 * @brief Keeps actual-file sampling rooted in C:\tmp unless a caller overrides it explicitly.
+	 */
+	std::wstring GetRuntimeSampleRoot()
+	{
+		WCHAR szValue[MAX_PATH] = {};
+		const DWORD dwLength = ::GetEnvironmentVariableW(L"EMULE_TEST_FILE_ROOT", szValue, _countof(szValue));
+		if (dwLength == 0 || dwLength >= _countof(szValue))
+			return L"C:\\tmp";
+
+		return std::wstring(szValue);
+	}
+
+	/**
+	 * @brief Rejects files that are still being updated so parity runs stay stable on temp directories.
+	 */
+	bool IsStableEnoughForSampling(const std::filesystem::directory_entry &entry, unsigned long long nStableAgeMs)
+	{
+		std::error_code ec;
+		const auto lastWriteTime = entry.last_write_time(ec);
+		if (ec)
+			return true;
+
+		const auto now = std::filesystem::file_time_type::clock::now();
+		if (now < lastWriteTime)
+			return false;
+
+		const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWriteTime).count();
+		return static_cast<unsigned long long>(age) >= nStableAgeMs;
+	}
+
+	/**
+	 * @brief Collects a runtime-random, name-agnostic sample of readable files from C:\tmp.
+	 */
+	std::vector<CSampledFile> SelectRuntimeSampleFiles()
+	{
+		const std::wstring sampleRoot = GetRuntimeSampleRoot();
+		const size_t nSampleCount = static_cast<size_t>(GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_COUNT", DEFAULT_SAMPLE_COUNT));
+		const unsigned long long nMaxBytes = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_MAX_BYTES", DEFAULT_SAMPLE_MAX_BYTES);
+		const unsigned long long nStableAgeMs = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_STABLE_AGE_MS", DEFAULT_STABLE_AGE_MS);
+
+		std::vector<CSampledFile> candidates;
+		std::error_code ec;
+		const std::filesystem::path root(sampleRoot);
+		if (!std::filesystem::exists(root, ec))
+			return {};
+
+		for (const auto &entry : std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec)) {
+			if (ec) {
+				ec.clear();
+				continue;
+			}
+			if (!entry.is_regular_file(ec) || ec) {
+				ec.clear();
+				continue;
+			}
+			if (!IsStableEnoughForSampling(entry, nStableAgeMs))
+				continue;
+
+			const auto fileSize = entry.file_size(ec);
+			if (ec) {
+				ec.clear();
+				continue;
+			}
+			if (fileSize == 0)
+				continue;
+
+			candidates.push_back(CSampledFile{ entry.path().wstring(), static_cast<unsigned long long>(fileSize) });
+		}
+
+		std::sort(candidates.begin(), candidates.end(), [](const CSampledFile &lhs, const CSampledFile &rhs) {
+			return lhs.Path < rhs.Path;
+		});
+
+		std::mt19937_64 randomizer(GetRuntimeSampleSeed());
+		std::shuffle(candidates.begin(), candidates.end(), randomizer);
+
+		std::vector<CSampledFile> sample;
+		unsigned long long nTotalBytes = 0;
+		for (const CSampledFile &candidate : candidates) {
+			if (!sample.empty() && (sample.size() >= nSampleCount || nTotalBytes + candidate.Length > nMaxBytes))
+				continue;
+
+			sample.push_back(candidate);
+			nTotalBytes += candidate.Length;
+			if (sample.size() >= nSampleCount || nTotalBytes >= nMaxBytes)
+				break;
+		}
+
+		if (sample.empty() && !candidates.empty())
+			sample.push_back(candidates.front());
+
+		return sample;
+	}
+
+	/**
+	 * @brief Creates deterministic byte content so synthetic range comparisons stay readable.
 	 */
 	std::vector<BYTE> CreateMappedReaderFixture(size_t nByteCount)
 	{
@@ -31,7 +210,7 @@ namespace
 	}
 
 	/**
-	 * Creates a disposable binary file path for mapped-reader regression tests.
+	 * @brief Creates a disposable binary file path for mapped-reader regression tests.
 	 */
 	std::wstring CreateMappedReaderTempPath()
 	{
@@ -43,7 +222,7 @@ namespace
 	}
 
 	/**
-	 * Writes the supplied binary fixture to disk for mapped file reads.
+	 * @brief Writes the supplied binary fixture to disk for mapped file reads.
 	 */
 	void WriteMappedReaderFixture(const std::wstring &rstrPath, const std::vector<BYTE> &rData)
 	{
@@ -55,18 +234,123 @@ namespace
 	}
 
 	/**
-	 * Returns a byte-exact slice for parity assertions.
+	 * @brief Returns a byte-exact slice for synthetic parity assertions.
 	 */
 	std::vector<BYTE> SliceMappedReaderFixture(const std::vector<BYTE> &rData, size_t nOffset, size_t nLength)
 	{
 		return std::vector<BYTE>(rData.begin() + nOffset, rData.begin() + nOffset + nLength);
 	}
+
+	/**
+	 * @brief Reads a file through a CRT stream to mirror the legacy buffered path.
+	 */
+	unsigned long long ComputeBufferedDigest(const std::wstring &rstrPath)
+	{
+		FILE *pFile = NULL;
+		REQUIRE(_wfopen_s(&pFile, rstrPath.c_str(), L"rb") == 0);
+		REQUIRE(pFile != NULL);
+
+		CFnv1a64 hash;
+		BYTE buffer[HASH_BUFFER_SIZE] = {};
+		for (;;) {
+			const size_t nRead = fread(buffer, 1, sizeof buffer, pFile);
+			if (nRead != 0)
+				hash.Add(buffer, nRead);
+			if (nRead < sizeof buffer) {
+				REQUIRE(feof(pFile) != 0);
+				break;
+			}
+		}
+
+		fclose(pFile);
+		return hash.GetValue();
+	}
+
+	/**
+	 * @brief Reads a file through explicit Win32 reads to provide an independent reference path.
+	 */
+	unsigned long long ComputeWin32Digest(const std::wstring &rstrPath)
+	{
+		HANDLE hFile = ::CreateFileW(rstrPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+		REQUIRE(hFile != INVALID_HANDLE_VALUE);
+
+		CFnv1a64 hash;
+		BYTE buffer[HASH_BUFFER_SIZE] = {};
+		for (;;) {
+			DWORD dwRead = 0;
+			REQUIRE(::ReadFile(hFile, buffer, sizeof buffer, &dwRead, NULL) != FALSE);
+			if (dwRead == 0)
+				break;
+			hash.Add(buffer, dwRead);
+		}
+
+		::CloseHandle(hFile);
+		return hash.GetValue();
+	}
+
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	/**
+	 * @brief Reads a whole file through the workspace mapped reader implementation.
+	 */
+	unsigned long long ComputeMappedDigest(const std::wstring &rstrPath)
+	{
+		HANDLE hFile = ::CreateFileW(rstrPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+		REQUIRE(hFile != INVALID_HANDLE_VALUE);
+
+		LARGE_INTEGER fileSize = {};
+		REQUIRE(::GetFileSizeEx(hFile, &fileSize) != FALSE);
+
+		CFnvMappedVisitor visitor;
+		DWORD dwError = ERROR_SUCCESS;
+		CHECK(VisitMappedFileRange(hFile, 0, static_cast<ULONGLONG>(fileSize.QuadPart), visitor, &dwError));
+		CHECK_EQ(dwError, static_cast<DWORD>(ERROR_SUCCESS));
+		::CloseHandle(hFile);
+		return visitor.GetDigest();
+	}
+#endif
+
+	template <typename TDigestFn>
+	double MeasureDigestPassMs(const std::vector<CSampledFile> &sample, TDigestFn DigestFn, unsigned long long *pnDigestOut)
+	{
+		const auto start = std::chrono::steady_clock::now();
+		unsigned long long nDigest = 0;
+		for (const CSampledFile &file : sample)
+			nDigest ^= DigestFn(file.Path);
+		const auto stop = std::chrono::steady_clock::now();
+
+		if (pnDigestOut != NULL)
+			*pnDigestOut = nDigest;
+
+		return std::chrono::duration<double, std::milli>(stop - start).count();
+	}
+
+	unsigned long long GetSampleTotalBytes(const std::vector<CSampledFile> &sample)
+	{
+		unsigned long long nTotalBytes = 0;
+		for (const CSampledFile &file : sample)
+			nTotalBytes += file.Length;
+		return nTotalBytes;
+	}
 }
 
 TEST_SUITE_BEGIN("parity");
 
+TEST_CASE("Actual temp-file buffered and Win32 digests match on sampled files")
+{
+	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	REQUIRE_FALSE(sample.empty());
+
+	for (const CSampledFile &file : sample)
+		CHECK_EQ(ComputeBufferedDigest(file.Path), ComputeWin32Digest(file.Path));
+}
+
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("divergence");
+
 TEST_CASE("Mapped file reader returns the exact requested slice across allocation boundaries")
 {
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
 	const std::vector<BYTE> fixture = CreateMappedReaderFixture(1024 * 1024 + 257);
 	const std::wstring tempPath = CreateMappedReaderTempPath();
 	WriteMappedReaderFixture(tempPath, fixture);
@@ -74,20 +358,28 @@ TEST_CASE("Mapped file reader returns the exact requested slice across allocatio
 	HANDLE hFile = ::CreateFileW(tempPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	REQUIRE(hFile != INVALID_HANDLE_VALUE);
 
-	CCollectMappedBytes visitor;
+	CFnvMappedVisitor visitor;
 	DWORD dwError = ERROR_SUCCESS;
 	const size_t nOffset = 65530;
 	const size_t nLength = 400000;
 	CHECK(VisitMappedFileRange(hFile, nOffset, nLength, visitor, &dwError));
 	CHECK_EQ(dwError, static_cast<DWORD>(ERROR_SUCCESS));
-	CHECK(visitor.m_Data == SliceMappedReaderFixture(fixture, nOffset, nLength));
+
+	CFnv1a64 referenceHash;
+	const std::vector<BYTE> reference = SliceMappedReaderFixture(fixture, nOffset, nLength);
+	referenceHash.Add(reference.data(), reference.size());
+	CHECK_EQ(visitor.GetDigest(), referenceHash.GetValue());
 
 	::CloseHandle(hFile);
 	::DeleteFileW(tempPath.c_str());
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
 }
 
 TEST_CASE("Mapped file reader spans multiple mapping windows without dropping bytes")
 {
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
 	const std::vector<BYTE> fixture = CreateMappedReaderFixture(9 * 1024 * 1024 + 123);
 	const std::wstring tempPath = CreateMappedReaderTempPath();
 	WriteMappedReaderFixture(tempPath, fixture);
@@ -95,20 +387,28 @@ TEST_CASE("Mapped file reader spans multiple mapping windows without dropping by
 	HANDLE hFile = ::CreateFileW(tempPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	REQUIRE(hFile != INVALID_HANDLE_VALUE);
 
-	CCollectMappedBytes visitor;
+	CFnvMappedVisitor visitor;
 	DWORD dwError = ERROR_SUCCESS;
 	const size_t nOffset = 123;
 	const size_t nLength = fixture.size() - 246;
 	CHECK(VisitMappedFileRange(hFile, nOffset, nLength, visitor, &dwError));
 	CHECK_EQ(dwError, static_cast<DWORD>(ERROR_SUCCESS));
-	CHECK(visitor.m_Data == SliceMappedReaderFixture(fixture, nOffset, nLength));
+
+	CFnv1a64 referenceHash;
+	const std::vector<BYTE> reference = SliceMappedReaderFixture(fixture, nOffset, nLength);
+	referenceHash.Add(reference.data(), reference.size());
+	CHECK_EQ(visitor.GetDigest(), referenceHash.GetValue());
 
 	::CloseHandle(hFile);
 	::DeleteFileW(tempPath.c_str());
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
 }
 
 TEST_CASE("Mapped file reader accepts zero-length ranges without touching the visitor")
 {
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
 	const std::vector<BYTE> fixture = CreateMappedReaderFixture(128);
 	const std::wstring tempPath = CreateMappedReaderTempPath();
 	WriteMappedReaderFixture(tempPath, fixture);
@@ -116,22 +416,89 @@ TEST_CASE("Mapped file reader accepts zero-length ranges without touching the vi
 	HANDLE hFile = ::CreateFileW(tempPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	REQUIRE(hFile != INVALID_HANDLE_VALUE);
 
-	CCollectMappedBytes visitor;
+	CFnvMappedVisitor visitor;
 	DWORD dwError = ERROR_SUCCESS;
 	CHECK(VisitMappedFileRange(hFile, 0, 0, visitor, &dwError));
 	CHECK_EQ(dwError, static_cast<DWORD>(ERROR_SUCCESS));
-	CHECK(visitor.m_Data.empty());
+	CHECK_EQ(visitor.GetDigest(), static_cast<unsigned long long>(1469598103934665603ull));
 
 	::CloseHandle(hFile);
 	::DeleteFileW(tempPath.c_str());
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
 }
 
 TEST_CASE("Mapped file reader reports invalid handles")
 {
-	CCollectMappedBytes visitor;
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	class CNoopVisitor : public IMappedFileRangeVisitor
+	{
+	public:
+		void OnMappedFileBytes(const BYTE *, size_t) override
+		{
+		}
+	} visitor;
+
 	DWORD dwError = ERROR_SUCCESS;
 	CHECK_FALSE(VisitMappedFileRange(INVALID_HANDLE_VALUE, 0, 1, visitor, &dwError));
 	CHECK_EQ(dwError, static_cast<DWORD>(ERROR_INVALID_HANDLE));
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
+}
+
+TEST_CASE("Mapped file reader matches buffered digest on sampled actual temp files")
+{
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	REQUIRE_FALSE(sample.empty());
+
+	for (const CSampledFile &file : sample)
+		CHECK_EQ(ComputeMappedDigest(file.Path), ComputeBufferedDigest(file.Path));
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
+}
+
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("benchmark");
+
+TEST_CASE("File reader benchmark reports sampled temp-file throughput")
+{
+	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	REQUIRE_FALSE(sample.empty());
+
+	const unsigned long long nSeed = GetRuntimeSampleSeed();
+	const unsigned long long nTotalBytes = GetSampleTotalBytes(sample);
+	unsigned long long nBufferedDigest = 0;
+	unsigned long long nWin32Digest = 0;
+	const double dBufferedMs = MeasureDigestPassMs(sample, ComputeBufferedDigest, &nBufferedDigest);
+	const double dWin32Ms = MeasureDigestPassMs(sample, ComputeWin32Digest, &nWin32Digest);
+	CHECK_EQ(nBufferedDigest, nWin32Digest);
+
+	std::printf("BENCHMARK sample_root=%ls seed=%llu file_count=%zu total_bytes=%llu buffered_ms=%.3f win32_ms=%.3f buffered_mib_s=%.3f win32_mib_s=%.3f"
+		, GetRuntimeSampleRoot().c_str()
+		, nSeed
+		, sample.size()
+		, nTotalBytes
+		, dBufferedMs
+		, dWin32Ms
+		, dBufferedMs > 0.0 ? (static_cast<double>(nTotalBytes) / (1024.0 * 1024.0)) / (dBufferedMs / 1000.0) : 0.0
+		, dWin32Ms > 0.0 ? (static_cast<double>(nTotalBytes) / (1024.0 * 1024.0)) / (dWin32Ms / 1000.0) : 0.0);
+
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	unsigned long long nMappedDigest = 0;
+	const double dMappedMs = MeasureDigestPassMs(sample, ComputeMappedDigest, &nMappedDigest);
+	CHECK_EQ(nBufferedDigest, nMappedDigest);
+	std::printf(" mapped_ms=%.3f mapped_mib_s=%.3f mapped_vs_buffered=%.3fx"
+		, dMappedMs
+		, dMappedMs > 0.0 ? (static_cast<double>(nTotalBytes) / (1024.0 * 1024.0)) / (dMappedMs / 1000.0) : 0.0
+		, dMappedMs > 0.0 ? dBufferedMs / dMappedMs : 0.0);
+#endif
+
+	std::printf("\n");
 }
 
 TEST_SUITE_END;

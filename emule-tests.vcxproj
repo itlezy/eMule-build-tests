@@ -122,9 +122,11 @@
   <ItemGroup>
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.cpp" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadPublishGuard.cpp" />
+    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.cpp" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" />
     <ClCompile Include="src\kad_guards.tests.cpp" />
+    <ClCompile Include="src\mapped_file_reader.tests.cpp" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
@@ -133,6 +135,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\TestSupport.h" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h" />
     <ClInclude Include="third_party\doctest\doctest.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

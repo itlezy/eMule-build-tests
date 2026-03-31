@@ -22,3 +22,10 @@ Current suite model:
 
 - `parity`: cases that must pass in both the `eMule-build` and `eMule-build-oracle` workspaces
 - `divergence`: cases that are expected to pass on `eMule-build` and fail on the pre-refactor `eMule-build-oracle` workspace
+
+Standalone probe mode:
+
+- `build\<tag>\x64\Debug\emule-tests.exe --hash-probe "<full file path>"` runs an isolated non-UI file scan
+- by default it executes a buffered scan first and then the shared `MappedFileReader` path
+- use `--reader buffered`, `--reader mapped`, or `--reader both` to narrow the probe
+- use `--byte-limit <N>` to cap the scan length and `--progress-mib <N>` to control progress output

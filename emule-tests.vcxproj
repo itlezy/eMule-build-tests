@@ -137,6 +137,7 @@
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
+    <ClCompile Include="src\startup_config_override.tests.cpp" />
     <ClCompile Include="src\status_bar_info.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
     <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadSupport.h')" />

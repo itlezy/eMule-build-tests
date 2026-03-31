@@ -129,6 +129,7 @@
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" />
+    <ClCompile Include="src\modern_limits.tests.cpp" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />

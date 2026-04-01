@@ -87,3 +87,31 @@ TEST_CASE("Pipe API parses the final transfer priority vocabulary")
 	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("invalid"), PipeApiSurfaceSeams::ETransferPriority::Invalid);
 	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName(nullptr), PipeApiSurfaceSeams::ETransferPriority::Invalid);
 }
+
+TEST_CASE("Pipe API parses the expanded mutable preference vocabulary")
+{
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxUploadKiB"), PipeApiSurfaceSeams::EMutablePreference::MaxUploadKiB);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxDownloadKiB"), PipeApiSurfaceSeams::EMutablePreference::MaxDownloadKiB);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxConnections"), PipeApiSurfaceSeams::EMutablePreference::MaxConnections);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxConPerFive"), PipeApiSurfaceSeams::EMutablePreference::MaxConPerFive);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxSourcesPerFile"), PipeApiSurfaceSeams::EMutablePreference::MaxSourcesPerFile);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("uploadClientDataRate"), PipeApiSurfaceSeams::EMutablePreference::UploadClientDataRate);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("maxUploadSlots"), PipeApiSurfaceSeams::EMutablePreference::MaxUploadSlots);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("queueSize"), PipeApiSurfaceSeams::EMutablePreference::QueueSize);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("autoConnect"), PipeApiSurfaceSeams::EMutablePreference::AutoConnect);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("newAutoUp"), PipeApiSurfaceSeams::EMutablePreference::NewAutoUp);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("newAutoDown"), PipeApiSurfaceSeams::EMutablePreference::NewAutoDown);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("creditSystem"), PipeApiSurfaceSeams::EMutablePreference::CreditSystem);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("safeServerConnect"), PipeApiSurfaceSeams::EMutablePreference::SafeServerConnect);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("networkKademlia"), PipeApiSurfaceSeams::EMutablePreference::NetworkKademlia);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("networkEd2k"), PipeApiSurfaceSeams::EMutablePreference::NetworkEd2K);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName("unsupported"), PipeApiSurfaceSeams::EMutablePreference::Invalid);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName(nullptr), PipeApiSurfaceSeams::EMutablePreference::Invalid);
+}
+
+TEST_CASE("Pipe API only allows shared-file removal for files that are shared and not mandatory")
+{
+	CHECK(PipeApiSurfaceSeams::CanRemoveSharedFile(true, false));
+	CHECK_FALSE(PipeApiSurfaceSeams::CanRemoveSharedFile(false, false));
+	CHECK_FALSE(PipeApiSurfaceSeams::CanRemoveSharedFile(true, true));
+}

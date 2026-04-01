@@ -134,6 +134,7 @@
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" />
     <ClCompile Include="src\modern_limits.tests.cpp" />
+    <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />

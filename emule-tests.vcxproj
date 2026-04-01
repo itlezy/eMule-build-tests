@@ -130,6 +130,7 @@
     <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncSocketExSeams.h')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" />
+    <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketSeams.h')" />
     <ClCompile Include="src\full_hash_probe.cpp" />
     <ClCompile Include="src\hash_probe.cpp" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />

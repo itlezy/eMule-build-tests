@@ -127,6 +127,7 @@
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.cpp')" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp')" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp')" />
+    <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncSocketExSeams.h')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" />
     <ClCompile Include="src\full_hash_probe.cpp" />

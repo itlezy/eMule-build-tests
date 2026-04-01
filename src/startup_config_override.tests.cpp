@@ -19,6 +19,7 @@ TEST_CASE("Startup config override parses an absolute drive path and normalizes 
 	CHECK(strBaseDir == CString(_T("C:\\profiles\\test-root\\")));
 	CHECK(StartupConfigOverride::GetConfigDirectoryFromBaseDir(strBaseDir) == CString(_T("C:\\profiles\\test-root\\config\\")));
 	CHECK(StartupConfigOverride::GetLogDirectoryFromBaseDir(strBaseDir) == CString(_T("C:\\profiles\\test-root\\logs\\")));
+	CHECK(StartupConfigOverride::GetPreferencesIniPathFromBaseDir(strBaseDir) == CString(_T("C:\\profiles\\test-root\\config\\preferences.ini")));
 }
 
 TEST_CASE("Startup config override accepts an absolute UNC base path")

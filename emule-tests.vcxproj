@@ -141,6 +141,7 @@
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
     <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SharedFileListSeams.h')" />
+    <ClCompile Include="src\socket_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
     <ClCompile Include="src\startup_config_override.tests.cpp" />
     <ClCompile Include="src\status_bar_info.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
@@ -152,6 +153,7 @@
     <ClInclude Include="include\TestSupport.h" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />
     <ClInclude Include="third_party\doctest\doctest.h" />
   </ItemGroup>

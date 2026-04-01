@@ -75,3 +75,15 @@ TEST_CASE("Pipe API exposes stable upload state names for the remote surface")
 	CHECK_EQ(PipeApiSurfaceSeams::GetUploadStateName(4), "idle");
 	CHECK_EQ(PipeApiSurfaceSeams::GetUploadStateName(255), "idle");
 }
+
+TEST_CASE("Pipe API parses the final transfer priority vocabulary")
+{
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("auto"), PipeApiSurfaceSeams::ETransferPriority::Auto);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("very_low"), PipeApiSurfaceSeams::ETransferPriority::VeryLow);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("low"), PipeApiSurfaceSeams::ETransferPriority::Low);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("normal"), PipeApiSurfaceSeams::ETransferPriority::Normal);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("high"), PipeApiSurfaceSeams::ETransferPriority::High);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("very_high"), PipeApiSurfaceSeams::ETransferPriority::VeryHigh);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName("invalid"), PipeApiSurfaceSeams::ETransferPriority::Invalid);
+	CHECK_EQ(PipeApiSurfaceSeams::ParseTransferPriorityName(nullptr), PipeApiSurfaceSeams::ETransferPriority::Invalid);
+}

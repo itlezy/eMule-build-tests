@@ -10,8 +10,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <random>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #if defined(__has_include)
@@ -28,11 +28,9 @@
 namespace
 {
 	constexpr size_t HASH_BUFFER_SIZE = 8192u;
-	constexpr size_t DEFAULT_SAMPLE_COUNT = 5u;
-	constexpr unsigned long long DEFAULT_SAMPLE_MAX_BYTES = 96ull * 1024ull * 1024ull;
-	constexpr unsigned long long DEFAULT_STABLE_AGE_MS = 60000ull;
 	constexpr unsigned long long PARTSIZE_BYTES = 9728000ull;
 	constexpr size_t EMBLOCKSIZE_BYTES = 184320u;
+	constexpr unsigned long long DETERMINISTIC_SAMPLE_SEED = 0x4d46524d41505045ull;
 
 	using CMd4Digest = std::array<BYTE, 16>;
 	using CSha1Digest = std::array<BYTE, 20>;
@@ -111,125 +109,90 @@ namespace
 #endif
 
 	/**
-	 * @brief Reads a small integer override from the environment when present.
+	 * @brief Returns a deterministic fixture root owned by this test file.
 	 */
-	unsigned long long GetEnvironmentUint64(LPCWSTR pszName, unsigned long long nDefaultValue)
+	std::filesystem::path GetDeterministicSampleRoot()
 	{
-		WCHAR szValue[64] = {};
-		const DWORD dwLength = ::GetEnvironmentVariableW(pszName, szValue, _countof(szValue));
-		if (dwLength == 0 || dwLength >= _countof(szValue))
-			return nDefaultValue;
-
-		WCHAR *pEnd = NULL;
-		const unsigned long long nValue = _wcstoui64(szValue, &pEnd, 10);
-		return (pEnd != szValue) ? nValue : nDefaultValue;
+		WCHAR szTempPath[MAX_PATH] = {};
+		REQUIRE(::GetTempPathW(_countof(szTempPath), szTempPath) != 0);
+		WCHAR szProcessDirectory[64] = {};
+		const int nWritten = _snwprintf_s(szProcessDirectory, _countof(szProcessDirectory), _TRUNCATE, L"pid-%lu", ::GetCurrentProcessId());
+		REQUIRE(nWritten > 0);
+		return std::filesystem::path(szTempPath) / L"emule-mapped-reader-fixtures" / szProcessDirectory;
 	}
 
 	/**
-	 * @brief Uses a caller-provided sample seed when present so dev and oracle can benchmark the same files.
+	 * @brief Streams a deterministic byte pattern to disk without allocating the whole file.
 	 */
-	unsigned long long GetRuntimeSampleSeed()
+	void WriteDeterministicFixtureFile(const std::filesystem::path &rPath, unsigned long long nByteCount, BYTE bySalt)
 	{
-		const unsigned long long nConfiguredSeed = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_SEED", 0ull);
-		if (nConfiguredSeed != 0ull)
-			return nConfiguredSeed;
+		FILE *pFile = NULL;
+		REQUIRE(_wfopen_s(&pFile, rPath.c_str(), L"wb") == 0);
+		REQUIRE(pFile != NULL);
 
-		return static_cast<unsigned long long>(::GetTickCount64()) ^ static_cast<unsigned long long>(::GetCurrentProcessId());
-	}
-
-	/**
-	 * @brief Keeps actual-file sampling rooted in C:\tmp unless a caller overrides it explicitly.
-	 */
-	std::wstring GetRuntimeSampleRoot()
-	{
-		WCHAR szValue[MAX_PATH] = {};
-		const DWORD dwLength = ::GetEnvironmentVariableW(L"EMULE_TEST_FILE_ROOT", szValue, _countof(szValue));
-		if (dwLength == 0 || dwLength >= _countof(szValue))
-			return L"C:\\tmp";
-
-		return std::wstring(szValue);
-	}
-
-	/**
-	 * @brief Rejects files that are still being updated so parity runs stay stable on temp directories.
-	 */
-	bool IsStableEnoughForSampling(const std::filesystem::directory_entry &entry, unsigned long long nStableAgeMs)
-	{
-		std::error_code ec;
-		const auto lastWriteTime = entry.last_write_time(ec);
-		if (ec)
-			return true;
-
-		const auto now = std::filesystem::file_time_type::clock::now();
-		if (now < lastWriteTime)
-			return false;
-
-		const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWriteTime).count();
-		return static_cast<unsigned long long>(age) >= nStableAgeMs;
-	}
-
-	/**
-	 * @brief Collects a runtime-random, name-agnostic sample of readable files from C:\tmp.
-	 */
-	std::vector<CSampledFile> SelectRuntimeSampleFiles()
-	{
-		const std::wstring sampleRoot = GetRuntimeSampleRoot();
-		const size_t nSampleCount = static_cast<size_t>(GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_COUNT", DEFAULT_SAMPLE_COUNT));
-		const unsigned long long nMaxBytes = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_MAX_BYTES", DEFAULT_SAMPLE_MAX_BYTES);
-		const unsigned long long nStableAgeMs = GetEnvironmentUint64(L"EMULE_TEST_SAMPLE_STABLE_AGE_MS", DEFAULT_STABLE_AGE_MS);
-
-		std::vector<CSampledFile> candidates;
-		std::error_code ec;
-		const std::filesystem::path root(sampleRoot);
-		if (!std::filesystem::exists(root, ec))
-			return {};
-
-		for (const auto &entry : std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec)) {
-			if (ec) {
-				ec.clear();
-				continue;
-			}
-			if (!entry.is_regular_file(ec) || ec) {
-				ec.clear();
-				continue;
-			}
-			if (!IsStableEnoughForSampling(entry, nStableAgeMs))
-				continue;
-
-			const auto fileSize = entry.file_size(ec);
-			if (ec) {
-				ec.clear();
-				continue;
-			}
-			if (fileSize == 0)
-				continue;
-
-			candidates.push_back(CSampledFile{ entry.path().wstring(), static_cast<unsigned long long>(fileSize) });
+		BYTE buffer[HASH_BUFFER_SIZE] = {};
+		unsigned long long nWritten = 0;
+		while (nWritten < nByteCount) {
+			const size_t nChunk = static_cast<size_t>(std::min<unsigned long long>(nByteCount - nWritten, sizeof buffer));
+			for (size_t i = 0; i < nChunk; ++i)
+				buffer[i] = static_cast<BYTE>(((nWritten + i) * 37ull + bySalt) & 0xFFu);
+			REQUIRE(fwrite(buffer, 1, nChunk, pFile) == nChunk);
+			nWritten += nChunk;
 		}
 
-		std::sort(candidates.begin(), candidates.end(), [](const CSampledFile &lhs, const CSampledFile &rhs) {
-			return lhs.Path < rhs.Path;
-		});
+		fclose(pFile);
+	}
 
-		std::mt19937_64 randomizer(GetRuntimeSampleSeed());
-		std::shuffle(candidates.begin(), candidates.end(), randomizer);
+	/**
+	 * @brief Creates or refreshes the deterministic corpus used by all mapped-reader parity tests.
+	 */
+	std::vector<CSampledFile> EnsureDeterministicSampleFiles()
+	{
+		static std::vector<CSampledFile> s_sample;
+		if (!s_sample.empty())
+			return s_sample;
 
-		std::vector<CSampledFile> sample;
-		unsigned long long nTotalBytes = 0;
-		for (const CSampledFile &candidate : candidates) {
-			if (!sample.empty() && (sample.size() >= nSampleCount || nTotalBytes + candidate.Length > nMaxBytes))
-				continue;
+		const std::filesystem::path root = GetDeterministicSampleRoot();
+		std::error_code ec;
+		std::filesystem::create_directories(root / L"nested", ec);
+		ec.clear();
+		std::filesystem::create_directories(root / L"part-boundary", ec);
+		ec.clear();
 
-			sample.push_back(candidate);
-			nTotalBytes += candidate.Length;
-			if (sample.size() >= nSampleCount || nTotalBytes >= nMaxBytes)
-				break;
+		struct CFixtureSpec
+		{
+			const wchar_t *pszRelativePath;
+			unsigned long long nLength;
+			BYTE bySalt;
+		};
+
+		static const CFixtureSpec fixtures[] = {
+			{L"alpha-small.bin", 4113ull, 0x11u},
+			{L"nested\\beta-window.bin", 3ull * 1024ull * 1024ull + 257ull, 0x33u},
+			{L"part-boundary\\gamma-part.bin", PARTSIZE_BYTES + 12345ull, 0x55u},
+			{L"nested\\delta-large.bin", 2ull * 1024ull * 1024ull + 17ull, 0x77u},
+		};
+
+		for (const CFixtureSpec &fixture : fixtures) {
+			const std::filesystem::path filePath = root / fixture.pszRelativePath;
+			std::filesystem::create_directories(filePath.parent_path(), ec);
+			ec.clear();
+
+			bool bRewrite = true;
+			if (std::filesystem::exists(filePath, ec)) {
+				const auto nExistingSize = std::filesystem::file_size(filePath, ec);
+				if (!ec && nExistingSize == fixture.nLength)
+					bRewrite = false;
+			}
+			ec.clear();
+
+			if (bRewrite)
+				WriteDeterministicFixtureFile(filePath, fixture.nLength, fixture.bySalt);
+
+			s_sample.push_back(CSampledFile{ filePath.wstring(), fixture.nLength });
 		}
 
-		if (sample.empty() && !candidates.empty())
-			sample.push_back(candidates.front());
-
-		return sample;
+		return s_sample;
 	}
 
 	/**
@@ -773,7 +736,7 @@ TEST_SUITE_BEGIN("parity");
 
 TEST_CASE("Actual temp-file buffered and Win32 digests match on sampled files")
 {
-	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	const std::vector<CSampledFile> sample = EnsureDeterministicSampleFiles();
 	REQUIRE_FALSE(sample.empty());
 
 	for (const CSampledFile &file : sample)
@@ -887,7 +850,7 @@ TEST_CASE("Mapped file reader reports invalid handles")
 TEST_CASE("Mapped file reader matches buffered digest on sampled actual temp files")
 {
 #if EMULE_TEST_HAVE_MAPPED_FILE_READER
-	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	const std::vector<CSampledFile> sample = EnsureDeterministicSampleFiles();
 	REQUIRE_FALSE(sample.empty());
 
 	for (const CSampledFile &file : sample)
@@ -903,10 +866,10 @@ TEST_SUITE_BEGIN("benchmark");
 
 TEST_CASE("File reader benchmark reports sampled temp-file throughput")
 {
-	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	const std::vector<CSampledFile> sample = EnsureDeterministicSampleFiles();
 	REQUIRE_FALSE(sample.empty());
 
-	const unsigned long long nSeed = GetRuntimeSampleSeed();
+	const unsigned long long nSeed = DETERMINISTIC_SAMPLE_SEED;
 	const unsigned long long nTotalBytes = GetSampleTotalBytes(sample);
 	unsigned long long nBufferedDigest = 0;
 	unsigned long long nWin32Digest = 0;
@@ -915,7 +878,7 @@ TEST_CASE("File reader benchmark reports sampled temp-file throughput")
 	CHECK_EQ(nBufferedDigest, nWin32Digest);
 
 	std::printf("BENCHMARK sample_root=%ls seed=%llu file_count=%zu total_bytes=%llu buffered_ms=%.3f win32_ms=%.3f buffered_mib_s=%.3f win32_mib_s=%.3f"
-		, GetRuntimeSampleRoot().c_str()
+		, GetDeterministicSampleRoot().c_str()
 		, nSeed
 		, sample.size()
 		, nTotalBytes
@@ -943,7 +906,7 @@ TEST_SUITE_BEGIN("pipeline");
 
 TEST_CASE("Actual temp-file full hashing artifacts match between buffered and preferred readers")
 {
-	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	const std::vector<CSampledFile> sample = EnsureDeterministicSampleFiles();
 	REQUIRE_FALSE(sample.empty());
 
 	const EReaderMode ePreferredMode = GetWorkspacePreferredReaderMode();
@@ -957,10 +920,10 @@ TEST_SUITE_BEGIN("pipeline-benchmark");
 
 TEST_CASE("Full hashing pipeline benchmark reports sampled temp-file parity and throughput")
 {
-	const std::vector<CSampledFile> sample = SelectRuntimeSampleFiles();
+	const std::vector<CSampledFile> sample = EnsureDeterministicSampleFiles();
 	REQUIRE_FALSE(sample.empty());
 
-	const unsigned long long nSeed = GetRuntimeSampleSeed();
+	const unsigned long long nSeed = DETERMINISTIC_SAMPLE_SEED;
 	const unsigned long long nTotalBytes = GetSampleTotalBytes(sample);
 	const EReaderMode ePreferredMode = GetWorkspacePreferredReaderMode();
 	unsigned long long nBufferedDigest = 0;
@@ -970,7 +933,7 @@ TEST_CASE("Full hashing pipeline benchmark reports sampled temp-file parity and 
 	CHECK_EQ(nBufferedDigest, nPreferredDigest);
 
 	std::printf("PIPELINE_BENCHMARK sample_root=%ls seed=%llu file_count=%zu total_bytes=%llu buffered_ms=%.3f preferred_ms=%.3f preferred_kind=%ls buffered_mib_s=%.3f preferred_mib_s=%.3f preferred_vs_buffered=%.3fx aggregate_digest=%llu\n"
-		, GetRuntimeSampleRoot().c_str()
+		, GetDeterministicSampleRoot().c_str()
 		, nSeed
 		, sample.size()
 		, nTotalBytes

@@ -159,6 +159,7 @@
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
     <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SharedFileListSeams.h')" />
+    <ClCompile Include="src\search_list_view.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h')" />
     <ClCompile Include="src\socket_io.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
     <ClCompile Include="src\socket_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
     <ClCompile Include="src\startup_config_override.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StartupConfigOverride.h')" />
@@ -188,6 +189,7 @@
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />

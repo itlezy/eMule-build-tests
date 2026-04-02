@@ -135,7 +135,9 @@
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BindStartupPolicy.h')" />
     <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
+    <ClCompile Include="src\client_credits.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h')" />
     <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
+    <ClCompile Include="src\collection.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h')" />
     <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
     <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
     <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketSeams.h')" />
@@ -169,7 +171,9 @@
     <ClInclude Include="include\TestSupport.h" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />

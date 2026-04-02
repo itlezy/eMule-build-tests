@@ -28,6 +28,13 @@ TEST_CASE("Async socket seam recognizes connect completion signals")
 	CHECK_FALSE(ShouldCompleteAsyncSocketConnect(connected, POLLOUT));
 }
 
+TEST_CASE("Async socket seam classifies WSAPoll hard failures separately from timeouts")
+{
+	CHECK(HasAsyncSocketPollFailure(SOCKET_ERROR));
+	CHECK_FALSE(HasAsyncSocketPollFailure(0));
+	CHECK_FALSE(HasAsyncSocketPollFailure(2));
+}
+
 TEST_CASE("Async socket seam gates accept and read callbacks on state and requested interest")
 {
 	CHECK(ShouldDispatchAsyncSocketAccept(listening, FD_ACCEPT, POLLIN));

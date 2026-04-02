@@ -36,6 +36,26 @@ TEST_CASE("Client credits seam sizes transient save buffers without overflow")
 	CHECK(nBufferSize == 4u * sizeof(uint32));
 	CHECK_FALSE(TryBuildClientCreditsSaveBufferSize((std::numeric_limits<size_t>::max)(), 2u, &nBufferSize));
 }
+
+TEST_CASE("Client credits seam resets secure-ident runtime state safely")
+{
+	int nDummySigner = 7;
+	int *pSigner = &nDummySigner;
+	unsigned char abyPublicKey[4] = {1, 2, 3, 4};
+	unsigned char nPublicKeyLen = 4;
+
+	ResetClientCreditsCryptState(pSigner, abyPublicKey, nPublicKeyLen);
+	CHECK(pSigner == nullptr);
+	CHECK(nPublicKeyLen == 0);
+	CHECK(abyPublicKey[0] == 0);
+	CHECK(abyPublicKey[1] == 0);
+	CHECK(abyPublicKey[2] == 0);
+	CHECK(abyPublicKey[3] == 0);
+
+	ResetClientCreditsCryptState(pSigner, abyPublicKey, nPublicKeyLen);
+	CHECK(pSigner == nullptr);
+	CHECK(nPublicKeyLen == 0);
+}
 #endif
 
 TEST_CASE("Client credits seam keeps the existing verify-failure state transition")

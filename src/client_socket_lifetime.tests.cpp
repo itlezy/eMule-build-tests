@@ -35,6 +35,21 @@ TEST_CASE("Client/socket detach clears both sides and stays safe when repeated")
 	CHECK(IsClientSocketPairDetached(&client, &socket));
 }
 
+TEST_CASE("Client/socket seam initializes a fresh socket peer slot before first link")
+{
+	FakeClient client = {};
+	FakeSocket socket;
+	socket.client = reinterpret_cast<FakeClient*>(1);
+
+	ResetClientSocketPeer(&socket);
+	CHECK(socket.client == nullptr);
+	CHECK(IsClientSocketPairDetached(static_cast<FakeClient*>(nullptr), &socket));
+
+	LinkClientSocketPair(&client, &socket);
+	CHECK(client.socket == &socket);
+	CHECK(socket.client == &client);
+}
+
 TEST_CASE("Client/socket relink detaches stale peers before reassigning the accepted socket")
 {
 	FakeClient existingClient = {};

@@ -68,4 +68,12 @@ TEST_CASE("Client/socket relink detaches stale peers before reassigning the acce
 	CHECK(temporaryClient.socket == nullptr);
 }
 
+TEST_CASE("Client/socket seam routes banned disconnect decisions to the socket-owned timeout path")
+{
+	CHECK(ShouldDisconnectBannedClientSocket(true, true));
+	CHECK_FALSE(ShouldDisconnectBannedClientSocket(true, false));
+	CHECK_FALSE(ShouldDisconnectBannedClientSocket(false, true));
+	CHECK_FALSE(ShouldDisconnectBannedClientSocket(false, false));
+}
+
 TEST_SUITE_END;

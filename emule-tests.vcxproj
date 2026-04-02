@@ -158,6 +158,7 @@
     <ClCompile Include="src\resource_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
+    <ClCompile Include="src\search_params.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchParams.h')" />
     <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SharedFileListSeams.h')" />
     <ClCompile Include="src\search_list_view.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h')" />
     <ClCompile Include="src\socket_io.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />

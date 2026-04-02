@@ -142,6 +142,7 @@
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" />
     <ClCompile Include="src\modern_limits.tests.cpp" />
+    <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\resource_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
@@ -167,6 +168,7 @@
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />

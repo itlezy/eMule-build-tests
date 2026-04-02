@@ -46,6 +46,21 @@ TEST_CASE("Upload throttler seam merges pending control queues without disturbin
 	CHECK(tempControlQueue.empty());
 }
 
+TEST_CASE("Upload throttler seam pops queued control sockets in priority order")
+{
+	FakeSocket firstA{1};
+	FakeSocket firstB{2};
+	FakeSocket normalA{3};
+
+	std::list<FakeSocket*> controlQueueFirst{&firstA, &firstB};
+	std::list<FakeSocket*> controlQueue{&normalA};
+
+	CHECK(UploadBandwidthThrottlerSeams::PopNextControlSocket(controlQueueFirst, controlQueue) == &firstA);
+	CHECK(UploadBandwidthThrottlerSeams::PopNextControlSocket(controlQueueFirst, controlQueue) == &firstB);
+	CHECK(UploadBandwidthThrottlerSeams::PopNextControlSocket(controlQueueFirst, controlQueue) == &normalA);
+	CHECK(UploadBandwidthThrottlerSeams::PopNextControlSocket(controlQueueFirst, controlQueue) == nullptr);
+}
+
 TEST_CASE("Upload throttler seam removes a socket from every control queue domain")
 {
 	FakeSocket keepA{1};

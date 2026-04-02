@@ -35,6 +35,47 @@ TEST_CASE("Async socket seam classifies WSAPoll hard failures separately from ti
 	CHECK_FALSE(HasAsyncSocketPollFailure(2));
 }
 
+#if defined(EMULE_TEST_HAVE_ASYNC_SOCKET_CONNECT_TARGET_SEAMS)
+TEST_CASE("Async socket seam snapshots connect targets before the addrinfo list can be released")
+{
+	SOCKADDR_IN sockAddr = {};
+	sockAddr.sin_family = AF_INET;
+	sockAddr.sin_addr.s_addr = 0x01020304u;
+	sockAddr.sin_port = 4662u;
+
+	addrinfo addr = {};
+	addr.ai_family = AF_INET;
+	addr.ai_socktype = SOCK_STREAM;
+	addr.ai_protocol = IPPROTO_TCP;
+	addr.ai_addrlen = sizeof sockAddr;
+	addr.ai_addr = reinterpret_cast<sockaddr*>(&sockAddr);
+
+	AsyncSocketExConnectTarget target = {};
+	REQUIRE(TryCaptureAsyncSocketConnectTarget(&addr, target));
+	CHECK(target.nFamily == AF_INET);
+	CHECK(target.nSocketType == SOCK_STREAM);
+	CHECK(target.nProtocol == IPPROTO_TCP);
+	CHECK(target.nSockAddrLen == sizeof sockAddr);
+
+	const SOCKADDR_IN &copiedSockAddr = reinterpret_cast<const SOCKADDR_IN&>(target.sockAddr);
+	CHECK(copiedSockAddr.sin_addr.s_addr == sockAddr.sin_addr.s_addr);
+	CHECK(copiedSockAddr.sin_port == sockAddr.sin_port);
+}
+
+TEST_CASE("Async socket seam rejects impossible connect-target spans")
+{
+	addrinfo addr = {};
+	AsyncSocketExConnectTarget target = {};
+
+	CHECK_FALSE(TryCaptureAsyncSocketConnectTarget(&addr, target));
+
+	sockaddr_storage tooLarge = {};
+	addr.ai_addr = reinterpret_cast<sockaddr*>(&tooLarge);
+	addr.ai_addrlen = static_cast<int>(sizeof(tooLarge) + 1);
+	CHECK_FALSE(TryCaptureAsyncSocketConnectTarget(&addr, target));
+}
+#endif
+
 TEST_CASE("Async socket seam only yields callback-drain polling while callbacks remain in flight")
 {
 	CHECK(ShouldYieldForAsyncSocketCallbackDrain(1));

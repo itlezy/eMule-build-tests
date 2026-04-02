@@ -3,6 +3,7 @@
 
 #include <limits>
 
+#include "PartFileHashSeams.h"
 #include "PartFileNumericSeams.h"
 
 TEST_SUITE_BEGIN("parity");
@@ -49,6 +50,14 @@ TEST_CASE("Part file numeric seam clamps list counts and 32-bit scores before na
 
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(17u), static_cast<uint16>(17u));
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(static_cast<uint32>((std::numeric_limits<uint16>::max)()) + 1u), (std::numeric_limits<uint16>::max)());
+}
+
+TEST_CASE("Part-file hash seam rejects worker results whose theoretical hash layout drifted")
+{
+	CHECK(HasMatchingPartFileHashLayout(0u, 0u, 0u, 0u));
+	CHECK(HasMatchingPartFileHashLayout(12u, 12u, 11u, 11u));
+	CHECK_FALSE(HasMatchingPartFileHashLayout(12u, 13u, 11u, 11u));
+	CHECK_FALSE(HasMatchingPartFileHashLayout(12u, 12u, 11u, 10u));
 }
 
 TEST_SUITE_END;

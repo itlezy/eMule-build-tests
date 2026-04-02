@@ -139,6 +139,7 @@
     <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
     <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
     <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketSeams.h')" />
+    <ClCompile Include="src\format_safety.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h')" />
     <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
@@ -173,6 +174,7 @@
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />

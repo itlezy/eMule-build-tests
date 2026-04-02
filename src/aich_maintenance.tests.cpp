@@ -49,4 +49,19 @@ TEST_CASE("AICH maintenance seam keeps the newest stored duplicate hash position
 	CHECK_EQ(newerDuplicate.nReplacedFilePos, static_cast<ULONGLONG>(40u));
 }
 
+TEST_CASE("AICH maintenance seam invalidates malformed one-sided tree nodes")
+{
+	const IncompleteAICHTreeNodeAction incompleteLeft = AICHMaintenanceSeams::GetIncompleteAICHTreeNodeAction(true, false);
+	CHECK(incompleteLeft.bHasIncompleteChildren);
+	CHECK(incompleteLeft.bShouldInvalidateNodeHash);
+
+	const IncompleteAICHTreeNodeAction incompleteRight = AICHMaintenanceSeams::GetIncompleteAICHTreeNodeAction(false, true);
+	CHECK(incompleteRight.bHasIncompleteChildren);
+	CHECK(incompleteRight.bShouldInvalidateNodeHash);
+
+	const IncompleteAICHTreeNodeAction completeNode = AICHMaintenanceSeams::GetIncompleteAICHTreeNodeAction(true, true);
+	CHECK_FALSE(completeNode.bHasIncompleteChildren);
+	CHECK_FALSE(completeNode.bShouldInvalidateNodeHash);
+}
+
 TEST_SUITE_END;

@@ -131,6 +131,7 @@
     <ClCompile Include="src\aich_sync_thread.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
     <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncSocketExSeams.h')" />
     <ClCompile Include="src\atomic_state.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AppStateSeams.h')" />
+    <ClCompile Include="src\base_client_friend_buddy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" />
     <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
@@ -166,6 +167,7 @@
     <ClInclude Include="include\HashProbe.h" />
     <ClInclude Include="include\TestSupport.h" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />

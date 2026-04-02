@@ -117,6 +117,28 @@ TEST_CASE("ReleaseOwnedObjectIfMatched only releases ownership for the accepted 
 	}
 }
 
+TEST_CASE("ReleaseOwnedObjectIfSuperseded drops the consumed temporary object without touching the replacement")
+{
+	std::unique_ptr<FakeOwnedObject> pOwnedObject(new FakeOwnedObject{4});
+	FakeOwnedObject *pTemporaryObject = pOwnedObject.get();
+	FakeOwnedObject replacementObject = {5};
+
+	ReleaseOwnedObjectIfSuperseded(pOwnedObject, pTemporaryObject, &replacementObject);
+
+	CHECK(pOwnedObject.get() == nullptr);
+}
+
+TEST_CASE("ReleaseOwnedObjectIfSuperseded keeps ownership when the raw pointer was not replaced")
+{
+	std::unique_ptr<FakeOwnedObject> pOwnedObject(new FakeOwnedObject{6});
+	FakeOwnedObject *pTemporaryObject = pOwnedObject.get();
+
+	ReleaseOwnedObjectIfSuperseded(pOwnedObject, pTemporaryObject, pTemporaryObject);
+
+	REQUIRE(pOwnedObject.get() != nullptr);
+	CHECK(pOwnedObject->value == 6);
+}
+
 TEST_CASE("AppendPendingBlocksFromStage preserves staged pointer order")
 {
 	FakeRequestedBlock firstBlock = {1};

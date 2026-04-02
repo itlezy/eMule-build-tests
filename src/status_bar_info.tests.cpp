@@ -31,3 +31,46 @@ TEST_CASE("Status bar IP pane keeps a known bind address when public IP is still
 	CHECK(StatusBarInfo::FormatNetworkAddressPaneText(strBindAddress, 0) == CString(_T("B:192.168.50.12|P:?")));
 	CHECK(StatusBarInfo::FormatNetworkAddressPaneToolTip(strBindAddress, 0) == CString(_T("Bind IP: 192.168.50.12 | Public IP: Unknown")));
 }
+
+TEST_CASE("Status bar IP pane surfaces startup bind blocks explicitly")
+{
+	const CString strReason(_T("Bind interface hide.me is unavailable"));
+
+	CHECK(StatusBarInfo::FormatNetworkAddressPaneText(CString(), 0, true) == CString(_T("B:Blocked|P:Offline")));
+	CHECK(StatusBarInfo::FormatNetworkAddressPaneToolTip(CString(), 0, true, strReason)
+		== CString(_T("Bind IP: Blocked | Public IP: Offline | Bind interface hide.me is unavailable")));
+}
+
+TEST_CASE("Status bar users pane keeps eD2K and Kad contributions readable")
+{
+	CHECK(StatusBarInfo::FormatUsersPaneText(_T("Users"), _T("Files"), _T("12.3M"), _T("4.5M"), _T("98.7M"), _T("6.5M"), true, true)
+		== CString(_T("Users:12.3M+4.5M|Files:98.7M+6.5M")));
+	CHECK(StatusBarInfo::FormatUsersPaneToolTip(_T("Users"), _T("Files"), _T("12.3M"), _T("4.5M"), _T("98.7M"), _T("6.5M"), true, true)
+		== CString(_T("Users eD2K:12.3M | Kad:4.5M | Files eD2K:98.7M | Kad:6.5M")));
+}
+
+TEST_CASE("Status bar users pane falls back cleanly to one active network")
+{
+	CHECK(StatusBarInfo::FormatUsersPaneText(_T("Users"), _T("Files"), _T("12.3M"), _T("4.5M"), _T("98.7M"), _T("6.5M"), true, false)
+		== CString(_T("Users:12.3M|Files:98.7M")));
+	CHECK(StatusBarInfo::FormatUsersPaneToolTip(_T("Users"), _T("Files"), _T("12.3M"), _T("4.5M"), _T("98.7M"), _T("6.5M"), false, true)
+		== CString(_T("Users Kad:4.5M | Files Kad:6.5M")));
+}
+
+TEST_CASE("Status bar connection pane highlights richer live states and server diagnostics")
+{
+	CHECK(StatusBarInfo::FormatConnectionPaneText(_T("Low ID"), _T("Open")) == CString(_T("eD2K:Low ID|Kad:Open")));
+	CHECK(StatusBarInfo::FormatConnectionPaneText(_T("Connecting"), _T("Bootstrap 42%")) == CString(_T("eD2K:Connecting|Kad:Bootstrap 42%")));
+	CHECK(StatusBarInfo::FormatConnectionPaneToolTip(_T("High ID"), _T("Firewalled"), _T("Server"), _T("Users"), _T("Razorback"), _T("1,234,567"), _T("42 ms"))
+		== CString(_T("eD2K:High ID|Kad:Firewalled | Server: Razorback (Users: 1,234,567, 42 ms)")));
+}
+
+TEST_CASE("Status bar transfer pane appends compact activity and expands it in the tooltip")
+{
+	CHECK(StatusBarInfo::FormatTransferPaneText(_T("Up: 1.0 | Down: 2.0"), 3, 2, 4)
+		== CString(_T("Up: 1.0 | Down: 2.0 | D:3 U:2/4")));
+	CHECK(StatusBarInfo::FormatTransferPaneText(_T("Up: 0.0 | Down: 0.0"), 0, 0, 0)
+		== CString(_T("Up: 0.0 | Down: 0.0 | Idle")));
+	CHECK(StatusBarInfo::FormatTransferPaneToolTip(_T("Up: 1.0 | Down: 2.0"), _T("Downloading"), _T("Uploading"), _T("On Queue"), 3, 12, 2, 4, 128)
+		== CString(_T("Up: 1.0 | Down: 2.0 | Downloading: 3/12 | Uploading: 2/4 | On Queue: 128")));
+}

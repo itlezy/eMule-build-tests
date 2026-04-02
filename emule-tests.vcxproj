@@ -153,6 +153,7 @@
     <ClCompile Include="src\status_bar_info.tests.cpp" />
     <ClCompile Include="src\test-main.cpp" />
     <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h')" />
+    <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h')" />
     <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadSupport.h')" />
   </ItemGroup>
   <ItemGroup>
@@ -168,6 +169,7 @@
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />
     <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h')" />
+    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h')" />
     <ClInclude Include="third_party\doctest\doctest.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

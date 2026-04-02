@@ -1,5 +1,6 @@
 #include "../third_party/doctest/doctest.h"
 #include "../include/TestSupport.h"
+#include <limits>
 #include "ProtocolGuards.h"
 #include "ProtocolParsers.h"
 #include "ServerConnectionGuards.h"
@@ -56,6 +57,26 @@ TEST_CASE("Protocol guard accepts a reasonable tag count for the remaining packe
 TEST_CASE("Protocol guard accepts compressed UDP payloads that include at least one body byte")
 {
 	CHECK(HasCompressedUdpPayload(3));
+}
+
+TEST_CASE("Protocol guard accepts exact-fit packet spans and bounded size arithmetic")
+{
+	size_t nCombinedSize = 0;
+	size_t nExpandedSize = 0;
+	CHECK(CanReadPacketSpan(24, 16, 8));
+	CHECK(TryAddSize(32, 10, &nCombinedSize));
+	CHECK_EQ(nCombinedSize, static_cast<size_t>(42));
+	CHECK(TryMultiplyAddSize(32, 10, 300, &nExpandedSize));
+	CHECK_EQ(nExpandedSize, static_cast<size_t>(620));
+}
+
+TEST_CASE("Protocol guard accepts restorable TCP header fragments and minimal callback or block packet headers")
+{
+	CHECK(CanRestoreTcpPendingHeader(PROTOCOL_PACKET_HEADER_SIZE - 1, PROTOCOL_PACKET_HEADER_SIZE, TCP_READ_BUFFER_SIZE));
+	CHECK(CanStoreTcpPendingHeader(PROTOCOL_PACKET_HEADER_SIZE - 1, PROTOCOL_PACKET_HEADER_SIZE));
+	CHECK(CanContinuePacketAssembly(100, 100));
+	CHECK(HasUdpCallbackPayload(17));
+	CHECK(HasDownloadBlockPacketHeader(24, false, false));
 }
 
 TEST_CASE("Protocol guard accepts blob payloads that stay within the remaining packet bytes")
@@ -157,6 +178,23 @@ TEST_CASE("Protocol guard rejects short server UDP payloads before reading the h
 TEST_CASE("Protocol guard rejects compressed UDP payloads that have no compressed body bytes")
 {
 	CHECK_FALSE(HasCompressedUdpPayload(2));
+}
+
+TEST_CASE("Protocol guard rejects truncated packet spans and impossible TCP partial-header states")
+{
+	CHECK_FALSE(CanReadPacketSpan(23, 16, 8));
+	CHECK_FALSE(CanRestoreTcpPendingHeader(PROTOCOL_PACKET_HEADER_SIZE + 1, PROTOCOL_PACKET_HEADER_SIZE, TCP_READ_BUFFER_SIZE));
+	CHECK_FALSE(CanStoreTcpPendingHeader(PROTOCOL_PACKET_HEADER_SIZE, PROTOCOL_PACKET_HEADER_SIZE));
+	CHECK_FALSE(CanContinuePacketAssembly(100, 101));
+}
+
+TEST_CASE("Protocol guard rejects overflowed size arithmetic and truncated callback or block packet headers")
+{
+	size_t nIgnoredSize = 0;
+	CHECK_FALSE(TryAddSize(std::numeric_limits<size_t>::max(), 1, &nIgnoredSize));
+	CHECK_FALSE(TryMultiplyAddSize(std::numeric_limits<size_t>::max(), 2, 1, &nIgnoredSize));
+	CHECK_FALSE(HasUdpCallbackPayload(16));
+	CHECK_FALSE(HasDownloadBlockPacketHeader(23, false, false));
 }
 
 TEST_CASE("Protocol guard rejects blob reads once the parser position has moved past the packet length")

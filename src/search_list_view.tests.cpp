@@ -80,3 +80,19 @@ TEST_CASE("Search list visible row lookup returns the flattened child index")
 	CHECK_EQ(SearchListViewSeams::FindVisibleRowIndex(aVisibleRows, 4u), 3);
 	CHECK_EQ(SearchListViewSeams::FindVisibleRowIndex(aVisibleRows, 999u), -1);
 }
+
+TEST_CASE("Search list owner-data mutations marshal only when a worker thread touches the UI projection")
+{
+	CHECK(SearchListViewSeams::ShouldMarshalOwnerDataMutation(11u, 22u));
+	CHECK_FALSE(SearchListViewSeams::ShouldMarshalOwnerDataMutation(22u, 22u));
+	CHECK_FALSE(SearchListViewSeams::ShouldMarshalOwnerDataMutation(0u, 22u));
+}
+
+TEST_CASE("Search list owner-data refresh coalescing posts only one wakeup while pending")
+{
+	bool bRefreshMessagePending = false;
+
+	CHECK(SearchListViewSeams::TryQueueCoalescedOwnerDataRefresh(bRefreshMessagePending));
+	CHECK(bRefreshMessagePending);
+	CHECK_FALSE(SearchListViewSeams::TryQueueCoalescedOwnerDataRefresh(bRefreshMessagePending));
+}

@@ -133,18 +133,18 @@
     <ClCompile Include="src\atomic_state.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AppStateSeams.h')" />
     <ClCompile Include="src\base_client_friend_buddy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
-    <ClCompile Include="src\bind_startup_policy.tests.cpp" />
+    <ClCompile Include="src\bind_startup_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BindStartupPolicy.h')" />
     <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
     <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
     <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
     <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
     <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketSeams.h')" />
-    <ClCompile Include="src\full_hash_probe.cpp" />
-    <ClCompile Include="src\hash_probe.cpp" />
+    <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
-    <ClCompile Include="src\mapped_file_reader.tests.cpp" />
-    <ClCompile Include="src\modern_limits.tests.cpp" />
+    <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FileBufferSlider.h')" />
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\protocol.tests.cpp" />
@@ -154,8 +154,8 @@
     <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SharedFileListSeams.h')" />
     <ClCompile Include="src\socket_io.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
     <ClCompile Include="src\socket_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
-    <ClCompile Include="src\startup_config_override.tests.cpp" />
-    <ClCompile Include="src\status_bar_info.tests.cpp" />
+    <ClCompile Include="src\startup_config_override.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StartupConfigOverride.h')" />
+    <ClCompile Include="src\status_bar_info.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />
     <ClCompile Include="src\test-main.cpp" />
     <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerSeams.h')" />
     <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h')" />

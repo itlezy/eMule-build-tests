@@ -4,6 +4,7 @@
 #include "CollectionSeams.h"
 
 #include <limits>
+#include <vector>
 
 TEST_SUITE_BEGIN("parity");
 
@@ -35,5 +36,25 @@ TEST_CASE("Collection seam keeps malformed single-entry imports skippable")
 {
 	CHECK(ShouldContinueAfterCollectionEntryFailure());
 }
+
+#if defined(EMULE_TEST_HAVE_COLLECTION_OWNERSHIP_SEAMS)
+TEST_CASE("Collection seam keeps author-key ownership and raw-view state in sync")
+{
+	std::vector<BYTE> keyData;
+	uint32 nKeySize = 0;
+	const BYTE rawKey[] = {0x10u, 0x20u, 0x30u};
+
+	AssignCollectionAuthorKey(rawKey, 3u, keyData, nKeySize);
+	const BYTE *pKeyData = GetCollectionAuthorKeyData(keyData);
+	REQUIRE(pKeyData != NULL);
+	CHECK(nKeySize == 3u);
+	CHECK(keyData.size() == 3u);
+
+	ClearCollectionAuthorKey(keyData, nKeySize);
+	pKeyData = GetCollectionAuthorKeyData(keyData);
+	CHECK(pKeyData == NULL);
+	CHECK(nKeySize == 0u);
+}
+#endif
 
 TEST_SUITE_END;

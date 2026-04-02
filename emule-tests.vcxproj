@@ -147,6 +147,7 @@
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
+    <ClCompile Include="src\listen_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ListenSocketSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FileBufferSlider.h')" />
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />

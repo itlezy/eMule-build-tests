@@ -1,11 +1,12 @@
 # eMule Shared Tests
 
-This repository is a shared workspace-level test asset for the `eMule-build` and `eMule-build-oracle` workspaces.
+This repository is a shared workspace-level test asset for the `eMule-build` workspace and the oracle workspaces.
 
 Expected fixed layout:
 
 - `C:\prj\p2p\eMule\eMulebb\eMule-build`
-- `C:\prj\p2p\eMule\eMulebb\eMule-build-oracle`
+- `C:\prj\p2p\eMule\eMulebb\eMule-build-oracle-v0.72a-oracle`
+- `C:\prj\p2p\eMule\eMulebb\eMule-build-oracle-v0.60d-oracle`
 - `C:\prj\p2p\eMule\eMulebb\eMule-build-tests`
 
 It owns:
@@ -18,10 +19,24 @@ It owns:
 
 The project is built against the local `eMule` checkout in whichever workspace invokes it. It is intentionally not a runtime dependency like the `eMule-*` third-party submodules, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
+Supported oracle workspaces:
+
+- `eMule-build-oracle-v0.72a-oracle`
+- `eMule-build-oracle-v0.60d-oracle`
+
+Oracle workspaces may be edited when the change is strictly to enable tests, seams, logging, tracing, or debugging. They are not feature-development branches.
+
 Current suite model:
 
-- `parity`: cases that must pass in both the `eMule-build` and `eMule-build-oracle` workspaces
-- `divergence`: cases that are expected to pass on `eMule-build` and fail on the pre-refactor `eMule-build-oracle` workspace
+- `parity`: cases that must pass in both the `eMule-build` workspace and the selected oracle workspace
+- `divergence`: cases that are expected to pass on `eMule-build` and fail on the selected pre-refactor oracle workspace
+
+Oracle build and launch quick reference:
+
+- `eMule-build-oracle-v0.72a-oracle`: use `pwsh -File .\workspace.ps1 validate`, `build-libs`, `build-app`, and `run-binary`; the `.cmd` wrappers are compatibility shims over `workspace.ps1`
+- `eMule-build-oracle-v0.60d-oracle`: use the legacy root scripts `003_build_MSBuild_ALL_libs*.cmd`, `build_MSBuild_eMule*.cmd`, and `launch_binary_eMule*.cmd`
+- GUI launch wrappers are acceptable for quick manual runs. For oracle workspaces, deliberate test/debug launches should stay on the supported wrapper flows because direct `emule.exe -c <profile-dir>` launching is only available on the latest dev branch
+- for live-diff runs, point `-OracleWorkspaceRoot` at the oracle you want to compare against; the default remains `C:\prj\p2p\eMule\eMulebb\eMule-build-oracle-v0.72a-oracle`
 
 Standalone probe mode:
 

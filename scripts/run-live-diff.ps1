@@ -20,7 +20,7 @@ param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
 
     [string]$DevWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build',
-    [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-oracle',
+    [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-oracle-v0.72a-oracle',
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',

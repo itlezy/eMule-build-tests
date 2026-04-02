@@ -1,4 +1,5 @@
 #include "../third_party/doctest/doctest.h"
+#include "../include/TestSupport.h"
 
 #include "AICHSyncThreadSeams.h"
 

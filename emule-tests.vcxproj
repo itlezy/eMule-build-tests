@@ -128,6 +128,7 @@
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp')" />
     <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp')" />
     <ClCompile Include="src\async_datagram_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncDatagramSocketSeams.h')" />
+    <ClCompile Include="src\aich_maintenance.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHMaintenanceSeams.h')" />
     <ClCompile Include="src\aich_sync_thread.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
     <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncSocketExSeams.h')" />
     <ClCompile Include="src\atomic_state.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AppStateSeams.h')" />

@@ -57,6 +57,43 @@ TEST_CASE("ScopedHandle closes the wrapped Win32 handle on scope exit")
 	CHECK(::GetLastError() == ERROR_INVALID_HANDLE);
 }
 
+TEST_CASE("ScopedHandle reset closes the previously owned handle before replacing it")
+{
+	HANDLE hFirstEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+	HANDLE hSecondEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+	REQUIRE(hFirstEvent != NULL);
+	REQUIRE(hSecondEvent != NULL);
+
+	ScopedHandle hOwnedEvent(hFirstEvent);
+	hOwnedEvent.Reset(hSecondEvent);
+
+	CHECK(hOwnedEvent.IsValid());
+	CHECK(hOwnedEvent.Get() == hSecondEvent);
+
+	::SetLastError(ERROR_SUCCESS);
+	CHECK(::WaitForSingleObject(hFirstEvent, 0) == WAIT_FAILED);
+	CHECK(::GetLastError() == ERROR_INVALID_HANDLE);
+
+	HANDLE hReleasedEvent = hOwnedEvent.Release();
+	CHECK(hReleasedEvent == hSecondEvent);
+	CHECK_FALSE(hOwnedEvent.IsValid());
+	CHECK(::CloseHandle(hReleasedEvent) != 0);
+}
+
+TEST_CASE("ScopedHandle release keeps the raw handle alive for the next owner")
+{
+	HANDLE hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+	REQUIRE(hEvent != NULL);
+
+	ScopedHandle hOwnedEvent(hEvent);
+	HANDLE hReleasedEvent = hOwnedEvent.Release();
+
+	CHECK(hReleasedEvent == hEvent);
+	CHECK_FALSE(hOwnedEvent.IsValid());
+	CHECK(::WaitForSingleObject(hReleasedEvent, 0) == WAIT_TIMEOUT);
+	CHECK(::CloseHandle(hReleasedEvent) != 0);
+}
+
 TEST_CASE("ReleaseOwnedObjectIfMatched only releases ownership for the accepted object")
 {
 	{

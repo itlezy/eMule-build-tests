@@ -152,6 +152,7 @@
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h')" />
+    <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartStatusOwnershipSeams.h')" />
     <ClCompile Include="src\protocol.tests.cpp" />
     <ClCompile Include="src\resource_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
     <ClCompile Include="src\ring.tests.cpp" />

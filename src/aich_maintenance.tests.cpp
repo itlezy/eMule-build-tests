@@ -38,4 +38,15 @@ TEST_CASE("AICH maintenance seam yields briefly for foreground hashing and exits
 	CHECK_EQ(shutdownAction.dwSleepMilliseconds, static_cast<DWORD>(0u));
 }
 
+TEST_CASE("AICH maintenance seam keeps the newest stored duplicate hash position")
+{
+	const StoredAICHHashUpdate olderDuplicate = AICHMaintenanceSeams::ResolveStoredAICHHashUpdate(40u, 30u);
+	CHECK_FALSE(olderDuplicate.bShouldReplaceExisting);
+	CHECK_EQ(olderDuplicate.nReplacedFilePos, static_cast<ULONGLONG>(0u));
+
+	const StoredAICHHashUpdate newerDuplicate = AICHMaintenanceSeams::ResolveStoredAICHHashUpdate(40u, 55u);
+	CHECK(newerDuplicate.bShouldReplaceExisting);
+	CHECK_EQ(newerDuplicate.nReplacedFilePos, static_cast<ULONGLONG>(40u));
+}
+
 TEST_SUITE_END;

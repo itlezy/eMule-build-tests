@@ -22,3 +22,36 @@ TEST_CASE("Shared file list rejects complete files that are neither directory-sh
 {
 	CHECK_FALSE(SharedFileListSeams::CanAddSharedFile(false, false, false));
 }
+
+TEST_CASE("Shared file auto-reload schedules only when the stable snapshot allows it")
+{
+	const SharedFileListSeams::AutoReloadScheduleState state = {
+		true,
+		false,
+		false,
+		true,
+		false,
+		true
+	};
+
+	CHECK(SharedFileListSeams::ShouldScheduleAutoReload(state));
+	CHECK_FALSE(SharedFileListSeams::ShouldScheduleAutoReload({ false, false, false, true, false, true }));
+	CHECK_FALSE(SharedFileListSeams::ShouldScheduleAutoReload({ true, true, false, true, false, true }));
+	CHECK_FALSE(SharedFileListSeams::ShouldScheduleAutoReload({ true, false, true, true, false, true }));
+	CHECK_FALSE(SharedFileListSeams::ShouldScheduleAutoReload({ true, false, false, false, true, true }));
+}
+
+TEST_CASE("Shared file auto-reload accepts fallback polling as a valid dirty-work trigger")
+{
+	CHECK(SharedFileListSeams::ShouldScheduleAutoReload({ true, false, false, true, true, false }));
+	CHECK_FALSE(SharedFileListSeams::ShouldScheduleAutoReload({ true, false, false, true, false, false }));
+}
+
+TEST_CASE("Shared file import yield only applies to active full-part imports")
+{
+	CHECK(SharedFileListSeams::ShouldYieldAfterImportProgress(true, true, true));
+	CHECK_FALSE(SharedFileListSeams::ShouldYieldAfterImportProgress(false, true, true));
+	CHECK_FALSE(SharedFileListSeams::ShouldYieldAfterImportProgress(true, false, true));
+	CHECK_FALSE(SharedFileListSeams::ShouldYieldAfterImportProgress(true, true, false));
+	CHECK(SharedFileListSeams::kImportPartProgressYieldMs == 100);
+}

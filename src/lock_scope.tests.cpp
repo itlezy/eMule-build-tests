@@ -27,6 +27,13 @@ TEST_CASE("UDP control send requeue only retries would-block results")
 	CHECK_FALSE(ShouldRequeueUdpControlPacket(42));
 }
 
+TEST_CASE("UDP control send only yields after requeueing a would-block packet")
+{
+	CHECK(ShouldYieldAfterUdpControlRequeue(-1));
+	CHECK_FALSE(ShouldYieldAfterUdpControlRequeue(0));
+	CHECK_FALSE(ShouldYieldAfterUdpControlRequeue(42));
+}
+
 TEST_CASE("UDP control queue wakeups only happen when a queued packet can be sent")
 {
 	CHECK(ShouldSignalUdpControlQueue(false, false));

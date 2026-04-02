@@ -35,6 +35,14 @@ TEST_CASE("Async socket seam classifies WSAPoll hard failures separately from ti
 	CHECK_FALSE(HasAsyncSocketPollFailure(2));
 }
 
+TEST_CASE("Async socket seam only yields callback-drain polling while callbacks remain in flight")
+{
+	CHECK(ShouldYieldForAsyncSocketCallbackDrain(1));
+	CHECK(ShouldYieldForAsyncSocketCallbackDrain(7));
+	CHECK_FALSE(ShouldYieldForAsyncSocketCallbackDrain(0));
+	CHECK_FALSE(ShouldYieldForAsyncSocketCallbackDrain(-1));
+}
+
 TEST_CASE("Async socket seam gates accept and read callbacks on state and requested interest")
 {
 	CHECK(ShouldDispatchAsyncSocketAccept(listening, FD_ACCEPT, POLLIN));

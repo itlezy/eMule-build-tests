@@ -81,6 +81,24 @@ TEST_CASE("Search list visible row lookup returns the flattened child index")
 	CHECK_EQ(SearchListViewSeams::FindVisibleRowIndex(aVisibleRows, 999u), -1);
 }
 
+TEST_CASE("Search list owner-data selection resolves logical rows by visible index")
+{
+	const std::vector<SearchListViewSeams::SStoredRow> aStoredRows{
+		{10u, 0u, false, true},
+		{11u, 10u, false, false},
+		{12u, 0u, false, false}
+	};
+
+	std::vector<SearchListViewSeams::SVisibleRow> aVisibleRows;
+	SearchListViewSeams::BuildVisibleRows(aStoredRows, &aVisibleRows);
+
+	CHECK_EQ(SearchListViewSeams::GetVisibleRowIdAt(aVisibleRows, 0), 10u);
+	CHECK_EQ(SearchListViewSeams::GetVisibleRowIdAt(aVisibleRows, 1), 11u);
+	CHECK_EQ(SearchListViewSeams::GetVisibleRowIdAt(aVisibleRows, 2), 12u);
+	CHECK_EQ(SearchListViewSeams::GetVisibleRowIdAt(aVisibleRows, -1), 0u);
+	CHECK_EQ(SearchListViewSeams::GetVisibleRowIdAt(aVisibleRows, 99), 0u);
+}
+
 TEST_CASE("Search list owner-data mutations marshal only when a worker thread touches the UI projection")
 {
 	CHECK(SearchListViewSeams::ShouldMarshalOwnerDataMutation(11u, 22u));
@@ -95,4 +113,11 @@ TEST_CASE("Search list owner-data refresh coalescing posts only one wakeup while
 	CHECK(SearchListViewSeams::TryQueueCoalescedOwnerDataRefresh(bRefreshMessagePending));
 	CHECK(bRefreshMessagePending);
 	CHECK_FALSE(SearchListViewSeams::TryQueueCoalescedOwnerDataRefresh(bRefreshMessagePending));
+}
+
+TEST_CASE("Search list virtual item count updates only after owner-data creation is complete")
+{
+	CHECK(SearchListViewSeams::CanApplyOwnerDataItemCount(true, true));
+	CHECK_FALSE(SearchListViewSeams::CanApplyOwnerDataItemCount(false, true));
+	CHECK_FALSE(SearchListViewSeams::CanApplyOwnerDataItemCount(true, false));
 }

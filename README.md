@@ -16,6 +16,7 @@ It owns:
 - parity and divergence suites for live dev-vs-oracle comparison
 - workspace-level build and live-diff scripts
 - fixture, manifest, and report directories for future protocol coverage
+- the deterministic live-profile seed used by the named-pipe live harness
 
 The project is built against the local `eMule` checkout in whichever workspace invokes it. It is intentionally not a runtime dependency like the `eMule-*` third-party submodules, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
@@ -47,3 +48,9 @@ Standalone probe mode:
 - `build\<tag>\x64\Debug\emule-tests.exe --full-hash-probe "<full file path>"` runs the offline MD4 plus AICH hashing pipeline without launching `emule.exe`
 - the full-hash mode also supports `--reader buffered|mapped|both` and `--progress-mib <N>`
 - use the full-hash mode when you need to separate raw file access from higher-level `CKnownFile::CreateFromFile` work such as metadata extraction, known-file registration, or UI progress handling
+
+Deterministic live-profile seed:
+
+- `manifests\live-profile-seed\config` stores the canonical test-only profile inputs for live named-pipe runs
+- the seed is intentionally minimal and currently vendors only `preferences.ini`, `nodes.dat`, and `server.met`
+- runtime working folders are copied from that seed and then expanded with per-run logs, temp files, and other mutable state

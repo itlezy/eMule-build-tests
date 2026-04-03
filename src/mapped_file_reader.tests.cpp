@@ -743,10 +743,6 @@ TEST_CASE("Actual temp-file buffered and Win32 digests match on sampled files")
 		CHECK_EQ(ComputeBufferedDigest(file.Path), ComputeWin32Digest(file.Path));
 }
 
-TEST_SUITE_END;
-
-TEST_SUITE_BEGIN("divergence");
-
 TEST_CASE("Mapped file reader returns the exact requested slice across allocation boundaries")
 {
 #if EMULE_TEST_HAVE_MAPPED_FILE_READER
@@ -855,6 +851,57 @@ TEST_CASE("Mapped file reader matches buffered digest on sampled actual temp fil
 
 	for (const CSampledFile &file : sample)
 		CHECK_EQ(ComputeMappedDigest(file.Path), ComputeBufferedDigest(file.Path));
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
+}
+
+TEST_CASE("Mapped file reader accepts a null error output pointer on successful reads")
+{
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	const std::vector<BYTE> fixture = CreateMappedReaderFixture(8192 + 17);
+	const std::wstring tempPath = CreateMappedReaderTempPath();
+	WriteMappedReaderFixture(tempPath, fixture);
+
+	HANDLE hFile = ::CreateFileW(tempPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	REQUIRE(hFile != INVALID_HANDLE_VALUE);
+
+	CFnvMappedVisitor visitor;
+	CHECK(VisitMappedFileRange(hFile, 0, fixture.size(), visitor, NULL));
+
+	CFnv1a64 referenceHash;
+	referenceHash.Add(fixture.data(), fixture.size());
+	CHECK_EQ(visitor.GetDigest(), referenceHash.GetValue());
+
+	::CloseHandle(hFile);
+	::DeleteFileW(tempPath.c_str());
+#else
+	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
+#endif
+}
+
+TEST_CASE("Mapped file reader returns exact tail slices at the end of the file")
+{
+#if EMULE_TEST_HAVE_MAPPED_FILE_READER
+	const std::vector<BYTE> fixture = CreateMappedReaderFixture(4096 + 33);
+	const std::wstring tempPath = CreateMappedReaderTempPath();
+	WriteMappedReaderFixture(tempPath, fixture);
+
+	HANDLE hFile = ::CreateFileW(tempPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	REQUIRE(hFile != INVALID_HANDLE_VALUE);
+
+	CFnvMappedVisitor visitor;
+	DWORD dwError = ERROR_SUCCESS;
+	const size_t nOffset = fixture.size() - 1u;
+	CHECK(VisitMappedFileRange(hFile, nOffset, 1u, visitor, &dwError));
+	CHECK_EQ(dwError, static_cast<DWORD>(ERROR_SUCCESS));
+
+	CFnv1a64 referenceHash;
+	referenceHash.Add(&fixture[nOffset], 1u);
+	CHECK_EQ(visitor.GetDigest(), referenceHash.GetValue());
+
+	::CloseHandle(hFile);
+	::DeleteFileW(tempPath.c_str());
 #else
 	CHECK_MESSAGE(false, "MappedFileReader unavailable in this workspace");
 #endif

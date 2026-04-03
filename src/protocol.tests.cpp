@@ -165,18 +165,6 @@ TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the ser
 	CHECK_EQ(span.nTotalSize, sizeof(fixture));
 }
 
-TEST_CASE("Connected-server seam accepts a cached current-server snapshot when connected")
-{
-	const void *pCurrentServer = reinterpret_cast<const void*>(1);
-	CHECK(HasConnectedServerSnapshot(true, pCurrentServer));
-	CHECK(HasConnectedServerCapability(true, pCurrentServer, true));
-	CHECK(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4661));
-}
-
-TEST_SUITE_END;
-
-TEST_SUITE_BEGIN("divergence");
-
 TEST_CASE("Protocol guard bounds zero-length packet payloads instead of underflowing")
 {
 	CHECK_EQ(GetPacketPayloadSize(0), static_cast<uint32>(0));
@@ -243,6 +231,37 @@ TEST_CASE("Protocol guard accepts the dotted broadcast IPv4 literal as a valid p
 	CHECK(TryParseDottedIPv4Literal("255.255.255.255", &nAddress));
 	CHECK_EQ(nAddress, IPV4_BROADCAST);
 }
+
+TEST_CASE("Protocol guard rejects invalid IPv4 parser inputs and clamps bounded progress")
+{
+	size_t nExpandedSize = 0;
+	uint32 nAddress = 0;
+
+	CHECK_FALSE(TryMultiplyAddSize(4u, 2u, 3u, NULL));
+	CHECK_EQ(CalculateProgressPercent(150u, 100u), static_cast<uint32>(100));
+	CHECK_EQ(CalculateProgressRatio(-5.0f, 10.0f), doctest::Approx(0.0f));
+	CHECK_EQ(CalculateProgressRatio(15.0f, 10.0f), doctest::Approx(1.0f));
+	REQUIRE(TryMultiplyAddSize(4u, 0u, 7u, &nExpandedSize));
+	CHECK_EQ(nExpandedSize, static_cast<size_t>(7));
+	CHECK_FALSE(TryParseDottedIPv4Literal(NULL, &nAddress));
+	CHECK_FALSE(TryParseDottedIPv4Literal("1.2.3.4", NULL));
+	CHECK_FALSE(TryParseDottedIPv4Literal("a.2.3.4", &nAddress));
+	CHECK_FALSE(TryParseDottedIPv4Literal("256.2.3.4", &nAddress));
+	CHECK_FALSE(TryParseDottedIPv4Literal("1-2.3.4", &nAddress));
+	CHECK_FALSE(TryParseDottedIPv4Literal("1.2.3.4x", &nAddress));
+}
+
+TEST_CASE("Connected-server seam accepts a cached current-server snapshot when connected")
+{
+	const void *pCurrentServer = reinterpret_cast<const void*>(1);
+	CHECK(HasConnectedServerSnapshot(true, pCurrentServer));
+	CHECK(HasConnectedServerCapability(true, pCurrentServer, true));
+	CHECK(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4661));
+}
+
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("divergence");
 
 TEST_CASE("Protocol parser rejects zero-length packet headers before payload math underflows")
 {

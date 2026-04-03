@@ -61,10 +61,6 @@ TEST_CASE("Null guard decodes packed part-status bits without overrunning the de
 	CHECK_EQ(partStatus[8], static_cast<uint8>(0));
 }
 
-TEST_SUITE_END;
-
-TEST_SUITE_BEGIN("divergence");
-
 TEST_CASE("Null guard rejects username duplication when the allocator fails")
 {
 	TCHAR *pszDuplicate = reinterpret_cast<TCHAR*>(1);
@@ -81,6 +77,32 @@ TEST_CASE("Null guard rejects truncated packed part-status buffers and overflowe
 	CHECK_FALSE(HasPackedPartStatusBytes(9u, 1u));
 	CHECK_FALSE(TryDecodePartStatusBits(partStatus, 9u, packedBits, _countof(packedBits)));
 	CHECK_FALSE(TryGetPartStatusDisplayLength((std::numeric_limits<size_t>::max)(), &nDisplayLength));
+}
+
+TEST_CASE("Null guard rejects null duplication inputs and missing packed-count outputs")
+{
+	TCHAR *pszDuplicate = reinterpret_cast<TCHAR*>(1);
+
+	CHECK_FALSE(TryDuplicateCString(NULL, &pszDuplicate, DuplicateFixtureString));
+	CHECK(pszDuplicate == reinterpret_cast<TCHAR*>(1));
+	CHECK_FALSE(TryDuplicateCString(_T("alice"), NULL, DuplicateFixtureString));
+	CHECK_FALSE(TryGetPartStatusPackedByteCount(9u, NULL));
+}
+
+TEST_CASE("Null guard handles empty part-status spans without touching the destination")
+{
+	size_t nPackedByteCount = 1;
+	size_t nDisplayLength = 0;
+	uint8 partStatus = 0x5Au;
+	const BYTE packedBits[] = {0xFFu};
+
+	REQUIRE(TryGetPartStatusPackedByteCount(0u, &nPackedByteCount));
+	CHECK_EQ(nPackedByteCount, static_cast<size_t>(0));
+	REQUIRE(TryGetPartStatusDisplayLength(0u, &nDisplayLength));
+	CHECK_EQ(nDisplayLength, static_cast<size_t>(1));
+	CHECK(HasPackedPartStatusBytes(0u, 0u));
+	REQUIRE(TryDecodePartStatusBits(&partStatus, 0u, packedBits, 0u));
+	CHECK_EQ(partStatus, static_cast<uint8>(0x5Au));
 }
 
 TEST_SUITE_END;

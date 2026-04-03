@@ -4,10 +4,13 @@
 #include "../include/FullHashProbe.h"
 #include "../include/HashProbe.h"
 
-#if defined(__has_include)
-#if !__has_include("MappedFileReader.h")
+#ifndef EMULE_TESTS_HAS_MAPPED_FILE_READER
+#define EMULE_TESTS_HAS_MAPPED_FILE_READER 0
+#endif
+
+#if !EMULE_TESTS_HAS_MAPPED_FILE_READER
 /**
- * @brief Returns the standard "not requested" sentinel when the full hash probe is unavailable in this workspace.
+ * @brief Returns the standard "not requested" sentinel when the real full hash probe is not compiled for this workspace.
  */
 int RunFullHashProbeIfRequested(int, char **)
 {
@@ -15,13 +18,12 @@ int RunFullHashProbeIfRequested(int, char **)
 }
 
 /**
- * @brief Returns the standard "not requested" sentinel when the hash probe is unavailable in this workspace.
+ * @brief Returns the standard "not requested" sentinel when the real hash probe is not compiled for this workspace.
  */
 int RunHashProbeIfRequested(int, char **)
 {
 	return -1;
 }
-#endif
 #endif
 
 /**

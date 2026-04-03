@@ -80,6 +80,8 @@
     <_ProjectFileVersion>11.0.60610.1</_ProjectFileVersion>
     <WorkspaceRoot Condition="'$(WorkspaceRoot)'==''">$(MSBuildThisFileDirectory)..\eMule-build</WorkspaceRoot>
     <BuildTag Condition="'$(BuildTag)'==''">default</BuildTag>
+    <HasMappedFileReader>0</HasMappedFileReader>
+    <HasMappedFileReader Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')">1</HasMappedFileReader>
     <OutDir>build\$(BuildTag)\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>build\$(BuildTag)\$(Platform)\$(Configuration)\obj\</IntDir>
     <TargetName>emule-tests</TargetName>
@@ -92,7 +94,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <Optimization>Disabled</Optimization>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>
@@ -110,7 +112,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <Optimization>MaxSpeed</Optimization>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>

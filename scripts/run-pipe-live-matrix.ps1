@@ -6,12 +6,30 @@ Runs the recommended Pipe API live matrix and soak profile.
 This wrapper keeps the preferred live coverage invocation under the shared
 tests workspace while delegating execution to the app-side helper that launches
 eMule, the remote sidecar, and the named-pipe-backed API scenarios.
+
+.PARAMETER ProfileRoot
+Base directory that stores per-run live harness working profiles.
+
+.PARAMETER SeedRoot
+Optional deterministic seed root that is copied into each fresh working profile.
+
+.PARAMETER SessionManifestPath
+Optional machine-readable manifest output path for launch-only or full-run automation.
+
+.PARAMETER LaunchOnly
+Starts the live harness session and exits after the sidecar is healthy without running the matrix or soak workload.
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [string]$ProfileRoot = 'C:\tmp\emule-testing',
+
+    [Parameter(Mandatory = $false)]
+    [string]$SeedRoot = '',
+
+    [Parameter(Mandatory = $false)]
+    [string]$SessionManifestPath = '',
 
     [Parameter(Mandatory = $false)]
     [string]$SearchQuery = '1080p',
@@ -26,6 +44,7 @@ param(
     [Parameter(Mandatory = $false)]
     [int]$MatrixRepeatCount = 1,
 
+    [switch]$LaunchOnly,
     [switch]$StrictMatrix,
     [switch]$SkipBuild,
     [switch]$KeepRunning
@@ -41,10 +60,13 @@ if (-not (Test-Path -LiteralPath $helperPath -PathType Leaf)) {
 
 & $helperPath `
     -ProfileRoot $ProfileRoot `
+    -SeedRoot $SeedRoot `
+    -SessionManifestPath $SessionManifestPath `
     -SearchQuery $SearchQuery `
     -StressQueries $StressQueries `
     -ScenarioProfile $ScenarioProfile `
     -MatrixRepeatCount $MatrixRepeatCount `
+    -LaunchOnly:$LaunchOnly `
     -StrictMatrix:$StrictMatrix `
     -SearchWaitSec 30 `
     -SearchCycleCount 2 `

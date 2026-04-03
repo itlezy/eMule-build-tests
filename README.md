@@ -56,6 +56,12 @@ Deterministic live-profile seed:
 - `preferences.ini` intentionally contains only the minimal non-default seed values required by the live harness; the helper injects runtime-specific transport, logging, bind, and working-folder settings per run
 - runtime working folders are copied from that seed and then expanded with per-run logs, temp files, and other mutable state
 
+Canonical live harness:
+
+- `scripts\run-pipe-live-matrix.ps1` is the operator-facing entrypoint for launch-only and full live named-pipe harness runs
+- the harness stages a renamed binary copy, `eMule_v072_harness.exe`, beside the debug build output and launches that copy so processes, dumps, and cleanup are easier to identify
+- the machine-readable session manifest can be requested through the shared wrapper with `-SessionManifestPath`
+
 Tracked-file privacy guard:
 
 - `scripts\guard-tracked-files.ps1` fails when tracked files contain local user-home paths or personal-identifier filename leaks derived from the current environment or an untracked local override file

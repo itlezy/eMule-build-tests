@@ -10,4 +10,6 @@ The seed is intentionally minimal:
 - `nodes.dat`
 - `server.met`
 
+The seeded `preferences.ini` must stay limited to the non-default settings that the live harness truly needs before runtime overrides are applied.
+
 Mutable runtime state such as logs, temp files, downloads, and rolling history files must not be committed here.

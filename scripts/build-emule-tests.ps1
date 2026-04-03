@@ -24,6 +24,9 @@ Optional file that captures the test executable output when `-Run` is used.
 .PARAMETER AllowTestFailure
 Leaves the PowerShell command successful even if the test executable returns a failing exit code.
 
+.PARAMETER SkipTrackedFilePrivacyGuard
+Skips the tracked-file privacy guard that validates the repo's committed assets.
+
 .PARAMETER TestArguments
 Additional arguments passed to the test executable when `-Run` is used.
 #>
@@ -46,6 +49,8 @@ param(
     [switch]$AllowTestFailure,
 
     [string]$BuildTag,
+
+    [switch]$SkipTrackedFilePrivacyGuard,
 
     [string[]]$TestArguments = @()
 )
@@ -135,6 +140,21 @@ $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 if ([string]::IsNullOrWhiteSpace($BuildTag)) {
     $BuildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
+}
+
+if (-not $SkipTrackedFilePrivacyGuard) {
+    $trackedFilePrivacyGuardPath = Join-Path $testRepoRootPath 'scripts\guard-tracked-files.ps1'
+    if (-not (Test-Path -LiteralPath $trackedFilePrivacyGuardPath -PathType Leaf)) {
+        throw "Tracked-file privacy guard not found at '$trackedFilePrivacyGuardPath'."
+    }
+
+    <#
+    * @brief Fail fast on committed local-path or personal-identifier leaks before any build work starts.
+    #>
+    & $trackedFilePrivacyGuardPath -RepoRoot $testRepoRootPath
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Tracked-file privacy guard failed.'
+    }
 }
 
 $projectPath = Join-Path $testRepoRootPath 'emule-tests.vcxproj'

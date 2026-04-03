@@ -1,0 +1,17 @@
+name: Tracked File Privacy Guard
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tracked-file-privacy-guard:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tracked-file privacy guard
+        shell: pwsh
+        run: .\scripts\guard-tracked-files.ps1

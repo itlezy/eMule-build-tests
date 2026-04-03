@@ -53,4 +53,11 @@ Deterministic live-profile seed:
 
 - `manifests\live-profile-seed\config` stores the canonical test-only profile inputs for live named-pipe runs
 - the seed is intentionally minimal and currently vendors only `preferences.ini`, `nodes.dat`, and `server.met`
+- `preferences.ini` intentionally contains only the minimal non-default seed values required by the live harness; the helper injects runtime-specific transport, logging, bind, and working-folder settings per run
 - runtime working folders are copied from that seed and then expanded with per-run logs, temp files, and other mutable state
+
+Tracked-file privacy guard:
+
+- `scripts\guard-tracked-files.ps1` fails when tracked files contain local user-home paths or personal-identifier filename leaks derived from the current environment or an untracked local override file
+- `scripts\build-emule-tests.ps1` runs that guard by default before building
+- the same guard is enforced in GitHub Actions for pushes and pull requests

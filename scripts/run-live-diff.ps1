@@ -261,8 +261,9 @@ $summaryJsonPath = Join-Path $reportRoot 'live-diff-summary.json'
     text_summary_path = $summaryPath
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryJsonPath -Encoding utf8
 $publishHarnessSummaryPath = Join-Path $testRepoRootPath 'scripts\publish-harness-summary.ps1'
-& $publishHarnessSummaryPath -TestRepoRoot $testRepoRootPath -LiveDiffSummaryPath $summaryJsonPath
-if ($LASTEXITCODE -ne 0) {
+try {
+    & $publishHarnessSummaryPath -TestRepoRoot $testRepoRootPath -LiveDiffSummaryPath $summaryJsonPath
+} catch {
     throw 'Failed to publish the combined harness summary after the live diff run.'
 }
 $summaryLines | ForEach-Object { Write-Output $_ }

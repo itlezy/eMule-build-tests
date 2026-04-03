@@ -61,9 +61,17 @@ Canonical live harness:
 - `scripts\run-pipe-live-matrix.ps1` is the operator-facing entrypoint for launch-only and full live named-pipe harness runs
 - the harness stages a renamed binary copy, `eMule_v072_harness.exe`, beside the debug build output and launches that copy so processes, dumps, and cleanup are easier to identify
 - the machine-readable session manifest can be requested through the shared wrapper with `-SessionManifestPath`
+- normal runs retry targeted teardown and fail if any harness-launched process remains afterward; `-KeepRunning` is the only supported opt-out
 
 Tracked-file privacy guard:
 
 - `scripts\guard-tracked-files.ps1` fails when tracked files contain local user-home paths or personal-identifier filename leaks derived from the current environment or an untracked local override file
 - `scripts\build-emule-tests.ps1` runs that guard by default before building
 - the same guard is enforced in GitHub Actions for pushes and pull requests
+
+Native seam coverage and shared reports:
+
+- `scripts\run-native-coverage.ps1` builds `emule-tests.exe`, runs the requested doctest suites under OpenCppCoverage, and writes Cobertura plus summary outputs under `reports\native-coverage`
+- `helpers\helper-opencppcoverage-bootstrap.ps1` prefers the shared install at `C:\tools\ocppcov` and falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
+- `scripts\run-live-diff.ps1` now writes both text and JSON parity/divergence summaries under `reports`
+- `scripts\publish-harness-summary.ps1` combines native coverage, parity, and optional live-harness manifest data into one shared summary under `reports`

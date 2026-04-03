@@ -1,3 +1,4 @@
 build/
 reports/
+tools/
 .tracked-file-privacy-identifiers.local.json

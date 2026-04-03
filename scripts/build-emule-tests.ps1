@@ -151,8 +151,9 @@ if (-not $SkipTrackedFilePrivacyGuard) {
     <#
     * @brief Fail fast on committed local-path or personal-identifier leaks before any build work starts.
     #>
-    & $trackedFilePrivacyGuardPath -RepoRoot $testRepoRootPath
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        & $trackedFilePrivacyGuardPath -RepoRoot $testRepoRootPath
+    } catch {
         throw 'Tracked-file privacy guard failed.'
     }
 }

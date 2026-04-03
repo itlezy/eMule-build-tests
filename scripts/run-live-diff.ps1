@@ -158,6 +158,14 @@ function Compare-CaseSets {
 
     $allNames = @($DevResults.Keys + $OracleResults.Keys | Sort-Object -Unique)
     $hasFailure = $false
+    $summary = [ordered]@{
+        suite_name = $SuiteName
+        total_cases = $allNames.Count
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        case_set_mismatch_count = 0
+    }
 
     foreach ($name in $allNames) {
         $devCase = $DevResults[$name]
@@ -165,33 +173,44 @@ function Compare-CaseSets {
         if ($null -eq $devCase -or $null -eq $oracleCase) {
             [void]$script:summaryLines.Add(("[FAIL] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
             $hasFailure = $true
+            $summary.fail_count += 1
+            $summary.case_set_mismatch_count += 1
             continue
         }
 
         if ($SuiteName -eq 'parity') {
             if ($devCase.Success -and $oracleCase.Success) {
                 [void]$script:summaryLines.Add(("[PASS] parity: {0}" -f $name))
+                $summary.pass_count += 1
             } else {
                 [void]$script:summaryLines.Add(("[FAIL] parity: {0} (dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
                 $hasFailure = $true
+                $summary.fail_count += 1
             }
             continue
         }
 
         if ($devCase.Success -and -not $oracleCase.Success) {
             [void]$script:summaryLines.Add(("[PASS] divergence: {0} (dev pass, oracle fail as expected)" -f $name))
+            $summary.pass_count += 1
         } elseif (-not $devCase.Success) {
             [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (dev failed)" -f $name))
             $hasFailure = $true
+            $summary.fail_count += 1
         } elseif ($oracleCase.Success) {
             [void]$script:summaryLines.Add(("[WARN] divergence: {0} (oracle also passed)" -f $name))
+            $summary.warn_count += 1
         } else {
             [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (unexpected state dev={1}, oracle={2})" -f $name, $devCase.Success, $oracleCase.Success))
             $hasFailure = $true
+            $summary.fail_count += 1
         }
     }
 
-    return $hasFailure
+    return [pscustomobject]@{
+        has_failure = $hasFailure
+        summary = $summary
+    }
 }
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
@@ -202,6 +221,7 @@ Invoke-Build -WorkspaceRoot $DevWorkspaceRoot
 Invoke-Build -WorkspaceRoot $OracleWorkspaceRoot
 
 $summaryLines = [System.Collections.ArrayList]::new()
+$suiteSummaries = New-Object System.Collections.Generic.List[object]
 $failed = $false
 
 foreach ($suiteName in @('parity', 'divergence')) {
@@ -219,13 +239,32 @@ foreach ($suiteName in @('parity', 'divergence')) {
 
     $devResults = Get-TestCaseResults -XmlPath $devXml -SuiteName $suiteName -WorkspaceId 'dev'
     $oracleResults = Get-TestCaseResults -XmlPath $oracleXml -SuiteName $suiteName -WorkspaceId 'oracle'
-    if (Compare-CaseSets -DevResults $devResults -OracleResults $oracleResults -SuiteName $suiteName) {
+    $comparison = Compare-CaseSets -DevResults $devResults -OracleResults $oracleResults -SuiteName $suiteName
+    $suiteSummaries.Add($comparison.summary)
+    if ($comparison.has_failure) {
         $failed = $true
     }
 }
 
 $summaryPath = Join-Path $reportRoot 'live-diff-summary.txt'
 Set-Content -LiteralPath $summaryPath -Value $summaryLines
+$summaryJsonPath = Join-Path $reportRoot 'live-diff-summary.json'
+[ordered]@{
+    generated_at = (Get-Date).ToString('o')
+    report_root = $reportRoot
+    dev_workspace_root = $DevWorkspaceRoot
+    oracle_workspace_root = $OracleWorkspaceRoot
+    configuration = $Configuration
+    platform = $Platform
+    suites = @($suiteSummaries.ToArray())
+    failed = $failed
+    text_summary_path = $summaryPath
+} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryJsonPath -Encoding utf8
+$publishHarnessSummaryPath = Join-Path $testRepoRootPath 'scripts\publish-harness-summary.ps1'
+& $publishHarnessSummaryPath -TestRepoRoot $testRepoRootPath -LiveDiffSummaryPath $summaryJsonPath
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to publish the combined harness summary after the live diff run.'
+}
 $summaryLines | ForEach-Object { Write-Output $_ }
 Write-Output "Summary: $summaryPath"
 

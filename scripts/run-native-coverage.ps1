@@ -12,7 +12,7 @@ and human-readable summaries under `reports\native-coverage`.
 param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
 
-    [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build'),
+    [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build-v0.72'),
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',

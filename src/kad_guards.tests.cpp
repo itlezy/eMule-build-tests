@@ -266,6 +266,57 @@ TEST_CASE("Nodes.dat inspector rejects malformed files without reporting usable 
 	::DeleteFile(strPath);
 }
 
+TEST_CASE("Nodes.dat inspector excludes private and zero-port contacts from usable counts")
+{
+	const CString strPath = CreateFastKadTempPath();
+	FILE *pFile = NULL;
+	REQUIRE(_wfopen_s(&pFile, strPath, L"wb") == 0);
+	REQUIRE(pFile != NULL);
+
+	const uint32 uHeader = 0;
+	const uint32 uVersion = 2;
+	const uint32 uCount = 2;
+	const byte abyID[16] = { 1 };
+	const uint32 uPrivateStoredIP = 0x0101A8C0u; // 192.168.1.1 stored in nodes.dat byte order
+	const uint32 uPublicStoredIP = 0x01020304u;
+	const uint16 uZeroPort = 0;
+	const uint16 uValidPort = 4665;
+	const uint16 uTCPPort = 4662;
+	const uint8 uContactVersion = 8;
+	const uint32 uUDPKey = 0x11111111u;
+	const uint32 uUDPKeyIP = 0x22222222u;
+	const uint8 uVerified = 1;
+
+	REQUIRE(fwrite(&uHeader, 1, sizeof uHeader, pFile) == sizeof uHeader);
+	REQUIRE(fwrite(&uVersion, 1, sizeof uVersion, pFile) == sizeof uVersion);
+	REQUIRE(fwrite(&uCount, 1, sizeof uCount, pFile) == sizeof uCount);
+
+	REQUIRE(fwrite(abyID, 1, sizeof abyID, pFile) == sizeof abyID);
+	REQUIRE(fwrite(&uPrivateStoredIP, 1, sizeof uPrivateStoredIP, pFile) == sizeof uPrivateStoredIP);
+	REQUIRE(fwrite(&uValidPort, 1, sizeof uValidPort, pFile) == sizeof uValidPort);
+	REQUIRE(fwrite(&uTCPPort, 1, sizeof uTCPPort, pFile) == sizeof uTCPPort);
+	REQUIRE(fwrite(&uContactVersion, 1, sizeof uContactVersion, pFile) == sizeof uContactVersion);
+	REQUIRE(fwrite(&uUDPKey, 1, sizeof uUDPKey, pFile) == sizeof uUDPKey);
+	REQUIRE(fwrite(&uUDPKeyIP, 1, sizeof uUDPKeyIP, pFile) == sizeof uUDPKeyIP);
+	REQUIRE(fwrite(&uVerified, 1, sizeof uVerified, pFile) == sizeof uVerified);
+
+	REQUIRE(fwrite(abyID, 1, sizeof abyID, pFile) == sizeof abyID);
+	REQUIRE(fwrite(&uPublicStoredIP, 1, sizeof uPublicStoredIP, pFile) == sizeof uPublicStoredIP);
+	REQUIRE(fwrite(&uZeroPort, 1, sizeof uZeroPort, pFile) == sizeof uZeroPort);
+	REQUIRE(fwrite(&uTCPPort, 1, sizeof uTCPPort, pFile) == sizeof uTCPPort);
+	REQUIRE(fwrite(&uContactVersion, 1, sizeof uContactVersion, pFile) == sizeof uContactVersion);
+	REQUIRE(fwrite(&uUDPKey, 1, sizeof uUDPKey, pFile) == sizeof uUDPKey);
+	REQUIRE(fwrite(&uUDPKeyIP, 1, sizeof uUDPKeyIP, pFile) == sizeof uUDPKeyIP);
+	REQUIRE(fwrite(&uVerified, 1, sizeof uVerified, pFile) == sizeof uVerified);
+	fclose(pFile);
+
+	Kademlia::NodesDatFileInfo fileInfo;
+	CHECK(Kademlia::InspectNodesDatFile(strPath, fileInfo));
+	CHECK_EQ(fileInfo.m_uUsableContacts, 0u);
+
+	::DeleteFile(strPath);
+}
+
 TEST_CASE("Nodes.dat replacement atomically swaps the target file contents")
 {
 	const CString strTargetPath = CreateFastKadTempPath();
@@ -311,6 +362,16 @@ TEST_CASE("Safe Kad keeps problematic nodes only until the runtime cache is rese
 
 	safeKad.ShutdownCleanup();
 	CHECK_FALSE(safeKad.IsProblematic(0x0A000001u, 4672));
+}
+
+TEST_CASE("Safe Kad enforces the one-node-per-IP policy without banning stable identities")
+{
+	Kademlia::CSafeKad safeKad;
+	const uint32 uIP = 0x0A0B0C0Du;
+
+	CHECK_FALSE(safeKad.IsBadNode(uIP, 4665, Kademlia::CUInt128(101ul), KADEMLIA_VERSION8_49b, true, true, false));
+	CHECK(safeKad.IsBadNode(uIP, 4666, Kademlia::CUInt128(102ul), KADEMLIA_VERSION8_49b, true, true, false));
+	CHECK_FALSE(safeKad.IsBanned(uIP));
 }
 
 TEST_CASE("Kad publish guard accepts a valid high-ID source publish")
@@ -410,6 +471,41 @@ TEST_CASE("Kad publish throttle reset clears prior ban state and isolates differ
 
 	throttle.Reset();
 	CHECK_EQ(throttle.TrackRequest(0x11223344u, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+}
+
+TEST_CASE("Kad publish throttle reopens the window after one minute and drops stale entries on cleanup")
+{
+	Kademlia::CKadPublishSourceThrottle throttle;
+	const uint32 uIP = 0x12345678u;
+	uint32 dwNow = 5000;
+
+	for (uint32 uCount = 0; uCount < 12; ++uCount)
+		throttle.TrackRequest(uIP, dwNow, 10);
+	CHECK_EQ(throttle.TrackRequest(uIP, dwNow, 10), Kademlia::KPUBLISH_DROP);
+
+	dwNow += 60000;
+	CHECK_EQ(throttle.TrackRequest(uIP, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+
+	dwNow += 11 * 60000;
+	CHECK_EQ(throttle.TrackRequest(0x87654321u, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+	CHECK_EQ(throttle.TrackRequest(uIP, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+}
+
+TEST_CASE("Kad publish guard accepts additional supported source types only with complete low-ID buddy tuples")
+{
+	Kademlia::PublishSourceMetadata metadata;
+	metadata.m_bHasSourceType = true;
+	metadata.m_uSourceType = 5;
+	metadata.m_bHasSourcePort = true;
+	metadata.m_uSourcePort = 4662;
+	CHECK_FALSE(Kademlia::ValidatePublishSourceMetadata(metadata));
+
+	metadata.m_bHasBuddyIP = true;
+	metadata.m_uBuddyIP = 0x05060708u;
+	metadata.m_bHasBuddyPort = true;
+	metadata.m_uBuddyPort = 4672;
+	metadata.m_bHasBuddyHash = true;
+	CHECK(Kademlia::ValidatePublishSourceMetadata(metadata));
 }
 
 TEST_CASE("Safe Kad leaves stable verified identities alone and tolerates cleanup on empty state")

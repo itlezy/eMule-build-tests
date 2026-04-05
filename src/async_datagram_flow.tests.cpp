@@ -66,4 +66,48 @@ TEST_CASE("Async datagram flow clears pending work on close and leaves later dis
 	CHECK_FALSE(action.bShouldDispatchSend);
 }
 
+TEST_CASE("Async datagram flow posts a fresh dispatch after a completed receive-send cycle")
+{
+	AsyncDatagramFlowState state = CreateAsyncDatagramFlowState();
+
+	(void)AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::ReceiveReady);
+	(void)AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::SendReady);
+	(void)AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::Dispatch);
+
+	const AsyncDatagramFlowAction action = AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::ReceiveReady);
+	CHECK(action.bShouldPostDispatch);
+	CHECK(state.bReceivePending);
+	CHECK(state.bDispatchPosted);
+	CHECK_FALSE(state.bSendPending);
+}
+
+TEST_CASE("Async datagram flow ignores receive and send readiness that arrive after close")
+{
+	AsyncDatagramFlowState state = CreateAsyncDatagramFlowState();
+	(void)AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::CloseSocket);
+
+	AsyncDatagramFlowAction action = AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::ReceiveReady);
+	CHECK_FALSE(action.bShouldPostDispatch);
+	CHECK_FALSE(state.bReceivePending);
+	CHECK_FALSE(state.bDispatchPosted);
+
+	action = AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::SendReady);
+	CHECK_FALSE(action.bShouldPostDispatch);
+	CHECK_FALSE(state.bSendPending);
+	CHECK_FALSE(state.bDispatchPosted);
+}
+
+TEST_CASE("Async datagram flow preserves a coalesced send wakeup when receive was already drained")
+{
+	AsyncDatagramFlowState state = CreateAsyncDatagramFlowState();
+
+	(void)AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::ReceiveReady);
+	CHECK(AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::Dispatch).bShouldDispatchReceive);
+
+	const AsyncDatagramFlowAction action = AdvanceAsyncDatagramFlow(state, AsyncDatagramFlowEvent::SendReady);
+	CHECK(action.bShouldPostDispatch);
+	CHECK(state.bSendPending);
+	CHECK(state.bDispatchPosted);
+}
+
 TEST_SUITE_END;

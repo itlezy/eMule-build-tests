@@ -24,6 +24,7 @@ TEST_CASE("MiniUPnP seam rejects null inputs and formatting mismatches")
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest(nullptr, "27198", "10.54.224.185", 27198));
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", nullptr, "10.54.224.185", 27198));
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "27198", nullptr, 27198));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "27198", "", 27198));
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "027198", "10.54.224.185", 27198));
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "0", "10.54.224.185", 27198));
 }

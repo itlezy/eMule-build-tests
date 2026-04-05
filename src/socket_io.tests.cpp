@@ -1,6 +1,7 @@
 #include "../third_party/doctest/doctest.h"
 
 #include <cstdint>
+#include <limits>
 
 #include "SocketIoSeams.h"
 
@@ -32,6 +33,16 @@ TEST_CASE("Socket IO seam advances send progress only for positive in-range send
 	CHECK_FALSE(TryAccumulateSocketSendProgress(128u, 256u, 1024u, 0u, &nNextSent));
 	CHECK_FALSE(TryAccumulateSocketSendProgress(128u, 256u, 1024u, 300u, &nNextSent));
 	CHECK_FALSE(TryAccumulateSocketSendProgress(900u, 200u, 1024u, 150u, &nNextSent));
+}
+
+TEST_CASE("Socket IO seam rejects null or overflowed send-progress bookkeeping")
+{
+	std::uint32_t nNextSent = 0;
+
+	CHECK_FALSE(TryAccumulateSocketSendProgress(0u, 64u, 128u, 32u, nullptr));
+	CHECK_FALSE(TryAccumulateSocketSendProgress(0u, 0u, 128u, 32u, &nNextSent));
+	CHECK_FALSE(TryAccumulateSocketSendProgress(129u, 16u, 128u, 1u, &nNextSent));
+	CHECK_FALSE(TryAccumulateSocketSendProgress((std::numeric_limits<std::uint32_t>::max)(), 1u, (std::numeric_limits<std::uint32_t>::max)(), 1u, &nNextSent));
 }
 
 TEST_SUITE_END;

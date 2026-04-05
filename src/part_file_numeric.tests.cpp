@@ -50,6 +50,8 @@ TEST_CASE("Part file numeric seam clamps list counts and 32-bit scores before na
 
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(17u), static_cast<uint16>(17u));
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(static_cast<uint32>((std::numeric_limits<uint16>::max)()) + 1u), (std::numeric_limits<uint16>::max)());
+	CHECK_EQ(PartFileNumericSeams::ClampUInt64ToUInt16(17u), static_cast<uint16>(17u));
+	CHECK_EQ(PartFileNumericSeams::ClampUInt64ToUInt16(static_cast<uint64>((std::numeric_limits<uint16>::max)()) + 1u), (std::numeric_limits<uint16>::max)());
 }
 
 TEST_CASE("Part-file hash seam rejects worker results whose theoretical hash layout drifted")

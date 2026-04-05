@@ -1,6 +1,6 @@
 #include "../third_party/doctest/doctest.h"
-#include "../../eMule-build/eMule/srchybrid/KnownFileListSeams.h"
-#include "../../eMule-build/eMule/srchybrid/KnownFileProgressSeams.h"
+#include "KnownFileListSeams.h"
+#include "KnownFileProgressSeams.h"
 
 TEST_CASE("Known-file AICH purge seam keeps active hashsets for current files")
 {

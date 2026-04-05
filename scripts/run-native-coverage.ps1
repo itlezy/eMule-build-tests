@@ -81,6 +81,37 @@ function Get-ResolvedReportMetric {
     return [string]$value
 }
 
+function Get-DoctestSuiteExecutionStats {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath
+    )
+
+    $summaryLine = Get-Content -LiteralPath $LogPath | Where-Object { $_ -match '^\[doctest\] test cases:\s*(\d+)\s*\|\s*(\d+)\s*passed\s*\|\s*(\d+)\s*failed\s*\|\s*(\d+)\s*skipped' } | Select-Object -Last 1
+    if (-not $summaryLine) {
+        return $null
+    }
+
+    $match = [regex]::Match($summaryLine, '^\[doctest\] test cases:\s*(\d+)\s*\|\s*(\d+)\s*passed\s*\|\s*(\d+)\s*failed\s*\|\s*(\d+)\s*skipped')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $total = [int]$match.Groups[1].Value
+    $passed = [int]$match.Groups[2].Value
+    $failed = [int]$match.Groups[3].Value
+    $skipped = [int]$match.Groups[4].Value
+    $executed = $passed + $failed
+
+    return [ordered]@{
+        total = $total
+        passed = $passed
+        failed = $failed
+        skipped = $skipped
+        executed = $executed
+    }
+}
+
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $buildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
@@ -166,16 +197,26 @@ for ($index = 0; $index -lt $SuiteNames.Count; ++$index) {
 
     & $coverageExecutablePath @coverageArguments *>&1 | Tee-Object -FilePath $suiteLogPath
     $suiteExitCode = $LASTEXITCODE
+    $suiteStats = Get-DoctestSuiteExecutionStats -LogPath $suiteLogPath
 
     $suiteRunSummaries.Add([ordered]@{
         suite_name = $suiteName
         exit_code = $suiteExitCode
         log_path = $suiteLogPath
         binary_coverage_path = $suiteBinaryCoveragePath
+        execution = $suiteStats
     })
 
     if ($suiteExitCode -ne 0) {
         throw "Coverage run for suite '$suiteName' failed with exit code $suiteExitCode."
+    }
+
+    if ($null -eq $suiteStats) {
+        throw "Coverage run for suite '$suiteName' did not produce a doctest summary line."
+    }
+
+    if ($suiteStats.executed -le 0) {
+        throw "Coverage run for suite '$suiteName' executed zero test cases."
     }
 
     $mergedBinaryCoveragePath = $suiteBinaryCoveragePath

@@ -150,6 +150,25 @@ TEST_CASE("Protocol parser decodes a named-by-id uint32 tag from serialized byte
 	CHECK_EQ(span.nTotalSize, sizeof(fixture));
 }
 
+TEST_CASE("Protocol parser decodes an explicit-name string tag whose payload exactly fits the serialized bytes")
+{
+	const BYTE fixture[] = {
+		TAGTYPE_STRING,
+		0x03, 0x00,
+		'e', 'd', '2',
+		0x04, 0x00,
+		'l', 'i', 'n', 'k'
+	};
+
+	const ProtocolTagSpan span = ParseTagFixture(fixture, sizeof(fixture));
+	CHECK_EQ(span.Header.nType, static_cast<uint8>(TAGTYPE_STRING));
+	CHECK_FALSE(span.Header.bUsesNameId);
+	CHECK_EQ(span.Header.nNameLength, static_cast<uint16>(3));
+	CHECK_EQ(span.Header.nHeaderSize, static_cast<size_t>(2 + 3 + 1));
+	CHECK_EQ(span.nValueSize, static_cast<size_t>(2 + 4));
+	CHECK_EQ(span.nTotalSize, sizeof(fixture));
+}
+
 TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the serialized bytes")
 {
 	const BYTE fixture[] = {
@@ -259,6 +278,14 @@ TEST_CASE("Connected-server seam accepts a cached current-server snapshot when c
 	CHECK(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4661));
 }
 
+TEST_CASE("Connected-server seam rejects missing capability bits and mismatched endpoints even with a snapshot")
+{
+	const void *pCurrentServer = reinterpret_cast<const void*>(1);
+	CHECK_FALSE(HasConnectedServerCapability(true, pCurrentServer, false));
+	CHECK_FALSE(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x05060708u, 4661));
+	CHECK_FALSE(MatchesConnectedServerEndpoint(true, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4662));
+}
+
 TEST_SUITE_END;
 
 TEST_SUITE_BEGIN("divergence");
@@ -275,6 +302,17 @@ TEST_CASE("Protocol parser rejects zero-length packet headers before payload mat
 	CHECK_FALSE(TryParsePacketHeader(fixture, sizeof(fixture), &header));
 }
 
+TEST_CASE("Protocol parser rejects truncated serialized packet headers before the opcode read")
+{
+	const BYTE fixture[] = {
+		OP_EDONKEYPROT,
+		0x01, 0x00, 0x00, 0x00
+	};
+
+	ProtocolPacketHeader header = {};
+	CHECK_FALSE(TryParsePacketHeader(fixture, sizeof(fixture), &header));
+}
+
 TEST_CASE("Protocol parser rejects explicit-name tags whose serialized name bytes are truncated")
 {
 	const BYTE fixture[] = {
@@ -285,6 +323,18 @@ TEST_CASE("Protocol parser rejects explicit-name tags whose serialized name byte
 
 	ProtocolTagHeader header = {};
 	CHECK_FALSE(TryParseTagHeader(fixture, sizeof(fixture), &header));
+}
+
+TEST_CASE("Protocol parser rejects named-by-id uint32 tags whose serialized value bytes are truncated")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_UINT32 | 0x80),
+		CT_VERSION,
+		0x34, 0x12, 0x00
+	};
+
+	ProtocolTagSpan span = {};
+	CHECK_FALSE(TryParseTagSpan(fixture, sizeof(fixture), &span));
 }
 
 TEST_CASE("Protocol parser rejects string tags whose serialized payload is truncated")

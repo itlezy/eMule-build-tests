@@ -120,7 +120,7 @@ namespace
 	}
 }
 
-TEST_SUITE_BEGIN("kad");
+TEST_SUITE_BEGIN("kad-broadband");
 
 TEST_CASE("Fast Kad raises its pending timeout estimate after repeated slow replies")
 {
@@ -335,6 +335,23 @@ TEST_CASE("Kad publish guard rejects low-ID source publishes without complete bu
 	metadata.m_uBuddyIP = 0x05060708u;
 
 	CHECK_FALSE(Kademlia::ValidatePublishSourceMetadata(metadata));
+}
+
+TEST_CASE("Kad publish guard accepts low-ID source publishes when the full buddy tuple is present")
+{
+	Kademlia::PublishSourceMetadata metadata;
+	metadata.m_bHasSourceType = true;
+	metadata.m_uSourceType = 3;
+	metadata.m_bHasSourcePort = true;
+	metadata.m_uSourcePort = 4662;
+	metadata.m_bHasBuddyID = true;
+	metadata.m_uBuddyID = Kademlia::CUInt128(77ul);
+	metadata.m_bHasBuddyIP = true;
+	metadata.m_uBuddyIP = 0x05060708u;
+	metadata.m_bHasBuddyPort = true;
+	metadata.m_uBuddyPort = 4672;
+
+	CHECK(Kademlia::ValidatePublishSourceMetadata(metadata));
 }
 
 TEST_CASE("Kad publish guard escalates repeated publish-source requests from the same IP")

@@ -204,8 +204,16 @@ TEST_CASE("Pipe API trims transfer add links and rejects empty payloads")
 	CHECK_EQ(link, "ed2k://|file|ubuntu.iso|1|0123456789abcdef0123456789abcdef|/");
 
 	error.clear();
+	CHECK(PipeApiCommandSeams::TryParseTransferAddLink(PipeApiCommandSeams::json{{"link", " ed2k://|server|1.2.3.4|4661|/ "}}, link, error));
+	CHECK_EQ(link, "ed2k://|server|1.2.3.4|4661|/");
+
+	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferAddLink(PipeApiCommandSeams::json{{"link", "   "}}, link, error));
 	CHECK_EQ(error, "link must not be empty");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferAddLink(PipeApiCommandSeams::json{{"link", 7}}, link, error));
+	CHECK_EQ(error, "link must be a string");
 }
 
 TEST_CASE("Pipe API parses bulk transfer mutations and the delete-files aliases")

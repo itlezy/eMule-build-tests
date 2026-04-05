@@ -51,4 +51,23 @@ TEST_CASE("Hello tag count stays aligned with the buddy advertisement snapshot")
 	CHECK_EQ(GetHelloTagCount(noBuddy), static_cast<uint32>(6u));
 }
 
+TEST_CASE("Friend transition never unlinks IP-only friends solely because the endpoint changed")
+{
+	const FriendLinkSnapshot ipOnlyConnecting = {true, false, true, false, false};
+	const FriendLinkSnapshot ipOnlyLinked = {true, false, false, false, false};
+
+	CHECK_EQ(ClassifyFriendLinkTransition(ipOnlyConnecting), friendLinkTransitionNone);
+	CHECK_EQ(ClassifyFriendLinkTransition(ipOnlyLinked), friendLinkTransitionNone);
+	CHECK(ShouldSearchReplacementFriend(ipOnlyConnecting));
+	CHECK(ShouldSearchReplacementFriend(ipOnlyLinked));
+}
+
+TEST_CASE("Buddy hello snapshot preserves the captured endpoint even when it does not advertise")
+{
+	const BuddyHelloSnapshot hiddenBuddy = BuildBuddyHelloSnapshot(false, true, 0x01020304u, 4662u);
+	CHECK_FALSE(hiddenBuddy.bShouldAdvertise);
+	CHECK_EQ(hiddenBuddy.dwBuddyIP, static_cast<uint32>(0x01020304u));
+	CHECK_EQ(hiddenBuddy.nBuddyPort, static_cast<uint16>(4662u));
+}
+
 TEST_SUITE_END;

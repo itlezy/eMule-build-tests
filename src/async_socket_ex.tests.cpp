@@ -35,6 +35,15 @@ TEST_CASE("Async socket seam classifies WSAPoll hard failures separately from ti
 	CHECK_FALSE(HasAsyncSocketPollFailure(2));
 }
 
+TEST_CASE("Async socket seam recognizes terminal close signals without conflating readable readiness")
+{
+	CHECK(HasAsyncSocketCloseSignal(POLLERR));
+	CHECK(HasAsyncSocketCloseSignal(POLLHUP));
+	CHECK(HasAsyncSocketCloseSignal(POLLNVAL));
+	CHECK_FALSE(HasAsyncSocketCloseSignal(POLLIN));
+	CHECK_FALSE(HasAsyncSocketCloseSignal(POLLOUT));
+}
+
 #if defined(EMULE_TEST_HAVE_ASYNC_SOCKET_CONNECT_TARGET_SEAMS)
 TEST_CASE("Async socket seam snapshots connect targets before the addrinfo list can be released")
 {
@@ -69,6 +78,11 @@ TEST_CASE("Async socket seam rejects impossible connect-target spans")
 
 	CHECK_FALSE(TryCaptureAsyncSocketConnectTarget(&addr, target));
 
+	sockaddr_storage addrStorage = {};
+	addr.ai_addr = reinterpret_cast<sockaddr*>(&addrStorage);
+	addr.ai_addrlen = 0;
+	CHECK_FALSE(TryCaptureAsyncSocketConnectTarget(&addr, target));
+
 	sockaddr_storage tooLarge = {};
 	addr.ai_addr = reinterpret_cast<sockaddr*>(&tooLarge);
 	addr.ai_addrlen = static_cast<int>(sizeof(tooLarge) + 1);
@@ -88,8 +102,10 @@ TEST_CASE("Async socket seam gates accept and read callbacks on state and reques
 {
 	CHECK(ShouldDispatchAsyncSocketAccept(listening, FD_ACCEPT, POLLIN));
 	CHECK_FALSE(ShouldDispatchAsyncSocketAccept(listening, FD_READ, POLLIN));
+	CHECK_FALSE(ShouldDispatchAsyncSocketAccept(listening, FD_ACCEPT, POLLERR));
 	CHECK(ShouldDispatchAsyncSocketRead(connected, FD_READ, POLLIN));
 	CHECK_FALSE(ShouldDispatchAsyncSocketRead(listening, FD_READ, POLLIN));
+	CHECK_FALSE(ShouldDispatchAsyncSocketRead(connected, FD_READ, POLLHUP));
 }
 
 TEST_CASE("Async socket seam gates write callbacks on state and requested interest")
@@ -98,6 +114,7 @@ TEST_CASE("Async socket seam gates write callbacks on state and requested intere
 	CHECK(ShouldDispatchAsyncSocketWrite(attached, FD_WRITE, POLLOUT));
 	CHECK_FALSE(ShouldDispatchAsyncSocketWrite(connecting, FD_WRITE, POLLOUT));
 	CHECK_FALSE(ShouldDispatchAsyncSocketWrite(connected, FD_READ, POLLOUT));
+	CHECK_FALSE(ShouldDispatchAsyncSocketWrite(attached, FD_WRITE, POLLIN));
 }
 
 TEST_CASE("Async socket seam drains unread bytes before closing a readable connected socket")
@@ -119,6 +136,13 @@ TEST_CASE("Async socket seam ignores close classification outside connected stat
 	const AsyncSocketExCloseAction action = ClassifyAsyncSocketClose(listening, FD_CLOSE, POLLHUP, true);
 	CHECK_FALSE(action.bShouldReadDrain);
 	CHECK_FALSE(action.bShouldClose);
+}
+
+TEST_CASE("Async socket seam closes attached sockets immediately when close signals arrive without readable interest")
+{
+	const AsyncSocketExCloseAction action = ClassifyAsyncSocketClose(attached, FD_WRITE, POLLERR, true);
+	CHECK_FALSE(action.bShouldReadDrain);
+	CHECK(action.bShouldClose);
 }
 
 TEST_SUITE_END;

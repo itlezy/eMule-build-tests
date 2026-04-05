@@ -17,4 +17,11 @@ TEST_CASE("Async datagram seam maps UDP read and write interest onto poll events
 	CHECK_EQ(GetAsyncSocketPollEvents(attached, GetAsyncDatagramEventMask(true)), static_cast<short>(POLLIN | POLLOUT));
 }
 
+TEST_CASE("Async datagram seam does not arm UDP write polling for detached or unconnected states")
+{
+	CHECK_EQ(GetAsyncSocketPollEvents(unconnected, GetAsyncDatagramEventMask(true)), static_cast<short>(0));
+	CHECK_EQ(GetAsyncSocketPollEvents(closed, GetAsyncDatagramEventMask(true)), static_cast<short>(0));
+	CHECK_EQ(GetAsyncSocketPollEvents(attached, GetAsyncDatagramEventMask(false)), static_cast<short>(POLLIN));
+}
+
 TEST_SUITE_END;

@@ -16,4 +16,5 @@ TEST_CASE("Delayed server send stays pending while buffered negotiation data rem
 TEST_CASE("Non-delayed send states do not complete through the delayed-flush helper")
 {
 	CHECK_FALSE(EncryptedStreamSocketSeams::ShouldCompleteDelayedServerSendAfterFlush(false, false));
+	CHECK_FALSE(EncryptedStreamSocketSeams::ShouldCompleteDelayedServerSendAfterFlush(false, true));
 }

@@ -344,14 +344,42 @@ TEST_CASE("Kad publish guard accepts low-ID source publishes when the full buddy
 	metadata.m_uSourceType = 3;
 	metadata.m_bHasSourcePort = true;
 	metadata.m_uSourcePort = 4662;
-	metadata.m_bHasBuddyID = true;
-	metadata.m_uBuddyID = Kademlia::CUInt128(77ul);
 	metadata.m_bHasBuddyIP = true;
 	metadata.m_uBuddyIP = 0x05060708u;
 	metadata.m_bHasBuddyPort = true;
 	metadata.m_uBuddyPort = 4672;
+	metadata.m_bHasBuddyHash = true;
 
 	CHECK(Kademlia::ValidatePublishSourceMetadata(metadata));
+}
+
+TEST_CASE("Kad publish guard exposes stable source-type classification for source publishes")
+{
+	CHECK(Kademlia::IsAcceptedPublishSourceType(1));
+	CHECK(Kademlia::IsAcceptedPublishSourceType(3));
+	CHECK_FALSE(Kademlia::IsAcceptedPublishSourceType(0));
+	CHECK_FALSE(Kademlia::IsAcceptedPublishSourceType(7));
+
+	CHECK_FALSE(Kademlia::IsLowIdPublishSourceType(1));
+	CHECK(Kademlia::IsLowIdPublishSourceType(3));
+}
+
+TEST_CASE("Kad publish guard rejects low-ID publishes that still miss buddy hash or buddy port")
+{
+	Kademlia::PublishSourceMetadata metadata;
+	metadata.m_bHasSourceType = true;
+	metadata.m_uSourceType = 3;
+	metadata.m_bHasSourcePort = true;
+	metadata.m_uSourcePort = 4662;
+	metadata.m_bHasBuddyIP = true;
+	metadata.m_uBuddyIP = 0x05060708u;
+	metadata.m_bHasBuddyPort = true;
+	metadata.m_uBuddyPort = 4672;
+	CHECK_FALSE(Kademlia::ValidatePublishSourceMetadata(metadata));
+
+	metadata.m_bHasBuddyHash = true;
+	metadata.m_bHasBuddyPort = false;
+	CHECK_FALSE(Kademlia::ValidatePublishSourceMetadata(metadata));
 }
 
 TEST_CASE("Kad publish guard escalates repeated publish-source requests from the same IP")
@@ -368,6 +396,31 @@ TEST_CASE("Kad publish guard escalates repeated publish-source requests from the
 		throttle.TrackRequest(0x11223344u, dwNow, 10);
 
 	CHECK_EQ(throttle.TrackRequest(0x11223344u, dwNow, 10), Kademlia::KPUBLISH_BAN);
+}
+
+TEST_CASE("Kad publish throttle reset clears prior ban state and isolates different IPs")
+{
+	Kademlia::CKadPublishSourceThrottle throttle;
+	uint32 dwNow = 2000;
+
+	for (uint32 uCount = 0; uCount < 12; ++uCount)
+		throttle.TrackRequest(0x11223344u, dwNow, 10);
+
+	CHECK_EQ(throttle.TrackRequest(0x55667788u, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+
+	throttle.Reset();
+	CHECK_EQ(throttle.TrackRequest(0x11223344u, dwNow, 10), Kademlia::KPUBLISH_ALLOW);
+}
+
+TEST_CASE("Safe Kad leaves stable verified identities alone and tolerates cleanup on empty state")
+{
+	Kademlia::CSafeKad safeKad;
+	safeKad.TrackNode(0x01020304u, 4665, Kademlia::CUInt128(1ul), true, true);
+
+	CHECK_FALSE(safeKad.IsBadNode(0x01020304u, 4665, Kademlia::CUInt128(1ul), KADEMLIA_VERSION8_49b, true, false, true));
+	safeKad.ShutdownCleanup();
+	safeKad.ShutdownCleanup();
+	CHECK_FALSE(safeKad.IsProblematic(0x01020304u, 4665));
 }
 
 TEST_SUITE_END;

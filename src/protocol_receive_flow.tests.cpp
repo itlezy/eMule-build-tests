@@ -132,4 +132,28 @@ TEST_CASE("Protocol receive flow rejects malformed zero-length packet headers")
 	CHECK(bRejected);
 }
 
+TEST_CASE("Protocol receive flow emits multiple packets from one coalesced buffer")
+{
+	const std::vector<BYTE> stream = {
+		OP_EDONKEYPROT, 0x02, 0x00, 0x00, 0x00, OP_HELLO, 0xAA,
+		OP_EDONKEYPROT, 0x03, 0x00, 0x00, 0x00, OP_MESSAGE, 0xBB, 0xCC
+	};
+
+	const std::vector<size_t> payloadLengths = ReplayProtocolStream(stream, {stream.size()});
+	CHECK(payloadLengths == std::vector<size_t>{1u, 2u});
+}
+
+TEST_CASE("Protocol receive flow leaves a truncated trailing header unresolved instead of inventing a packet")
+{
+	const std::vector<BYTE> stream = {
+		OP_EDONKEYPROT, 0x02, 0x00, 0x00, 0x00, OP_HELLO, 0xAA,
+		OP_EDONKEYPROT, 0x03, 0x00
+	};
+
+	bool bRejected = false;
+	const std::vector<size_t> payloadLengths = ReplayProtocolStream(stream, {stream.size()}, &bRejected);
+	CHECK(payloadLengths == std::vector<size_t>{1u});
+	CHECK_FALSE(bRejected);
+}
+
 TEST_SUITE_END;

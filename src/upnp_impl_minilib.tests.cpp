@@ -18,6 +18,21 @@ TEST_CASE("MiniUPnP seam rejects missing or mismatched mapping targets")
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.186", "27198", "10.54.224.185", 27198));
 	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "27199", "10.54.224.185", 27198));
 }
+
+TEST_CASE("MiniUPnP seam rejects null inputs and formatting mismatches")
+{
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest(nullptr, "27198", "10.54.224.185", 27198));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", nullptr, "10.54.224.185", 27198));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "27198", nullptr, 27198));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "027198", "10.54.224.185", 27198));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "0", "10.54.224.185", 27198));
+}
+
+TEST_CASE("MiniUPnP seam accepts zero-port mappings only when both sides truly match")
+{
+	CHECK(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "0", "10.54.224.185", 0));
+	CHECK_FALSE(DoesMiniUPnPMappingMatchRequest("10.54.224.185", "1", "10.54.224.185", 0));
+}
 #endif
 
 TEST_SUITE_END;

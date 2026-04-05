@@ -56,8 +56,10 @@ TEST_CASE("Part-file hash seam rejects worker results whose theoretical hash lay
 {
 	CHECK(HasMatchingPartFileHashLayout(0u, 0u, 0u, 0u));
 	CHECK(HasMatchingPartFileHashLayout(12u, 12u, 11u, 11u));
+	CHECK(HasMatchingPartFileHashLayout(static_cast<uint16_t>(65535u), static_cast<uint16_t>(65535u), 0u, 0u));
 	CHECK_FALSE(HasMatchingPartFileHashLayout(12u, 13u, 11u, 11u));
 	CHECK_FALSE(HasMatchingPartFileHashLayout(12u, 12u, 11u, 10u));
+	CHECK_FALSE(HasMatchingPartFileHashLayout(0u, 0u, 1u, 0u));
 }
 
 TEST_SUITE_END;

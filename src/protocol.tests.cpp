@@ -241,6 +241,34 @@ TEST_CASE("Protocol parser decodes bool-array tags with exact-fit payloads")
 	CHECK_EQ(span.nTotalSize, sizeof(fixture));
 }
 
+TEST_CASE("Protocol parser decodes float, bool, and unknown custom tag headers without overrunning")
+{
+	const BYTE floatFixture[] = {
+		static_cast<BYTE>(TAGTYPE_FLOAT32 | 0x80),
+		FT_FILERATING,
+		0x00, 0x00, 0x20, 0x41
+	};
+	const BYTE boolFixture[] = {
+		static_cast<BYTE>(TAGTYPE_BOOL | 0x80),
+		FT_DL_PREVIEW,
+		0x01
+	};
+	const BYTE unknownFixture[] = {
+		0x7Fu,
+		0x02, 0x00,
+		'x', 'y'
+	};
+
+	const ProtocolTagSpan floatSpan = ParseTagFixture(floatFixture, sizeof(floatFixture));
+	const ProtocolTagSpan boolSpan = ParseTagFixture(boolFixture, sizeof(boolFixture));
+	const ProtocolTagSpan unknownSpan = ParseTagFixture(unknownFixture, sizeof(unknownFixture));
+
+	CHECK_EQ(floatSpan.nValueSize, static_cast<size_t>(4));
+	CHECK_EQ(boolSpan.nValueSize, static_cast<size_t>(1));
+	CHECK_EQ(unknownSpan.nValueSize, static_cast<size_t>(0));
+	CHECK_EQ(unknownSpan.nTotalSize, unknownSpan.Header.nHeaderSize);
+}
+
 TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the serialized bytes")
 {
 	const BYTE fixture[] = {
@@ -377,7 +405,7 @@ TEST_CASE("Connected-server seam rejects missing capability bits and mismatched 
 
 TEST_SUITE_END;
 
-TEST_SUITE_BEGIN("divergence");
+TEST_SUITE_BEGIN("parity");
 
 TEST_CASE("Protocol parser rejects zero-length packet headers before payload math underflows")
 {
@@ -433,6 +461,17 @@ TEST_CASE("Protocol parser rejects null decode targets and short name-id headers
 	CHECK_FALSE(TryParseTagHeader(nullptr, 1, &tagHeader));
 	CHECK_FALSE(TryParseTagHeader(shortNameIdFixture, sizeof(shortNameIdFixture), &tagHeader));
 	CHECK_FALSE(TryParseTagSpan(nullptr, 0, &span));
+}
+
+TEST_CASE("Protocol parser rejects headers that end before the explicit-name-id byte can be read")
+{
+	const BYTE fixture[] = {
+		TAGTYPE_UINT16,
+		0x01, 0x00
+	};
+
+	ProtocolTagHeader header = {};
+	CHECK_FALSE(TryParseTagHeader(fixture, sizeof(fixture), &header));
 }
 
 TEST_CASE("Protocol parser rejects named-by-id uint32 tags whose serialized value bytes are truncated")
@@ -491,6 +530,25 @@ TEST_CASE("Protocol parser rejects truncated bool-array and fixed-width payloads
 	ProtocolTagSpan span = {};
 	CHECK_FALSE(TryParseTagSpan(boolArrayFixture, sizeof(boolArrayFixture), &span));
 	CHECK_FALSE(TryParseTagSpan(hashFixture, sizeof(hashFixture), &span));
+}
+
+TEST_CASE("Protocol parser rejects truncated float and compact-string payloads")
+{
+	const BYTE floatFixture[] = {
+		static_cast<BYTE>(TAGTYPE_FLOAT32 | 0x80),
+		FT_FILERATING,
+		0x00, 0x00, 0x20
+	};
+	const BYTE compactFixture[] = {
+		TAGTYPE_STR1 + 1,
+		0x02, 0x00,
+		'i', 'd',
+		'a'
+	};
+
+	ProtocolTagSpan span = {};
+	CHECK_FALSE(TryParseTagSpan(floatFixture, sizeof(floatFixture), &span));
+	CHECK_FALSE(TryParseTagSpan(compactFixture, sizeof(compactFixture), &span));
 }
 
 TEST_CASE("Connected-server seam rejects a connected session that lost its current-server snapshot")

@@ -1,6 +1,8 @@
 #include "../third_party/doctest/doctest.h"
 #include "../include/TestSupport.h"
 
+#include <limits>
+
 #include "AICHSyncThreadSeams.h"
 
 TEST_SUITE_BEGIN("parity");
@@ -18,12 +20,14 @@ TEST_CASE("AICH sync seam hashes only live shared candidates while the app is st
 	CHECK(ShouldCreateAICHSyncHash(false, true));
 	CHECK_FALSE(ShouldCreateAICHSyncHash(false, false));
 	CHECK_FALSE(ShouldCreateAICHSyncHash(true, true));
+	CHECK_FALSE(ShouldCreateAICHSyncHash(true, false));
 }
 
 TEST_CASE("AICH sync seam validates only non-negative UI progress counts")
 {
 	CHECK(HasValidAICHSyncProgressCount(0));
 	CHECK(HasValidAICHSyncProgressCount(7));
+	CHECK(HasValidAICHSyncProgressCount((std::numeric_limits<INT_PTR>::max)()));
 	CHECK_FALSE(HasValidAICHSyncProgressCount(-1));
 }
 

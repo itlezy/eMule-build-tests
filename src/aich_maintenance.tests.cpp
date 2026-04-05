@@ -13,12 +13,15 @@ TEST_CASE("AICH maintenance seam derives ordinary raw hash payload sizes without
 
 	CHECK(AICHMaintenanceSeams::TryDeriveAICHHashPayloadSize(20u, 4u, &nPayloadSize));
 	CHECK_EQ(nPayloadSize, static_cast<uint32>(80u));
+	CHECK(AICHMaintenanceSeams::TryDeriveAICHHashPayloadSize(0u, 0u, &nPayloadSize));
+	CHECK_EQ(nPayloadSize, static_cast<uint32>(0u));
 }
 
 TEST_CASE("AICH maintenance seam rejects raw hash payload sizes that overflow 32-bit file IO spans")
 {
 	uint32 nPayloadSize = 0;
 
+	CHECK_FALSE(AICHMaintenanceSeams::TryDeriveAICHHashPayloadSize(20u, 4u, NULL));
 	CHECK_FALSE(AICHMaintenanceSeams::TryDeriveAICHHashPayloadSize((std::numeric_limits<size_t>::max)(), 2u, &nPayloadSize));
 	CHECK_FALSE(AICHMaintenanceSeams::TryDeriveAICHHashPayloadSize(static_cast<size_t>((std::numeric_limits<uint32>::max)()), 2u, &nPayloadSize));
 }
@@ -32,6 +35,10 @@ TEST_CASE("AICH maintenance seam yields briefly for foreground hashing and exits
 	const AICHSyncForegroundWaitAction idleAction = AICHMaintenanceSeams::GetForegroundHashWaitAction({false, 0, false});
 	CHECK_FALSE(idleAction.bShouldExit);
 	CHECK_EQ(idleAction.dwSleepMilliseconds, static_cast<DWORD>(0u));
+
+	const AICHSyncForegroundWaitAction pendingPartAction = AICHMaintenanceSeams::GetForegroundHashWaitAction({false, 0, true});
+	CHECK_FALSE(pendingPartAction.bShouldExit);
+	CHECK_EQ(pendingPartAction.dwSleepMilliseconds, static_cast<DWORD>(AICHMaintenanceSeams::kForegroundHashYieldDelayMs));
 
 	const AICHSyncForegroundWaitAction shutdownAction = AICHMaintenanceSeams::GetForegroundHashWaitAction({true, 3, true});
 	CHECK(shutdownAction.bShouldExit);
@@ -47,6 +54,10 @@ TEST_CASE("AICH maintenance seam keeps the newest stored duplicate hash position
 	const StoredAICHHashUpdate newerDuplicate = AICHMaintenanceSeams::ResolveStoredAICHHashUpdate(40u, 55u);
 	CHECK(newerDuplicate.bShouldReplaceExisting);
 	CHECK_EQ(newerDuplicate.nReplacedFilePos, static_cast<ULONGLONG>(40u));
+
+	const StoredAICHHashUpdate equalDuplicate = AICHMaintenanceSeams::ResolveStoredAICHHashUpdate(55u, 55u);
+	CHECK_FALSE(equalDuplicate.bShouldReplaceExisting);
+	CHECK_EQ(equalDuplicate.nReplacedFilePos, static_cast<ULONGLONG>(0u));
 }
 
 TEST_CASE("AICH maintenance seam invalidates malformed one-sided tree nodes")
@@ -62,6 +73,10 @@ TEST_CASE("AICH maintenance seam invalidates malformed one-sided tree nodes")
 	const IncompleteAICHTreeNodeAction completeNode = AICHMaintenanceSeams::GetIncompleteAICHTreeNodeAction(true, true);
 	CHECK_FALSE(completeNode.bHasIncompleteChildren);
 	CHECK_FALSE(completeNode.bShouldInvalidateNodeHash);
+
+	const IncompleteAICHTreeNodeAction emptyNode = AICHMaintenanceSeams::GetIncompleteAICHTreeNodeAction(false, false);
+	CHECK_FALSE(emptyNode.bHasIncompleteChildren);
+	CHECK_FALSE(emptyNode.bShouldInvalidateNodeHash);
 }
 
 TEST_SUITE_END;

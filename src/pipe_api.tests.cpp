@@ -263,6 +263,18 @@ TEST_CASE("Pipe API trims transfer add links and rejects empty payloads")
 	CHECK_EQ(error, "link must be a string");
 }
 
+TEST_CASE("Pipe API preserves source-oriented ed2k links after trimming transport whitespace")
+{
+	std::string link;
+	std::string error;
+
+	CHECK(PipeApiCommandSeams::TryParseTransferAddLink(
+		PipeApiCommandSeams::json{{"link", "\n\ted2k://|file|ubuntu.iso|1|0123456789abcdef0123456789abcdef|sources,1.2.3.4:4662|/\r\n"}},
+		link,
+		error));
+	CHECK_EQ(link, "ed2k://|file|ubuntu.iso|1|0123456789abcdef0123456789abcdef|sources,1.2.3.4:4662|/");
+}
+
 TEST_CASE("Pipe API parses bulk transfer mutations and the delete-files aliases")
 {
 	PipeApiCommandSeams::STransferBulkMutationRequest request;
@@ -277,6 +289,8 @@ TEST_CASE("Pipe API parses bulk transfer mutations and the delete-files aliases"
 		error));
 	CHECK_EQ(request.hashes.size(), 2u);
 	CHECK(request.bDeleteFiles);
+	CHECK_EQ(request.hashes[0].get<std::string>(), "a");
+	CHECK_EQ(request.hashes[1].get<std::string>(), "b");
 
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferBulkMutationRequest(PipeApiCommandSeams::json{{"hashes", "abc"}}, request, error));

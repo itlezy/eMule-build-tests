@@ -29,6 +29,8 @@ TEST_CASE("Socket IO seam advances send progress only for positive in-range send
 
 	CHECK(TryAccumulateSocketSendProgress(128u, 256u, 1024u, 128u, &nNextSent));
 	CHECK_EQ(nNextSent, static_cast<std::uint32_t>(256));
+	CHECK(TryAccumulateSocketSendProgress(0u, 128u, 128u, 128u, &nNextSent));
+	CHECK_EQ(nNextSent, static_cast<std::uint32_t>(128));
 
 	CHECK_FALSE(TryAccumulateSocketSendProgress(128u, 256u, 1024u, 0u, &nNextSent));
 	CHECK_FALSE(TryAccumulateSocketSendProgress(128u, 256u, 1024u, 300u, &nNextSent));

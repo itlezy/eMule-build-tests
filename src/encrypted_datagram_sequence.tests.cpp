@@ -239,6 +239,18 @@ namespace
 
 		return result;
 	}
+
+	EncryptedDatagramLoopResult ReplayEncryptedDatagramReceiveLoopFromBytes(
+		const std::vector<std::vector<BYTE>> &rDatagrams,
+		const std::vector<bool> &rServerFlags,
+		const std::vector<size_t> &rReadBudgets)
+	{
+		std::vector<EncryptedDatagramScenario> scenarios;
+		scenarios.reserve(rDatagrams.size());
+		for (size_t i = 0; i < rDatagrams.size(); ++i)
+			scenarios.push_back({rDatagrams[i], i < rServerFlags.size() ? rServerFlags[i] : false});
+		return ReplayEncryptedDatagramReceiveLoop(scenarios, rReadBudgets);
+	}
 }
 
 TEST_SUITE_BEGIN("parity");
@@ -277,6 +289,31 @@ TEST_CASE("Encrypted datagram sequence passes through truncated server candidate
 	const std::vector<size_t> payloadLengths = ReplayEncryptedDatagramSequence(truncated, {3u, 4u}, true, &bPassedThrough);
 	CHECK(payloadLengths.empty());
 	CHECK(bPassedThrough);
+}
+
+TEST_CASE("Encrypted datagram sequence passes through encrypted candidates when padding validation fails")
+{
+	const std::vector<BYTE> datagram = BuildDeterministicEncryptedDatagram(0x05u, false, {0x01, 0x02, 0x03}, 0xABCDu, 0x395F2EC1u);
+	EncryptedDatagramSequenceState state = CreateEncryptedDatagramSequenceState();
+	const EncryptedDatagramFrameSnapshot snapshot = InspectEncryptedDatagramFrame(datagram.front(), datagram.size(), false);
+
+	const EncryptedDatagramSequenceAction action = AdvanceEncryptedDatagramSequence(state, datagram.size(), datagram.size(), snapshot, false);
+	CHECK(action.bShouldInspectHeader);
+	CHECK(action.bShouldPassThrough);
+	CHECK(state.bPassedThrough);
+	CHECK_FALSE(state.bPayloadReady);
+}
+
+TEST_CASE("Encrypted datagram send sequence passes through encrypted candidates when padding validation fails")
+{
+	const std::vector<BYTE> datagram = BuildDeterministicEncryptedDatagram(0x12u, true, {0x0A, 0x0B}, 0x8888u, 0x395F2EC1u, 0x11111111u, 0x22222222u);
+	const EncryptedDatagramFrameSnapshot snapshot = InspectEncryptedDatagramFrame(datagram.front(), datagram.size(), false);
+	EncryptedDatagramSendSequenceState state = CreateEncryptedDatagramSendSequenceState(datagram.size() - snapshot.nExpectedOverhead, snapshot, false);
+
+	const std::vector<BYTE> emitted = ReplayEncryptedDatagramSendSequenceWithState(state, datagram, {4u, 4u});
+	CHECK(emitted.empty());
+	CHECK(state.bPassedThrough);
+	CHECK(state.bTransmissionComplete);
 }
 
 TEST_CASE("Encrypted datagram send sequence emits deterministic header and payload slices for ED2K traffic")
@@ -453,6 +490,21 @@ TEST_CASE("Encrypted datagram receive loop replays mixed plain and encrypted mar
 	CHECK(result.payloadLengths == std::vector<size_t>{3u, 2u});
 }
 
+TEST_CASE("Encrypted datagram receive loop handles consecutive plain markers before encrypted payloads")
+{
+	const std::vector<BYTE> plainOne = {OP_EMULEPROT, 0x41u, 0x41u, 0xC1u, 0x2Eu, 0x5Fu, 0x39u, 0x00u, 0x11u};
+	const std::vector<BYTE> plainTwo = {OP_KADEMLIAHEADER, 0x42u, 0x42u, 0xC1u, 0x2Eu, 0x5Fu, 0x39u, 0x00u, 0x22u};
+	const std::vector<BYTE> encrypted = BuildDeterministicEncryptedDatagram(0x05u, false, {0x91, 0x92}, 0x6767u, 0x395F2EC1u);
+
+	const EncryptedDatagramLoopResult result = ReplayEncryptedDatagramReceiveLoopFromBytes(
+		{plainOne, plainTwo, encrypted},
+		{false, false, false},
+		{4u, 5u, 4u, 5u, 3u, 7u});
+
+	CHECK(result.nPassThroughCount == 2u);
+	CHECK(result.payloadLengths == std::vector<size_t>{2u});
+}
+
 TEST_CASE("Encrypted datagram sequence replays multiple datagrams from a temp-file corpus")
 {
 	const std::vector<BYTE> firstPayload = {0x01, 0x02};
@@ -516,6 +568,44 @@ TEST_CASE("Encrypted datagram receive loop replays a mixed temp-file corpus with
 
 	std::error_code ec;
 	std::filesystem::remove(fixturePath, ec);
+}
+
+TEST_CASE("Encrypted datagram round-trip replays emitted ED2K bytes through the receive loop as a golden stream")
+{
+	const std::vector<BYTE> datagram = BuildDeterministicEncryptedDatagram(0x05u, false, {0x10, 0x20, 0x30, 0x40}, 0x1111u, 0x395F2EC1u);
+	const std::vector<BYTE> emitted = ReplayEncryptedDatagramSendSequence(datagram, {2u, 4u, 6u}, false);
+	REQUIRE(emitted == datagram);
+
+	const EncryptedDatagramLoopResult result = ReplayEncryptedDatagramReceiveLoopFromBytes({emitted}, {false}, {3u, 3u, 6u});
+	CHECK(result.nPassThroughCount == 0u);
+	CHECK(result.payloadLengths == std::vector<size_t>{4u});
+}
+
+TEST_CASE("Encrypted datagram round-trip replays emitted Kad bytes through the receive loop as a golden stream")
+{
+	const std::vector<BYTE> datagram = BuildDeterministicEncryptedDatagram(0x12u, true, {0xAA, 0xBB, 0xCC}, 0x2222u, 0x395F2EC1u, 0xDEADBEEFu, 0x01020304u);
+	const std::vector<BYTE> emitted = ReplayEncryptedDatagramSendSequence(datagram, {5u, 5u, 9u}, false);
+	REQUIRE(emitted == datagram);
+
+	const EncryptedDatagramLoopResult result = ReplayEncryptedDatagramReceiveLoopFromBytes({emitted}, {false}, {4u, 4u, 4u, 7u});
+	CHECK(result.nPassThroughCount == 0u);
+	CHECK(result.payloadLengths == std::vector<size_t>{3u});
+}
+
+TEST_CASE("Encrypted datagram round-trip preserves mixed plain and encrypted corpus outcomes")
+{
+	const std::vector<BYTE> plain = {OP_EMULEPROT, 0x10u, 0x10u, 0xC1u, 0x2Eu, 0x5Fu, 0x39u, 0x00u, 0x77u};
+	const std::vector<BYTE> encrypted = BuildDeterministicEncryptedDatagram(0x05u, false, {0x51, 0x52}, 0x3333u, 0x395F2EC1u);
+	const std::vector<BYTE> emittedEncrypted = ReplayEncryptedDatagramSendSequence(encrypted, {4u, 6u}, false);
+	REQUIRE(emittedEncrypted == encrypted);
+
+	const EncryptedDatagramLoopResult result = ReplayEncryptedDatagramReceiveLoopFromBytes(
+		{plain, emittedEncrypted},
+		{false, false},
+		{4u, 5u, 4u, 6u});
+
+	CHECK(result.nPassThroughCount == 1u);
+	CHECK(result.payloadLengths == std::vector<size_t>{2u});
 }
 
 TEST_SUITE_END;

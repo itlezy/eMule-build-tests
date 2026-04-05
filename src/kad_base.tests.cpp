@@ -64,4 +64,25 @@ TEST_CASE("Kad client searcher callbacks preserve the delivered status and endpo
 	CHECK_EQ(searcher.m_uLastPort, static_cast<uint16>(4672u));
 }
 
+TEST_CASE("Kad client searcher preserves timeout and null-node responses")
+{
+	RecordingKadClientSearcher searcher;
+
+	searcher.KadSearchNodeIDByIPResult(Kademlia::KCSR_TIMEOUT, nullptr);
+	searcher.KadSearchIPByNodeIDResult(Kademlia::KCSR_TIMEOUT, 0u, 0u);
+
+	CHECK_EQ(searcher.m_eLastNodeStatus, Kademlia::KCSR_TIMEOUT);
+	CHECK_EQ(searcher.m_pLastNodeID, nullptr);
+	CHECK_EQ(searcher.m_eLastIpStatus, Kademlia::KCSR_TIMEOUT);
+	CHECK_EQ(searcher.m_dwLastIP, static_cast<uint32>(0u));
+	CHECK_EQ(searcher.m_uLastPort, static_cast<uint16>(0u));
+}
+
+TEST_CASE("Kad base timing constants remain monotonically ordered for search expiry logic")
+{
+	CHECK(SEARCHKEYWORD_LIFETIME >= SEARCHNODE_LIFETIME);
+	CHECK(SEARCHFINDSOURCE_LIFETIME >= SEARCHNODECOMP_LIFETIME);
+	CHECK(SEARCHSTOREFILE_LIFETIME >= SEARCHSTOREFILE_TOTAL);
+}
+
 TEST_SUITE_END;

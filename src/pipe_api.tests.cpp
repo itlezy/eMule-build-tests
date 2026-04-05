@@ -110,6 +110,17 @@ TEST_CASE("Pipe API parses the expanded mutable preference vocabulary")
 	CHECK_EQ(PipeApiSurfaceSeams::ParseMutablePreferenceName(nullptr), PipeApiSurfaceSeams::EMutablePreference::Invalid);
 }
 
+TEST_CASE("Pipe API normalizes search method and type names case-insensitively")
+{
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchMethodName("AUTOMATIC"), PipeApiCommandSeams::ESearchMethod::Automatic);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchMethodName("gLoBaL"), PipeApiCommandSeams::ESearchMethod::Global);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchMethodName(""), PipeApiCommandSeams::ESearchMethod::Invalid);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchMethodName(nullptr), PipeApiCommandSeams::ESearchMethod::Invalid);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchFileTypeName("VIDEO"), PipeApiCommandSeams::ESearchFileType::Video);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchFileTypeName("emulecollection"), PipeApiCommandSeams::ESearchFileType::EmuleCollection);
+	CHECK_EQ(PipeApiCommandSeams::ParseSearchFileTypeName(nullptr), PipeApiCommandSeams::ESearchFileType::Invalid);
+}
+
 TEST_CASE("Pipe API only allows shared-file removal for files that are shared and not mandatory")
 {
 	CHECK(PipeApiSurfaceSeams::CanRemoveSharedFile(true, false));
@@ -161,6 +172,26 @@ TEST_CASE("Pipe API rejects invalid search start payloads before they touch the 
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", "1080p"}, {"min_size", -1}}, request, error));
 	CHECK_EQ(error, "min_size must be an unsigned number");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", 7}}, request, error));
+	CHECK_EQ(error, "query must be a string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", "1080p"}, {"method", 7}}, request, error));
+	CHECK_EQ(error, "method must be a string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", "1080p"}, {"type", 7}}, request, error));
+	CHECK_EQ(error, "type must be a string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", "1080p"}, {"ext", 7}}, request, error));
+	CHECK_EQ(error, "ext must be a string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchStartRequest(PipeApiCommandSeams::json{{"query", "1080p"}, {"max_size", -1}}, request, error));
+	CHECK_EQ(error, "max_size must be an unsigned number");
 }
 
 TEST_CASE("Pipe API parses search identifiers as decimal uint32 strings")
@@ -178,6 +209,14 @@ TEST_CASE("Pipe API parses search identifiers as decimal uint32 strings")
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchId(PipeApiCommandSeams::json("12x"), uSearchID, error));
 	CHECK_EQ(error, "search_id must be a valid uint32 decimal string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchId(PipeApiCommandSeams::json(7), uSearchID, error));
+	CHECK_EQ(error, "search_id must be a decimal string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseSearchId(PipeApiCommandSeams::json("4294967296"), uSearchID, error));
+	CHECK_EQ(error, "search_id must be a valid uint32 decimal string");
 }
 
 TEST_CASE("Pipe API parses transfer list filters and validates categories")
@@ -193,6 +232,10 @@ TEST_CASE("Pipe API parses transfer list filters and validates categories")
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseTransfersListRequest(PipeApiCommandSeams::json{{"filter", 7}}, request, error));
 	CHECK_EQ(error, "filter must be a string when provided");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseTransfersListRequest(PipeApiCommandSeams::json{{"category", -1}}, request, error));
+	CHECK_EQ(error, "category must be an unsigned number");
 }
 
 TEST_CASE("Pipe API trims transfer add links and rejects empty payloads")
@@ -214,6 +257,10 @@ TEST_CASE("Pipe API trims transfer add links and rejects empty payloads")
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferAddLink(PipeApiCommandSeams::json{{"link", 7}}, link, error));
 	CHECK_EQ(error, "link must be a string");
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferAddLink(PipeApiCommandSeams::json::object(), link, error));
+	CHECK_EQ(error, "link must be a string");
 }
 
 TEST_CASE("Pipe API parses bulk transfer mutations and the delete-files aliases")
@@ -233,5 +280,25 @@ TEST_CASE("Pipe API parses bulk transfer mutations and the delete-files aliases"
 
 	error.clear();
 	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferBulkMutationRequest(PipeApiCommandSeams::json{{"hashes", "abc"}}, request, error));
+	CHECK_EQ(error, "hashes must be a string array");
+}
+
+TEST_CASE("Pipe API accepts both delete-file aliases and rejects missing hash arrays")
+{
+	PipeApiCommandSeams::STransferBulkMutationRequest request;
+	std::string error;
+
+	CHECK(PipeApiCommandSeams::TryParseTransferBulkMutationRequest(
+		PipeApiCommandSeams::json{
+			{"hashes", PipeApiCommandSeams::json::array()},
+			{"deleteFiles", true}
+		},
+		request,
+		error));
+	CHECK(request.bDeleteFiles);
+	CHECK_EQ(request.hashes.size(), 0u);
+
+	error.clear();
+	CHECK_FALSE(PipeApiCommandSeams::TryParseTransferBulkMutationRequest(PipeApiCommandSeams::json::object(), request, error));
 	CHECK_EQ(error, "hashes must be a string array");
 }

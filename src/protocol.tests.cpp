@@ -133,6 +133,15 @@ TEST_CASE("Protocol parser decodes the smallest legal packet header from seriali
 	CHECK_EQ(header.nPayloadLength, static_cast<uint32>(0));
 }
 
+TEST_CASE("Protocol parser reads little-endian packet primitives without sign extension")
+{
+	const BYTE byWord[] = { 0x34, 0x12 };
+	const BYTE byDword[] = { 0x78, 0x56, 0x34, 0x12 };
+
+	CHECK_EQ(ReadLittleEndianUInt16(byWord), static_cast<uint16>(0x1234u));
+	CHECK_EQ(ReadLittleEndianUInt32(byDword), static_cast<uint32>(0x12345678u));
+}
+
 TEST_CASE("Protocol parser decodes a named-by-id uint32 tag from serialized bytes")
 {
 	const BYTE fixture[] = {
@@ -169,6 +178,69 @@ TEST_CASE("Protocol parser decodes an explicit-name string tag whose payload exa
 	CHECK_EQ(span.nTotalSize, sizeof(fixture));
 }
 
+TEST_CASE("Protocol parser decodes the legacy explicit-name-id header form")
+{
+	const BYTE fixture[] = {
+		TAGTYPE_UINT16,
+		0x01, 0x00,
+		CT_PORT,
+		0x39, 0x30
+	};
+
+	const ProtocolTagSpan span = ParseTagFixture(fixture, sizeof(fixture));
+	CHECK_EQ(span.Header.nType, static_cast<uint8>(TAGTYPE_UINT16));
+	CHECK(span.Header.bUsesNameId);
+	CHECK_EQ(span.Header.nNameId, static_cast<uint8>(CT_PORT));
+	CHECK_EQ(span.Header.nHeaderSize, static_cast<size_t>(4));
+	CHECK_EQ(span.nValueSize, static_cast<size_t>(2));
+}
+
+TEST_CASE("Protocol parser decodes fixed-size integer, hash, and compact string tags")
+{
+	const BYTE uint64Fixture[] = {
+		static_cast<BYTE>(TAGTYPE_UINT64 | 0x80),
+		CT_EMULE_UDPPORTS,
+		1, 2, 3, 4, 5, 6, 7, 8
+	};
+	const BYTE hashFixture[] = {
+		static_cast<BYTE>(TAGTYPE_HASH | 0x80),
+		FT_FILEHASH,
+		0, 1, 2, 3, 4, 5, 6, 7,
+		8, 9, 10, 11, 12, 13, 14, 15
+	};
+	const BYTE compactFixture[] = {
+		TAGTYPE_STR1 + 2,
+		0x02, 0x00,
+		'i', 'd',
+		'a', 'b', 'c'
+	};
+
+	const ProtocolTagSpan uint64Span = ParseTagFixture(uint64Fixture, sizeof(uint64Fixture));
+	const ProtocolTagSpan hashSpan = ParseTagFixture(hashFixture, sizeof(hashFixture));
+	const ProtocolTagSpan compactSpan = ParseTagFixture(compactFixture, sizeof(compactFixture));
+
+	CHECK_EQ(uint64Span.nValueSize, static_cast<size_t>(8));
+	CHECK_EQ(hashSpan.nValueSize, static_cast<size_t>(16));
+	CHECK_EQ(compactSpan.Header.nType, static_cast<uint8>(TAGTYPE_STR1 + 2));
+	CHECK_EQ(compactSpan.nValueSize, static_cast<size_t>(3));
+	CHECK_EQ(compactSpan.nTotalSize, sizeof(compactFixture));
+}
+
+TEST_CASE("Protocol parser decodes bool-array tags with exact-fit payloads")
+{
+	const BYTE fixture[] = {
+		static_cast<BYTE>(TAGTYPE_BOOLARRAY | 0x80),
+		FT_CORRUPTEDPARTS,
+		0x09, 0x00,
+		0xA5, 0x01
+	};
+
+	const ProtocolTagSpan span = ParseTagFixture(fixture, sizeof(fixture));
+	CHECK_EQ(span.Header.nType, static_cast<uint8>(TAGTYPE_BOOLARRAY));
+	CHECK_EQ(span.nValueSize, static_cast<size_t>(4));
+	CHECK_EQ(span.nTotalSize, sizeof(fixture));
+}
+
 TEST_CASE("Protocol parser accepts a blob tag whose payload exactly fits the serialized bytes")
 {
 	const BYTE fixture[] = {
@@ -192,6 +264,15 @@ TEST_CASE("Protocol guard bounds zero-length packet payloads instead of underflo
 TEST_CASE("Protocol guard rejects hostile hello tag counts before tag parsing starts")
 {
 	CHECK_FALSE(HasSaneTagCount(8, 16, MAX_PROTOCOL_TAGS + 1, MAX_PROTOCOL_TAGS));
+}
+
+TEST_CASE("Protocol guard validates serialized byte windows and bool-array payload lengths")
+{
+	CHECK(CanReadSerializedBytes(8, 16, 8));
+	CHECK(CanReadBoolArrayPayload(8, 12, 8));
+	CHECK_FALSE(CanReadSerializedBytes(17, 16, 0));
+	CHECK_FALSE(CanReadSerializedBytes(8, 16, 9));
+	CHECK_FALSE(CanReadBoolArrayPayload(11, 12, 16));
 }
 
 TEST_CASE("Protocol guard rejects short server UDP payloads before reading the header bytes")
@@ -270,6 +351,14 @@ TEST_CASE("Protocol guard rejects invalid IPv4 parser inputs and clamps bounded 
 	CHECK_FALSE(TryParseDottedIPv4Literal("1.2.3.4x", &nAddress));
 }
 
+TEST_CASE("Protocol guard accepts boundary UDP and block packet shapes")
+{
+	CHECK(HasUdpPayloadHeader(2));
+	CHECK_EQ(GetDownloadBlockPacketHeaderSize(true, true), static_cast<uint32>(28));
+	CHECK(HasDownloadBlockPacketHeader(28, true, true));
+	CHECK_FALSE(HasDownloadBlockPacketHeader(27, true, true));
+}
+
 TEST_CASE("Connected-server seam accepts a cached current-server snapshot when connected")
 {
 	const void *pCurrentServer = reinterpret_cast<const void*>(1);
@@ -325,6 +414,27 @@ TEST_CASE("Protocol parser rejects explicit-name tags whose serialized name byte
 	CHECK_FALSE(TryParseTagHeader(fixture, sizeof(fixture), &header));
 }
 
+TEST_CASE("Protocol parser rejects null decode targets and short name-id headers")
+{
+	const BYTE validPacket[] = {
+		OP_EDONKEYPROT,
+		0x01, 0x00, 0x00, 0x00,
+		OP_HELLO
+	};
+	const BYTE shortNameIdFixture[] = {
+		static_cast<BYTE>(TAGTYPE_UINT16 | 0x80)
+	};
+	ProtocolPacketHeader header = {};
+	ProtocolTagHeader tagHeader = {};
+	ProtocolTagSpan span = {};
+
+	CHECK_FALSE(TryParsePacketHeader(nullptr, sizeof(validPacket), &header));
+	CHECK_FALSE(TryParsePacketHeader(validPacket, sizeof(validPacket), nullptr));
+	CHECK_FALSE(TryParseTagHeader(nullptr, 1, &tagHeader));
+	CHECK_FALSE(TryParseTagHeader(shortNameIdFixture, sizeof(shortNameIdFixture), &tagHeader));
+	CHECK_FALSE(TryParseTagSpan(nullptr, 0, &span));
+}
+
 TEST_CASE("Protocol parser rejects named-by-id uint32 tags whose serialized value bytes are truncated")
 {
 	const BYTE fixture[] = {
@@ -363,6 +473,26 @@ TEST_CASE("Protocol parser rejects blob tags whose serialized payload exceeds th
 	CHECK_FALSE(TryParseTagSpan(fixture, sizeof(fixture), &span));
 }
 
+TEST_CASE("Protocol parser rejects truncated bool-array and fixed-width payloads")
+{
+	const BYTE boolArrayFixture[] = {
+		static_cast<BYTE>(TAGTYPE_BOOLARRAY | 0x80),
+		FT_CORRUPTEDPARTS,
+		0x09, 0x00,
+		0xA5
+	};
+	const BYTE hashFixture[] = {
+		static_cast<BYTE>(TAGTYPE_HASH | 0x80),
+		FT_FILEHASH,
+		0, 1, 2, 3, 4, 5, 6, 7,
+		8, 9, 10, 11, 12, 13, 14
+	};
+
+	ProtocolTagSpan span = {};
+	CHECK_FALSE(TryParseTagSpan(boolArrayFixture, sizeof(boolArrayFixture), &span));
+	CHECK_FALSE(TryParseTagSpan(hashFixture, sizeof(hashFixture), &span));
+}
+
 TEST_CASE("Connected-server seam rejects a connected session that lost its current-server snapshot")
 {
 	CHECK_FALSE(HasConnectedServerSnapshot(true, NULL));
@@ -376,6 +506,14 @@ TEST_CASE("Connected-server seam rejects capability checks once the current-serv
 TEST_CASE("Connected-server seam rejects endpoint matches once the current-server snapshot is missing")
 {
 	CHECK_FALSE(MatchesConnectedServerEndpoint(true, NULL, 0x01020304u, 4661, 0x01020304u, 4661));
+}
+
+TEST_CASE("Connected-server seam rejects every helper while disconnected")
+{
+	const void *pCurrentServer = reinterpret_cast<const void*>(1);
+	CHECK_FALSE(HasConnectedServerSnapshot(false, pCurrentServer));
+	CHECK_FALSE(HasConnectedServerCapability(false, pCurrentServer, true));
+	CHECK_FALSE(MatchesConnectedServerEndpoint(false, pCurrentServer, 0x01020304u, 4661, 0x01020304u, 4661));
 }
 
 TEST_SUITE_END;

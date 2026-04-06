@@ -236,3 +236,5 @@ Write-Output $summaryJson
 if (-not $summary.passed) {
     throw 'Tracked-file privacy guard failed.'
 }
+
+exit 0

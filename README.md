@@ -19,9 +19,11 @@ It owns:
 
 The project is built against the canonical app checkout resolved from the invoking workspace manifest. It is intentionally not a runtime dependency like the `eMule-*` third-party dependencies, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
+The harness also supports an explicit `-AppRoot` override when validating a cleanroom rebuild before promotion.
+
 Supported branch:
 
-- `bb/v0.72a/tests`
+- `main`
 
 Oracle workspaces may be edited when the change is strictly to enable tests, seams, logging, tracing, or debugging. They are not feature-development branches.
 
@@ -38,6 +40,7 @@ Workspace quick reference:
   - `eMule-bb-v0.72a-test`
   - `eMule-bb-v0.72a-bugfix`
 - for live-diff runs, point `-DevWorkspaceRoot` and `-OracleWorkspaceRoot` at the two workspace roots you want to compare
+- for cleanroom validation, pass both `-WorkspaceRoot` and `-AppRoot` explicitly so reports and build tags stay tied to the cleanroom root
 
 Standalone probe mode:
 

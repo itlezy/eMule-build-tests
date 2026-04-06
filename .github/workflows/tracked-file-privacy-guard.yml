@@ -1,17 +1,12 @@
-name: Tracked File Privacy Guard
+name: Baseline
 
 on:
   push:
   pull_request:
 
 jobs:
-  tracked-file-privacy-guard:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run tracked-file privacy guard
-        shell: pwsh
-        run: .\scripts\guard-tracked-files.ps1
+  baseline:
+    uses: itlezy/eMule-tooling/.github/workflows/reusable-baseline.yml@main
+    with:
+      policy_path: manifests/privacy-guard/policy.v1.json
+      repo_kind: tests

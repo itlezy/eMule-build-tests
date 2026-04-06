@@ -1,6 +1,6 @@
 # eMule Shared Tests
 
-This repository is a shared workspace-level test asset for the clean `v0.72a` build workspace.
+This repository is the shared test harness for the canonical `bb/v0.72a/*` app lineage.
 
 Expected fixed layout:
 
@@ -17,15 +17,11 @@ It owns:
 - fixture, manifest, and report directories for future protocol coverage
 - the deterministic live-profile seed used by the named-pipe live harness
 
-The project is built against the local `eMule` checkout in whichever workspace invokes it. It is intentionally not a runtime dependency like the `eMule-*` third-party dependencies, and it is no longer embedded as a `tests/` submodule inside each workspace.
+The project is built against the canonical app checkout resolved from the invoking workspace manifest. It is intentionally not a runtime dependency like the `eMule-*` third-party dependencies, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
 Supported branch:
 
-- `v0.72a-clean`
-
-Historical frozen branch:
-
-- `v0.72a-broadband-dev`
+- `bb/v0.72a/tests`
 
 Oracle workspaces may be edited when the change is strictly to enable tests, seams, logging, tracing, or debugging. They are not feature-development branches.
 
@@ -37,6 +33,10 @@ Current suite model:
 Workspace quick reference:
 
 - `eMule-build-v0.72`: use `pwsh -File .\workspace.ps1 validate`, `build-libs`, `build-app`, and the supported workspace wrappers
+- canonical target app paths are:
+  - `eMule-bb-v0.72a-build`
+  - `eMule-bb-v0.72a-test`
+  - `eMule-bb-v0.72a-bugfix`
 - for live-diff runs, point `-DevWorkspaceRoot` and `-OracleWorkspaceRoot` at the two workspace roots you want to compare
 
 Standalone probe mode:

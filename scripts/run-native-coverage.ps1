@@ -14,6 +14,8 @@ param(
 
     [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build-v0.72'),
 
+    [string]$AppRoot,
+
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
@@ -30,6 +32,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
+
+. (Join-Path $PSScriptRoot 'resolve-app-root.ps1')
 
 function Get-BuildTag {
     param(
@@ -114,6 +118,11 @@ function Get-DoctestSuiteExecutionStats {
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$appRootPath = if ([string]::IsNullOrWhiteSpace($AppRoot)) {
+    Resolve-WorkspaceAppRoot -WorkspaceRoot $workspaceRootPath
+} else {
+    (Resolve-Path -LiteralPath $AppRoot).Path
+}
 $buildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
 $reportRoot = Join-Path $testRepoRootPath 'reports'
 $coverageReportRoot = Join-Path $reportRoot 'native-coverage'
@@ -128,7 +137,7 @@ New-Item -ItemType Directory -Force -Path $runReportDir | Out-Null
 
 if (-not $SkipBuild) {
     $buildScriptPath = Join-Path $testRepoRootPath 'scripts\build-emule-tests.ps1'
-    & $buildScriptPath -TestRepoRoot $testRepoRootPath -WorkspaceRoot $workspaceRootPath -Configuration $Configuration -Platform $Platform -BuildTag $buildTag
+    & $buildScriptPath -TestRepoRoot $testRepoRootPath -WorkspaceRoot $workspaceRootPath -AppRoot $appRootPath -Configuration $Configuration -Platform $Platform -BuildTag $buildTag
     if ($LASTEXITCODE -ne 0) {
         throw "Shared test build failed with exit code $LASTEXITCODE."
     }
@@ -150,14 +159,14 @@ $mergedBinaryCoveragePath = $null
 $sourcePatterns = @(
     (Join-Path $testRepoRootPath 'src\*')
     (Join-Path $testRepoRootPath 'include\*')
-    (Join-Path $workspaceRootPath 'eMule\*')
+    (Join-Path $appRootPath '*')
 )
 $excludedSourcePatterns = @(
     (Join-Path $testRepoRootPath 'third_party\*')
     (Join-Path $testRepoRootPath 'build\*')
     (Join-Path $testRepoRootPath 'reports\*')
-    (Join-Path $workspaceRootPath 'eMule\srchybrid\x64\*')
-    (Join-Path $workspaceRootPath 'eMule\res\*')
+    (Join-Path $appRootPath 'srchybrid\x64\*')
+    (Join-Path $appRootPath 'res\*')
 )
 
 for ($index = 0; $index -lt $SuiteNames.Count; ++$index) {
@@ -242,6 +251,7 @@ $summary = [ordered]@{
     generated_at = (Get-Date).ToString('o')
     test_repo_root = $testRepoRootPath
     workspace_root = $workspaceRootPath
+    app_root = $appRootPath
     configuration = $Configuration
     platform = $Platform
     build_tag = $buildTag

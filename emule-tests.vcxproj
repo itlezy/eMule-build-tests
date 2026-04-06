@@ -79,16 +79,17 @@
   <PropertyGroup>
     <_ProjectFileVersion>11.0.60610.1</_ProjectFileVersion>
     <WorkspaceRoot Condition="'$(WorkspaceRoot)'==''">$(MSBuildThisFileDirectory)..\eMule-build</WorkspaceRoot>
+    <AppRoot Condition="'$(AppRoot)'==''">$(WorkspaceRoot)\eMule-bb-v0.72a-bugfix</AppRoot>
     <BuildTag Condition="'$(BuildTag)'==''">default</BuildTag>
     <HasMappedFileReader>0</HasMappedFileReader>
-    <HasMappedFileReader Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')">1</HasMappedFileReader>
+    <HasMappedFileReader Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')">1</HasMappedFileReader>
     <OutDir>build\$(BuildTag)\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>build\$(BuildTag)\$(Platform)\$(Configuration)\obj\</IntDir>
     <TargetName>emule-tests</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='_SpecialBootstrapNodes'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.;include;third_party\doctest;$(WorkspaceRoot)\eMule;$(WorkspaceRoot)\eMule\srchybrid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.;include;third_party\doctest;$(AppRoot);$(AppRoot)\srchybrid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -105,7 +106,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.;include;third_party\doctest;$(WorkspaceRoot)\eMule;$(WorkspaceRoot)\eMule\srchybrid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.;include;third_party\doctest;$(AppRoot);$(AppRoot)\srchybrid;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -124,110 +125,112 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.cpp')" />
-    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadPublishGuard.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadPublishGuard.cpp')" />
-    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.cpp')" />
-    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\NodesDatSupport.cpp')" />
-    <ClCompile Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\SafeKad.cpp')" />
-    <ClCompile Include="src\async_datagram_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncDatagramSocketSeams.h')" />
-    <ClCompile Include="src\async_datagram_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncDatagramSocketFlowSeams.h')" />
-    <ClCompile Include="src\aich_maintenance.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHMaintenanceSeams.h')" />
-    <ClCompile Include="src\aich_sync_thread.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
-    <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncSocketExSeams.h')" />
-    <ClCompile Include="src\atomic_state.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AppStateSeams.h')" />
-    <ClCompile Include="src\base_client_friend_buddy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
-    <ClCompile Include="src\kad_base.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadClientSearcher.h')" />
-    <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
-    <ClCompile Include="src\bind_startup_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BindStartupPolicy.h')" />
-    <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
-    <ClCompile Include="src\client_credits.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h')" />
-    <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
-    <ClCompile Include="src\collection.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h')" />
-    <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
-    <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
-    <ClCompile Include="src\udp_obfuscation_framing.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramFramingSeams.h')" />
-    <ClCompile Include="src\encrypted_datagram_sequence.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSequenceSeams.h')" />
-    <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketSeams.h')" />
-    <ClCompile Include="src\encrypted_datagram_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSocketFlowSeams.h')" />
-    <ClCompile Include="src\encrypted_stream_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
-    <ClCompile Include="src\fastkad_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\FastKad.h')" />
-    <ClCompile Include="src\format_safety.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h')" />
-    <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
-    <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
-    <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
-    <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
-    <ClCompile Include="src\listen_socket.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ListenSocketSeams.h')" />
-    <ClCompile Include="src\listen_socket_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ListenSocketFlowSeams.h')" />
-    <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
-    <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FileBufferSlider.h')" />
-    <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
-    <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PipeApiServerPolicy.h')" />
-    <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h')" />
-    <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartStatusOwnershipSeams.h')" />
-    <ClCompile Include="src\protocol_receive_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ProtocolReceiveFlowSeams.h')" />
+    <ClCompile Include="$(AppRoot)\srchybrid\kademlia\utils\FastKad.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.cpp')" />
+    <ClCompile Include="$(AppRoot)\srchybrid\kademlia\utils\KadPublishGuard.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadPublishGuard.cpp')" />
+    <ClCompile Include="$(AppRoot)\srchybrid\MappedFileReader.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.cpp')" />
+    <ClCompile Include="$(AppRoot)\srchybrid\kademlia\utils\NodesDatSupport.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\NodesDatSupport.cpp')" />
+    <ClCompile Include="$(AppRoot)\srchybrid\kademlia\utils\SafeKad.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\SafeKad.cpp')" />
+    <ClCompile Include="src\async_datagram_socket.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AsyncDatagramSocketSeams.h')" />
+    <ClCompile Include="src\async_datagram_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AsyncDatagramSocketFlowSeams.h')" />
+    <ClCompile Include="src\aich_maintenance.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AICHMaintenanceSeams.h')" />
+    <ClCompile Include="src\aich_sync_thread.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AICHSyncThreadSeams.h')" />
+    <ClCompile Include="src\async_socket_ex.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AsyncSocketExSeams.h')" />
+    <ClCompile Include="src\atomic_state.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\AppStateSeams.h')" />
+    <ClCompile Include="src\base_client_friend_buddy.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
+    <ClCompile Include="src\kad_base.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h')" />
+    <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.h')" />
+    <ClCompile Include="src\bind_startup_policy.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BindStartupPolicy.h')" />
+    <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\CompressionBufferSeams.h')" />
+    <ClCompile Include="src\client_credits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientCreditsSeams.h')" />
+    <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h')" />
+    <ClCompile Include="src\collection.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\CollectionSeams.h')" />
+    <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
+    <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EMSocketSendSeams.h')" />
+    <ClCompile Include="src\udp_obfuscation_framing.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h')" />
+    <ClCompile Include="src\encrypted_datagram_sequence.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramSequenceSeams.h')" />
+    <ClCompile Include="src\encrypted_stream_socket.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedStreamSocketSeams.h')" />
+    <ClCompile Include="src\encrypted_datagram_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramSocketFlowSeams.h')" />
+    <ClCompile Include="src\encrypted_stream_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
+    <ClCompile Include="src\fastkad_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.h')" />
+    <ClCompile Include="src\format_safety.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
+    <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
+    <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LockScopeSeams.h')" />
+    <ClCompile Include="src\listen_socket.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketSeams.h')" />
+    <ClCompile Include="src\listen_socket_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketFlowSeams.h')" />
+    <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FileBufferSlider.h')" />
+    <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
+    <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PipeApiServerPolicy.h')" />
+    <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
+    <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartStatusOwnershipSeams.h')" />
+    <ClCompile Include="src\protocol_receive_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h')" />
     <ClCompile Include="src\protocol.tests.cpp" />
-    <ClCompile Include="src\resource_ownership.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
+    <ClCompile Include="src\resource_ownership.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ResourceOwnershipSeams.h')" />
     <ClCompile Include="src\ring.tests.cpp" />
     <ClCompile Include="src\scheduler_removal.tests.cpp" />
-    <ClCompile Include="src\search_params.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchParams.h')" />
-    <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SharedFileListSeams.h')" />
-    <ClCompile Include="src\search_list_view.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h')" />
-    <ClCompile Include="src\socket_io.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
-    <ClCompile Include="src\socket_policy.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
-    <ClCompile Include="src\startup_config_override.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StartupConfigOverride.h')" />
-    <ClCompile Include="src\status_bar_info.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />
-    <ClCompile Include="src\source_exchange_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
-    <ClCompile Include="src\source_exchange_replay.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
+    <ClCompile Include="src\search_params.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\SearchParams.h')" />
+    <ClCompile Include="src\shared_file_list.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\SharedFileListSeams.h')" />
+    <ClCompile Include="src\search_list_view.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\SearchListViewSeams.h')" />
+    <ClCompile Include="src\socket_io.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\SocketIoSeams.h')" />
+    <ClCompile Include="src\socket_policy.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\SocketPolicySeams.h')" />
+    <ClCompile Include="src\startup_config_override.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\StartupConfigOverride.h')" />
+    <ClCompile Include="src\status_bar_info.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\StatusBarInfo.h')" />
+    <ClCompile Include="src\source_exchange_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
+    <ClCompile Include="src\source_exchange_replay.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClCompile Include="src\test-main.cpp" />
-    <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerSeams.h')" />
-    <ClCompile Include="src\upload_bandwidth_throttler_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
-    <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueFlowSeams.h')" />
-    <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h')" />
-    <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UPnPImplMiniLibSeams.h')" />
-    <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h')" />
-    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageFlowSeams.h')" />
-    <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadSupport.h')" />
+    <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
+    <ClCompile Include="src\upload_bandwidth_throttler_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
+    <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />
+    <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
+    <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />
+    <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')" />
+    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')" />
+    <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadSupport.h')" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\FullHashProbe.h" />
     <ClInclude Include="include\HashProbe.h" />
     <ClInclude Include="include\TestSupport.h" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AICHSyncThreadSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\AsyncDatagramSocketFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\AsyncDatagramSocketFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\BaseClientFriendBuddySeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientCreditsSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CompressionBufferSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\CollectionSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\kademlia\Defines.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\kademlia\Defines.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadClientSearcher.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\kademlia\utils\KadClientSearcher.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\KnownFileListSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\LockScopeSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ListenSocketFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ListenSocketFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ClientSocketLifetimeSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EMSocketSendSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramFramingSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramFramingSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSequenceSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSequenceSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSocketFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedDatagramSocketFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\FormatSafetySeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\MappedFileReader.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\NullGuardSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\PartFileNumericSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ProtocolReceiveFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ProtocolReceiveFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\ResourceOwnershipSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SearchListViewSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketIoSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\SocketPolicySeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\StatusBarInfo.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UPnPImplMiniLibSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UPnPImplMiniLibSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadBandwidthThrottlerSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UploadQueueFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueFlowSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\UploadQueueSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageSeams.h')" />
-    <ClInclude Include="$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageFlowSeams.h" Condition="Exists('$(WorkspaceRoot)\eMule\srchybrid\WorkerUiMessageFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\AICHSyncThreadSeams.h" Condition="Exists('$(AppRoot)\srchybrid\AICHSyncThreadSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\AsyncDatagramSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\AsyncDatagramSocketFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\ClientCreditsSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ClientCreditsSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\CompressionBufferSeams.h" Condition="Exists('$(AppRoot)\srchybrid\CompressionBufferSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\CollectionSeams.h" Condition="Exists('$(AppRoot)\srchybrid\CollectionSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\kademlia\kademlia\Defines.h" Condition="Exists('$(AppRoot)\srchybrid\kademlia\kademlia\Defines.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\KnownFileListSeams.h" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\LockScopeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\LockScopeSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\ListenSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\EMSocketSendSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EMSocketSendSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\EncryptedDatagramSequenceSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramSequenceSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\EncryptedDatagramSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramSocketFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\FormatSafetySeams.h" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\MappedFileReader.h" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\NullGuardSeams.h" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\PartFileNumericSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ResourceOwnershipSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\SearchListViewSeams.h" Condition="Exists('$(AppRoot)\srchybrid\SearchListViewSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\SocketIoSeams.h" Condition="Exists('$(AppRoot)\srchybrid\SocketIoSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\SocketPolicySeams.h" Condition="Exists('$(AppRoot)\srchybrid\SocketPolicySeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\StatusBarInfo.h" Condition="Exists('$(AppRoot)\srchybrid\StatusBarInfo.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UploadQueueFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UploadQueueSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\WorkerUiMessageSeams.h" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')" />
     <ClInclude Include="third_party\doctest\doctest.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>
+
+

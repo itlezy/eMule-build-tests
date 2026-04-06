@@ -7,7 +7,11 @@ Builds the shared standalone eMule unit-test executable for a workspace.
 The root of the shared `eMule-build-tests` repository.
 
 .PARAMETER WorkspaceRoot
-The workspace root that contains the target `eMule` checkout.
+The workspace root that contains the target canonical app checkout.
+
+.PARAMETER AppRoot
+Optional explicit target app checkout. When omitted, the script resolves the
+canonical app worktree from the workspace manifest.
 
 .PARAMETER Configuration
 The Visual Studio configuration to build.
@@ -36,6 +40,8 @@ param(
 
     [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build-v0.72'),
 
+    [string]$AppRoot,
+
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
@@ -58,6 +64,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
+
+. (Join-Path $PSScriptRoot 'resolve-app-root.ps1')
 
 function Resolve-FirstExisting {
     param(
@@ -138,6 +146,11 @@ function Get-BuildTag {
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$appRootPath = if ([string]::IsNullOrWhiteSpace($AppRoot)) {
+    Resolve-WorkspaceAppRoot -WorkspaceRoot $workspaceRootPath
+} else {
+    (Resolve-Path -LiteralPath $AppRoot).Path
+}
 if ([string]::IsNullOrWhiteSpace($BuildTag)) {
     $BuildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
 }
@@ -166,13 +179,14 @@ $arguments = @(
     '/m',
     '/nologo',
     '/t:Build',
+    "/p:AppRoot=$appRootPath",
     "/p:WorkspaceRoot=$workspaceRootPath",
     "/p:BuildTag=$BuildTag",
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform"
 )
 
-Write-Output "Building $projectPath for $workspaceRootPath ($Platform|$Configuration, tag=$BuildTag)"
+Write-Output "Building $projectPath for $workspaceRootPath using app root $appRootPath ($Platform|$Configuration, tag=$BuildTag)"
 & $msbuildPath @arguments
 if ($LASTEXITCODE -ne 0) {
     throw "MSBuild failed with exit code $LASTEXITCODE."

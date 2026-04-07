@@ -1,5 +1,9 @@
 * text=auto
 
+.editorconfig text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
 *.c text eol=crlf
 *.cc text eol=crlf
 *.cpp text eol=crlf

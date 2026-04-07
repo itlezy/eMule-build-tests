@@ -51,8 +51,24 @@ if not dbghelp.SymInitialize(hProcess, None, False):
     exit(1)
 
 # Load module
-exe_path = r"C:\prj\p2p\eMule\eMulebb\eMule-build\eMule\srchybrid\x64\Debug\emule.exe"
-pdb_dir = r"C:\prj\p2p\eMule\eMulebb\eMule-build\eMule\srchybrid\x64\Debug"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TEST_REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
+emule_workspace_root = os.environ.get(
+    "EMULE_WORKSPACE_ROOT",
+    os.path.normpath(os.path.join(TEST_REPO_ROOT, "..", "..")),
+)
+exe_path = os.path.join(
+    emule_workspace_root,
+    "workspaces",
+    "v0.72a",
+    "app",
+    "eMule-v0.72a-bugfix",
+    "srchybrid",
+    "x64",
+    "Debug",
+    "emule.exe",
+)
+pdb_dir = os.path.dirname(exe_path)
 IMAGE_BASE = 0x140000000
 
 # Set symbol search path to PDB directory before loading

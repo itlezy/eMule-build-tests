@@ -1,12 +1,13 @@
 # eMule Shared Tests
 
-This repository is the shared test harness for the canonical `bb/v0.72a/*` app lineage.
+This repository is the shared test harness for the canonical 0.72a workspace rooted at `EMULE_WORKSPACE_ROOT`.
 
-Expected fixed layout:
+Expected canonical layout:
 
-- `C:\prj\p2p\eMule\eMulebb\eMule-build-v0.72`
-- `C:\prj\p2p\eMule\eMulebb\eMule-build-tests`
-- `C:\prj\p2p\eMule\eMulebb\eMule-remote`
+- `EMULE_WORKSPACE_ROOT\repos\eMule-build`
+- `EMULE_WORKSPACE_ROOT\repos\eMule-build-tests`
+- `EMULE_WORKSPACE_ROOT\repos\eMule-remote`
+- `EMULE_WORKSPACE_ROOT\workspaces\v0.72a`
 
 It owns:
 
@@ -34,13 +35,10 @@ Current suite model:
 
 Workspace quick reference:
 
-- `eMule-build-v0.72`: use `pwsh -File .\workspace.ps1 validate`, `build-libs`, `build-app`, and the supported workspace wrappers
-- canonical target app paths are:
-  - `eMule-bb-v0.72a-build`
-  - `eMule-bb-v0.72a-test`
-  - `eMule-bb-v0.72a-bugfix`
+- default canonical workspace: `EMULE_WORKSPACE_ROOT\workspaces\v0.72a`
+- canonical target app paths are `app\eMule-main`, `app\eMule-v0.72a-build`, and `app\eMule-v0.72a-bugfix`
 - for live-diff runs, point `-DevWorkspaceRoot` and `-OracleWorkspaceRoot` at the two workspace roots you want to compare
-- for cleanroom validation, pass both `-WorkspaceRoot` and `-AppRoot` explicitly so reports and build tags stay tied to the cleanroom root
+- for cleanroom validation, pass both `-WorkspaceRoot` and `-AppRoot` explicitly so reports and build tags stay tied to the selected workspace root
 
 Standalone probe mode:
 

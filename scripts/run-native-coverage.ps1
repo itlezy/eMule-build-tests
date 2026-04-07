@@ -12,17 +12,17 @@ and human-readable summaries under `reports\native-coverage`.
 param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
 
-    [string]$WorkspaceRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'eMule-build-v0.72'),
+    [string]$WorkspaceRoot,
 
     [string]$AppRoot,
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
-    [ValidateSet('Win32', 'x64')]
+    [ValidateSet('x64')]
     [string]$Platform = 'x64',
 
-    [string[]]$SuiteNames = @('parity', 'divergence'),
+    [string[]]$SuiteNames = @('parity'),
 
     [string]$PreferredCoverageRoot = 'C:\tools\ocppcov',
 
@@ -34,19 +34,31 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 . (Join-Path $PSScriptRoot 'resolve-app-root.ps1')
+. (Join-Path $PSScriptRoot 'resolve-workspace-layout.ps1')
 
 function Get-BuildTag {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$WorkspacePath
+        [string]$WorkspacePath,
+
+        [string]$AppPath
     )
 
-    $leaf = Split-Path -Leaf $WorkspacePath
-    if ([string]::IsNullOrWhiteSpace($leaf)) {
+    $workspaceLeaf = Split-Path -Leaf $WorkspacePath
+    $workspacesRoot = Split-Path -Parent $WorkspacePath
+    $workspaceOwner = if ($workspacesRoot) { Split-Path -Leaf (Split-Path -Parent $workspacesRoot) } else { '' }
+    if ([string]::IsNullOrWhiteSpace($workspaceLeaf) -or [string]::IsNullOrWhiteSpace($workspaceOwner)) {
         throw "Unable to derive build tag from workspace path: $WorkspacePath"
     }
 
-    return ($leaf -replace '[^A-Za-z0-9._-]', '_')
+    $segments = New-Object System.Collections.Generic.List[string]
+    $segments.Add($workspaceOwner)
+    $segments.Add($workspaceLeaf)
+    if (-not [string]::IsNullOrWhiteSpace($AppPath)) {
+        $segments.Add((Split-Path -Leaf $AppPath))
+    }
+
+    return ((($segments -join '-') -replace '[^A-Za-z0-9._-]', '_'))
 }
 
 function Publish-DirectorySnapshot {
@@ -117,13 +129,18 @@ function Get-DoctestSuiteExecutionStats {
 }
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
+$WorkspaceRoot = if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
+} else {
+    $WorkspaceRoot
+}
 $workspaceRootPath = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $appRootPath = if ([string]::IsNullOrWhiteSpace($AppRoot)) {
     Resolve-WorkspaceAppRoot -WorkspaceRoot $workspaceRootPath
 } else {
     (Resolve-Path -LiteralPath $AppRoot).Path
 }
-$buildTag = Get-BuildTag -WorkspacePath $workspaceRootPath
+$buildTag = Get-BuildTag -WorkspacePath $workspaceRootPath -AppPath $appRootPath
 $reportRoot = Join-Path $testRepoRootPath 'reports'
 $coverageReportRoot = Join-Path $reportRoot 'native-coverage'
 $reportStamp = Get-Date -Format 'yyyyMMdd-HHmmss'

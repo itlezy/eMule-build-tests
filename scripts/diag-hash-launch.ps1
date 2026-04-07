@@ -10,15 +10,29 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$EmuleExe = 'C:\prj\p2p\eMule\eMulebb\eMule-build\eMule\srchybrid\x64\Debug\emule.exe',
-    [string]$ConfigDir = 'C:\tmp\emule-testing',
-    [string]$ReportDir = 'C:\prj\p2p\eMule\eMulebb\eMule-build-tests\reports',
+    [string]$EmuleExe = '',
+    [string]$ConfigDir = '',
+    [string]$ReportDir = '',
     [int]$TimeoutSeconds = 180,
     [int]$CpuThresholdPercent = 90,
     [int]$CpuDurationSeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'resolve-workspace-layout.ps1')
+
+$testRepoRootPath = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ReportDir)) {
+    $ReportDir = Join-Path $testRepoRootPath 'reports'
+}
+if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
+    $ConfigDir = Join-Path $ReportDir 'diag-hash-profile'
+}
+if ([string]::IsNullOrWhiteSpace($EmuleExe)) {
+    $workspaceRoot = Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
+    $EmuleExe = Join-Path $workspaceRoot 'app\eMule-v0.72a-bugfix\srchybrid\x64\Debug\emule.exe'
+}
 
 # --- Prepare report directory ---
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'

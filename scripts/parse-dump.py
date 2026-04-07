@@ -1,8 +1,22 @@
 """Parse minidump to extract thread instruction pointers and resolve to modules."""
 import struct
 import sys
+import os
 
-DUMP_PATH = r"C:\prj\p2p\eMule\eMulebb\eMule-build-tests\reports\diag-hash-20260401-021718\emule-stuck.dmp"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TEST_REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
+emule_workspace_root = os.environ.get(
+    "EMULE_WORKSPACE_ROOT",
+    os.path.normpath(os.path.join(TEST_REPO_ROOT, "..", "..")),
+)
+DUMP_PATH = os.path.join(
+    emule_workspace_root,
+    "repos",
+    "eMule-build-tests",
+    "reports",
+    "diag-hash-latest",
+    "emule-stuck.dmp",
+)
 
 from minidump.minidumpfile import MinidumpFile
 

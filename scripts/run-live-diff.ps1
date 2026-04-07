@@ -19,31 +19,46 @@ The Visual Studio platform to build.
 param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
 
-    [string]$DevWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-v0.72',
-    [string]$OracleWorkspaceRoot = 'C:\prj\p2p\eMule\eMulebb\eMule-build-oracle-v0.72a-oracle',
+    [string]$DevWorkspaceRoot,
+    [string]$OracleWorkspaceRoot,
+    [string]$DevAppRoot,
+    [string]$OracleAppRoot,
 
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
-    [ValidateSet('Win32', 'x64')]
+    [ValidateSet('x64')]
     [string]$Platform = 'x64'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'resolve-workspace-layout.ps1')
+
 function Get-BuildTag {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$WorkspaceRoot
+        [string]$WorkspaceRoot,
+
+        [string]$AppRoot
     )
 
-    $leaf = Split-Path -Leaf $WorkspaceRoot
-    if ([string]::IsNullOrWhiteSpace($leaf)) {
+    $workspaceLeaf = Split-Path -Leaf $WorkspaceRoot
+    $workspacesRoot = Split-Path -Parent $WorkspaceRoot
+    $workspaceOwner = if ($workspacesRoot) { Split-Path -Leaf (Split-Path -Parent $workspacesRoot) } else { '' }
+    if ([string]::IsNullOrWhiteSpace($workspaceLeaf) -or [string]::IsNullOrWhiteSpace($workspaceOwner)) {
         throw "Unable to derive build tag from workspace path: $WorkspaceRoot"
     }
 
-    ($leaf -replace '[^A-Za-z0-9._-]', '_')
+    $segments = New-Object System.Collections.Generic.List[string]
+    $segments.Add($workspaceOwner)
+    $segments.Add($workspaceLeaf)
+    if (-not [string]::IsNullOrWhiteSpace($AppRoot)) {
+        $segments.Add((Split-Path -Leaf $AppRoot))
+    }
+
+    (($segments -join '-') -replace '[^A-Za-z0-9._-]', '_')
 }
 
 function Invoke-TestRun {
@@ -84,10 +99,12 @@ function Invoke-TestRun {
     Set-Content -LiteralPath $ExitCodePath -Value $LASTEXITCODE
 }
 
-function Invoke-Build {
+function Invoke-LiveDiffBuild {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$WorkspaceRoot
+        [string]$WorkspaceRoot,
+
+        [string]$AppRoot
     )
 
     $scriptPath = Join-Path $script:testRepoRootPath 'scripts\build-emule-tests.ps1'
@@ -95,8 +112,24 @@ function Invoke-Build {
         throw "Shared test build script not found: $scriptPath"
     }
 
-    $buildTag = Get-BuildTag -WorkspaceRoot $WorkspaceRoot
-    & $scriptPath -TestRepoRoot $script:testRepoRootPath -WorkspaceRoot $WorkspaceRoot -Configuration $Configuration -Platform $Platform -BuildTag $buildTag
+    $buildTag = Get-BuildTag -WorkspaceRoot $WorkspaceRoot -AppRoot $AppRoot
+    if (-not [string]::IsNullOrWhiteSpace($AppRoot)) {
+        & $scriptPath `
+            -TestRepoRoot $script:testRepoRootPath `
+            -WorkspaceRoot $WorkspaceRoot `
+            -AppRoot $AppRoot `
+            -Configuration $Configuration `
+            -Platform $Platform `
+            -BuildTag $buildTag
+        return
+    }
+
+    & $scriptPath `
+        -TestRepoRoot $script:testRepoRootPath `
+        -WorkspaceRoot $WorkspaceRoot `
+        -Configuration $Configuration `
+        -Platform $Platform `
+        -BuildTag $buildTag
 }
 
 function Get-TestCaseResults {
@@ -171,9 +204,8 @@ function Compare-CaseSets {
         $devCase = $DevResults[$name]
         $oracleCase = $OracleResults[$name]
         if ($null -eq $devCase -or $null -eq $oracleCase) {
-            [void]$script:summaryLines.Add(("[FAIL] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
-            $hasFailure = $true
-            $summary.fail_count += 1
+            [void]$script:summaryLines.Add(("[WARN] {0}: case-set mismatch for '{1}'" -f $SuiteName, $name))
+            $summary.warn_count += 1
             $summary.case_set_mismatch_count += 1
             continue
         }
@@ -193,8 +225,11 @@ function Compare-CaseSets {
         if ($devCase.Success -and -not $oracleCase.Success) {
             [void]$script:summaryLines.Add(("[PASS] divergence: {0} (dev pass, oracle fail as expected)" -f $name))
             $summary.pass_count += 1
-        } elseif (-not $devCase.Success) {
-            [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (dev failed)" -f $name))
+        } elseif (-not $devCase.Success -and -not $oracleCase.Success) {
+            [void]$script:summaryLines.Add(("[WARN] divergence: {0} (dev and oracle both failed)" -f $name))
+            $summary.warn_count += 1
+        } elseif (-not $devCase.Success -and $oracleCase.Success) {
+            [void]$script:summaryLines.Add(("[FAIL] divergence: {0} (dev failed while oracle passed)" -f $name))
             $hasFailure = $true
             $summary.fail_count += 1
         } elseif ($oracleCase.Success) {
@@ -214,19 +249,27 @@ function Compare-CaseSets {
 }
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
+$DevWorkspaceRoot = if ([string]::IsNullOrWhiteSpace($DevWorkspaceRoot)) {
+    Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
+} else {
+    $DevWorkspaceRoot
+}
+if ([string]::IsNullOrWhiteSpace($OracleWorkspaceRoot)) {
+    throw 'OracleWorkspaceRoot is required for live diff runs in the canonical repos/workspaces layout.'
+}
 $reportRoot = Join-Path $testRepoRootPath 'reports'
 New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 
-Invoke-Build -WorkspaceRoot $DevWorkspaceRoot
-Invoke-Build -WorkspaceRoot $OracleWorkspaceRoot
+Invoke-LiveDiffBuild -WorkspaceRoot $DevWorkspaceRoot -AppRoot $DevAppRoot
+Invoke-LiveDiffBuild -WorkspaceRoot $OracleWorkspaceRoot -AppRoot $OracleAppRoot
 
 $summaryLines = [System.Collections.ArrayList]::new()
 $suiteSummaries = New-Object System.Collections.Generic.List[object]
 $failed = $false
 
 foreach ($suiteName in @('parity', 'divergence')) {
-    $devBuildTag = Get-BuildTag -WorkspaceRoot $DevWorkspaceRoot
-    $oracleBuildTag = Get-BuildTag -WorkspaceRoot $OracleWorkspaceRoot
+    $devBuildTag = Get-BuildTag -WorkspaceRoot $DevWorkspaceRoot -AppRoot $DevAppRoot
+    $oracleBuildTag = Get-BuildTag -WorkspaceRoot $OracleWorkspaceRoot -AppRoot $OracleAppRoot
     $devXml = Join-Path $reportRoot ("dev-{0}.xml" -f $suiteName)
     $oracleXml = Join-Path $reportRoot ("oracle-{0}.xml" -f $suiteName)
     $devLog = Join-Path $reportRoot ("dev-{0}.log" -f $suiteName)

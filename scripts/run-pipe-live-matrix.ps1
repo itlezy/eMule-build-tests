@@ -23,7 +23,7 @@ Starts the live harness session and exits after the sidecar is healthy without r
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$ProfileRoot = 'C:\tmp\emule-testing',
+    [string]$ProfileRoot = '',
 
     [Parameter(Mandatory = $false)]
     [string]$SeedRoot = '',
@@ -52,6 +52,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    $ProfileRoot = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'reports') 'live-profiles'
+}
 
 $helperPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\eMule-build\eMule\helpers\helper-runtime-pipe-live-session.ps1'))
 if (-not (Test-Path -LiteralPath $helperPath -PathType Leaf)) {

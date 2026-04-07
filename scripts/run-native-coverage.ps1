@@ -24,7 +24,7 @@ param(
 
     [string[]]$SuiteNames = @('parity'),
 
-    [string]$PreferredCoverageRoot = 'C:\tools\ocppcov',
+    [string]$PreferredCoverageRoot,
 
     [switch]$SkipBuild
 )

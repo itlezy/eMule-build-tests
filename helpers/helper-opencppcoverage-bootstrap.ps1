@@ -4,15 +4,15 @@
 Resolves a usable OpenCppCoverage installation for shared native coverage runs.
 
 .DESCRIPTION
-Prefers the operator-provided installation under `C:\tools\ocppcov`, and falls back
-to a repo-managed pinned install under `tools\OpenCppCoverage\<version>` when the
-preferred path is unavailable.
+Uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe`
+from `PATH`, and finally falls back to a repo-managed pinned install under
+`tools\OpenCppCoverage\<version>`.
 #>
 [CmdletBinding()]
 param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),
 
-    [string]$PreferredInstallRoot = 'C:\tools\ocppcov',
+    [string]$PreferredInstallRoot,
 
     [string]$Version = '0.9.9.0'
 )
@@ -34,9 +34,17 @@ function Get-OpenCppCoverageExecutablePath {
     return $null
 }
 
-$preferredExecutablePath = Get-OpenCppCoverageExecutablePath -InstallRoot $PreferredInstallRoot
-if ($preferredExecutablePath) {
-    Write-Output $preferredExecutablePath
+if (-not [string]::IsNullOrWhiteSpace($PreferredInstallRoot)) {
+    $preferredExecutablePath = Get-OpenCppCoverageExecutablePath -InstallRoot $PreferredInstallRoot
+    if ($preferredExecutablePath) {
+        Write-Output $preferredExecutablePath
+        exit 0
+    }
+}
+
+$pathCommand = Get-Command 'OpenCppCoverage.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -ne $pathCommand) {
+    Write-Output $pathCommand.Source
     exit 0
 }
 
@@ -69,7 +77,7 @@ $installerArguments = @(
 )
 
 <#
-* @brief Keep coverage tooling repo-local when the preferred shared install is missing.
+* @brief Keep coverage tooling repo-local when no explicit install or PATH-discovered tool is available.
 #>
 $installerProcess = Start-Process -FilePath $installerPath -ArgumentList $installerArguments -Wait -PassThru -WindowStyle Hidden
 if ($installerProcess.ExitCode -ne 0) {

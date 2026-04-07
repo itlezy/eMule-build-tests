@@ -73,6 +73,6 @@ Tracked-file privacy guard:
 Native seam coverage and shared reports:
 
 - `scripts\run-native-coverage.ps1` builds `emule-tests.exe`, runs the requested doctest suites under OpenCppCoverage, and writes Cobertura plus summary outputs under `reports\native-coverage`
-- `helpers\helper-opencppcoverage-bootstrap.ps1` prefers the shared install at `C:\tools\ocppcov` and falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
+- `helpers\helper-opencppcoverage-bootstrap.ps1` uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run-live-diff.ps1` now writes both text and JSON parity/divergence summaries under `reports`
 - `scripts\publish-harness-summary.ps1` combines native coverage, parity, and optional live-harness manifest data into one shared summary under `reports`

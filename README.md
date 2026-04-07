@@ -2,12 +2,17 @@
 
 This repository is the shared test harness for the canonical 0.72a workspace rooted at `EMULE_WORKSPACE_ROOT`.
 
-Expected canonical layout:
+This repo assumes the canonical workspace created by `eMulebb-setup`.
+
+Minimum expected roots:
 
 - `EMULE_WORKSPACE_ROOT\repos\eMule-build`
 - `EMULE_WORKSPACE_ROOT\repos\eMule-build-tests`
 - `EMULE_WORKSPACE_ROOT\repos\eMule-remote`
 - `EMULE_WORKSPACE_ROOT\workspaces\v0.72a`
+
+Use `eMulebb-setup\README.md` for the full workspace topology and materialization
+contract.
 
 It owns:
 

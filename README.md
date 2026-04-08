@@ -41,9 +41,14 @@ Current suite model:
 Workspace quick reference:
 
 - default canonical workspace: `EMULE_WORKSPACE_ROOT\workspaces\v0.72a`
-- canonical target app paths are `app\eMule-main`, `app\eMule-v0.72a-build`, and `app\eMule-v0.72a-bugfix`
+- canonical target app paths are `app\eMule-main`, `app\eMule-v0.72a-oracle`, `app\eMule-v0.72a-build`, and `app\eMule-v0.72a-bugfix`
 - for live-diff runs, point `-DevWorkspaceRoot` and `-OracleWorkspaceRoot` at the two workspace roots you want to compare
 - for cleanroom validation, pass both `-WorkspaceRoot` and `-AppRoot` explicitly so reports and build tags stay tied to the selected workspace root
+
+The sanctioned seam-enabled oracle baseline for 0.72a comparisons is
+`oracle/v0.72a-build`, materialized as `app\eMule-v0.72a-oracle`. It should
+stay behavior-preserving relative to `release/v0.72a-build` during normal app
+execution and may accept only test-enablement changes.
 
 Standalone probe mode:
 

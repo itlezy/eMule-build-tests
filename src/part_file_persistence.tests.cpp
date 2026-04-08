@@ -2,6 +2,74 @@
 
 #include "PartFilePersistenceSeams.h"
 
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <system_error>
+
+namespace
+{
+	class ScopedTempDir
+	{
+	public:
+		ScopedTempDir()
+		{
+			WCHAR szTempPath[MAX_PATH] = { 0 };
+			REQUIRE(::GetTempPathW(_countof(szTempPath), szTempPath) != 0);
+
+			WCHAR szTempFile[MAX_PATH] = { 0 };
+			REQUIRE(::GetTempFileNameW(szTempPath, L"pmt", 0, szTempFile) != 0);
+
+			m_root = std::filesystem::path(szTempFile);
+			std::error_code ec;
+			std::filesystem::remove(m_root, ec);
+			std::filesystem::create_directories(m_root, ec);
+			REQUIRE_FALSE(ec);
+		}
+
+		~ScopedTempDir()
+		{
+			std::error_code ec;
+			std::filesystem::remove_all(m_root, ec);
+		}
+
+		const std::filesystem::path &Root() const
+		{
+			return m_root;
+		}
+
+	private:
+		std::filesystem::path m_root;
+	};
+
+	void WriteTextFile(const std::filesystem::path &rPath, const char *pszText)
+	{
+		std::ofstream file(rPath, std::ios::binary | std::ios::trunc);
+		REQUIRE(file.good());
+		file << pszText;
+		REQUIRE(file.good());
+	}
+
+	std::string ReadTextFile(const std::filesystem::path &rPath)
+	{
+		std::ifstream file(rPath, std::ios::binary);
+		REQUIRE(file.good());
+		return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+	}
+
+	BOOL WINAPI AlwaysFailMoveFileEx(LPCTSTR, LPCTSTR, DWORD)
+	{
+		::SetLastError(ERROR_ACCESS_DENIED);
+		return FALSE;
+	}
+
+	BOOL WINAPI AlwaysFailCopyFile(LPCTSTR, LPCTSTR, BOOL)
+	{
+		::SetLastError(ERROR_DISK_FULL);
+		return FALSE;
+	}
+}
+
 TEST_SUITE_BEGIN("parity");
 
 #if defined(EMULE_TEST_HAVE_PART_FILE_PERSISTENCE_SEAMS)
@@ -13,11 +81,23 @@ TEST_CASE("Part-file persistence seam blocks metadata writes when the free-space
 	CHECK(PartFilePersistenceSeams::CanWritePartMetWithFreeSpace(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes + 1u));
 }
 
-TEST_CASE("Part-file persistence seam reuses cached disk-space decisions only until a refresh is forced")
+TEST_CASE("Part-file persistence seam invalidation forces a fresh low-space decision")
 {
-	CHECK_FALSE(PartFilePersistenceSeams::ShouldReusePartMetWriteCache(false, false));
-	CHECK(PartFilePersistenceSeams::ShouldReusePartMetWriteCache(true, false));
-	CHECK_FALSE(PartFilePersistenceSeams::ShouldReusePartMetWriteCache(true, true));
+	PartFilePersistenceSeams::PartMetWriteGuardState state = { false, false };
+
+	const PartFilePersistenceSeams::PartMetWriteGuardDecision initialDecision = PartFilePersistenceSeams::ResolvePartMetWriteGuard(state.HasCachedResult, state.CanWrite, false, PartFilePersistenceSeams::kMinPartMetWriteFreeBytes + 1u);
+	CHECK_FALSE(initialDecision.UseCachedResult);
+	CHECK(initialDecision.CanWrite);
+
+	PartFilePersistenceSeams::StorePartMetWriteGuardState(&state, initialDecision.CanWrite);
+	const PartFilePersistenceSeams::PartMetWriteGuardDecision cachedDecision = PartFilePersistenceSeams::ResolvePartMetWriteGuard(state.HasCachedResult, state.CanWrite, false, 0u);
+	CHECK(cachedDecision.UseCachedResult);
+	CHECK(cachedDecision.CanWrite);
+
+	PartFilePersistenceSeams::InvalidatePartMetWriteGuardState(&state);
+	const PartFilePersistenceSeams::PartMetWriteGuardDecision refreshedDecision = PartFilePersistenceSeams::ResolvePartMetWriteGuard(state.HasCachedResult, state.CanWrite, false, 0u);
+	CHECK_FALSE(refreshedDecision.UseCachedResult);
+	CHECK_FALSE(refreshedDecision.CanWrite);
 }
 
 TEST_CASE("Part-file persistence seam skips destructor flushes only during shutdown after the write thread is gone")
@@ -26,6 +106,121 @@ TEST_CASE("Part-file persistence seam skips destructor flushes only during shutd
 	CHECK(PartFilePersistenceSeams::ShouldFlushPartFileOnDestroy(true, true, true));
 	CHECK_FALSE(PartFilePersistenceSeams::ShouldFlushPartFileOnDestroy(true, false, false));
 	CHECK_FALSE(PartFilePersistenceSeams::ShouldFlushPartFileOnDestroy(true, true, false));
+}
+
+TEST_CASE("Part-file persistence helper atomically replaces destination content")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path destinationPath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met.tmp";
+
+	WriteTextFile(destinationPath, "before");
+	WriteTextFile(sourcePath, "after");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK(PartFilePersistenceSeams::TryReplaceFileAtomically(sourcePath.c_str(), destinationPath.c_str(), &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
+	CHECK_EQ(ReadTextFile(destinationPath), std::string("after"));
+	CHECK_FALSE(std::filesystem::exists(sourcePath));
+}
+
+TEST_CASE("Part-file persistence helper creates backups through a temp file replace path")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path backupPath = tempDir.Root() / L"download.part.met.bak";
+	const std::filesystem::path backupTmpPath = tempDir.Root() / L"download.part.met.bak.tmp";
+
+	WriteTextFile(sourcePath, "current");
+	WriteTextFile(backupPath, "previous");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK(PartFilePersistenceSeams::TryCopyFileToTempAndReplace(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), false, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
+	CHECK_EQ(ReadTextFile(backupPath), std::string("current"));
+	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
+}
+
+TEST_CASE("Part-file persistence helper respects dont-override when a backup already exists")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path backupPath = tempDir.Root() / L"download.part.met.bak";
+	const std::filesystem::path backupTmpPath = tempDir.Root() / L"download.part.met.bak.tmp";
+
+	WriteTextFile(sourcePath, "current");
+	WriteTextFile(backupPath, "existing-backup");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK_FALSE(PartFilePersistenceSeams::TryCopyFileToTempAndReplace(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), true, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_FILE_EXISTS));
+	CHECK_EQ(ReadTextFile(backupPath), std::string("existing-backup"));
+	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
+}
+#endif
+
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("divergence");
+
+#if defined(EMULE_TEST_HAVE_PART_FILE_PERSISTENCE_SEAMS)
+TEST_CASE("Part-file persistence helper preserves destination content when the atomic replace fails")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path destinationPath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met.tmp";
+
+	WriteTextFile(destinationPath, "before");
+	WriteTextFile(sourcePath, "after");
+
+	PartFilePersistenceSeams::FileSystemOps ops = PartFilePersistenceSeams::GetDefaultFileSystemOps();
+	ops.MoveFileEx = &AlwaysFailMoveFileEx;
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(PartFilePersistenceSeams::TryReplaceFileAtomicallyWithOps(sourcePath.c_str(), destinationPath.c_str(), &dwLastError, ops));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_ACCESS_DENIED));
+	CHECK_EQ(ReadTextFile(destinationPath), std::string("before"));
+	CHECK(std::filesystem::exists(sourcePath));
+}
+
+TEST_CASE("Part-file persistence helper preserves the previous backup when temp replace fails")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path backupPath = tempDir.Root() / L"download.part.met.bak";
+	const std::filesystem::path backupTmpPath = tempDir.Root() / L"download.part.met.bak.tmp";
+
+	WriteTextFile(sourcePath, "current");
+	WriteTextFile(backupPath, "previous");
+
+	PartFilePersistenceSeams::FileSystemOps ops = PartFilePersistenceSeams::GetDefaultFileSystemOps();
+	ops.MoveFileEx = &AlwaysFailMoveFileEx;
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(PartFilePersistenceSeams::TryCopyFileToTempAndReplaceWithOps(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), false, &dwLastError, ops));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_ACCESS_DENIED));
+	CHECK_EQ(ReadTextFile(backupPath), std::string("previous"));
+	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
+}
+
+TEST_CASE("Part-file persistence helper invalidates write attempts cleanly when staging the backup copy fails")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path backupPath = tempDir.Root() / L"download.part.met.bak";
+	const std::filesystem::path backupTmpPath = tempDir.Root() / L"download.part.met.bak.tmp";
+
+	WriteTextFile(sourcePath, "current");
+	WriteTextFile(backupPath, "previous");
+
+	PartFilePersistenceSeams::FileSystemOps ops = PartFilePersistenceSeams::GetDefaultFileSystemOps();
+	ops.CopyFile = &AlwaysFailCopyFile;
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(PartFilePersistenceSeams::TryCopyFileToTempAndReplaceWithOps(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), false, &dwLastError, ops));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_DISK_FULL));
+	CHECK_EQ(ReadTextFile(backupPath), std::string("previous"));
+	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
 }
 #endif
 

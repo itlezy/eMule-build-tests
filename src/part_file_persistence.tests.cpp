@@ -89,6 +89,9 @@ TEST_CASE("Part-file persistence seam keeps cache bookkeeping explicit")
 	PartFilePersistenceSeams::InvalidatePartMetWriteGuardState(&state);
 	CHECK_FALSE(state.HasCachedResult);
 	CHECK_FALSE(state.CanWrite);
+
+	PartFilePersistenceSeams::StorePartMetWriteGuardState(NULL, true);
+	PartFilePersistenceSeams::InvalidatePartMetWriteGuardState(NULL);
 }
 
 TEST_CASE("Part-file persistence seam exposes path existence without treating blank paths as files")
@@ -111,6 +114,9 @@ TEST_CASE("Part-file persistence seam keeps the non-shutdown flush path intact")
 TEST_CASE("Part-file persistence helper rejects invalid atomic replace parameters")
 {
 	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(PartFilePersistenceSeams::TryReplaceFileAtomically(_T(""), _T("dst"), &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_INVALID_PARAMETER));
+
 	CHECK_FALSE(PartFilePersistenceSeams::TryReplaceFileAtomically(NULL, _T("dst"), &dwLastError));
 	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_INVALID_PARAMETER));
 
@@ -153,6 +159,24 @@ TEST_CASE("Part-file persistence helper creates backups through a temp file repl
 
 	WriteTextFile(sourcePath, "current");
 	WriteTextFile(backupPath, "previous");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK(PartFilePersistenceSeams::TryCopyFileToTempAndReplace(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), false, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
+	CHECK_EQ(ReadTextFile(backupPath), std::string("current"));
+	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
+}
+
+TEST_CASE("Part-file persistence helper clears stale backup temp files before restaging")
+{
+	ScopedTempDir tempDir;
+	const std::filesystem::path sourcePath = tempDir.Root() / L"download.part.met";
+	const std::filesystem::path backupPath = tempDir.Root() / L"download.part.met.bak";
+	const std::filesystem::path backupTmpPath = tempDir.Root() / L"download.part.met.bak.tmp";
+
+	WriteTextFile(sourcePath, "current");
+	WriteTextFile(backupPath, "previous");
+	WriteTextFile(backupTmpPath, "stale-temp");
 
 	DWORD dwLastError = ERROR_GEN_FAILURE;
 	CHECK(PartFilePersistenceSeams::TryCopyFileToTempAndReplace(sourcePath.c_str(), backupPath.c_str(), backupTmpPath.c_str(), false, &dwLastError));
@@ -230,6 +254,16 @@ TEST_CASE("Part-file persistence seam invalidation forces a fresh low-space deci
 	const PartFilePersistenceSeams::PartMetWriteGuardDecision refreshedDecision = PartFilePersistenceSeams::ResolvePartMetWriteGuard(state.HasCachedResult, state.CanWrite, false, 0u);
 	CHECK_FALSE(refreshedDecision.UseCachedResult);
 	CHECK_FALSE(refreshedDecision.CanWrite);
+}
+
+TEST_CASE("Part-file persistence seam force-refresh ignores stale cached write permission")
+{
+	PartFilePersistenceSeams::PartMetWriteGuardState state = { true, true };
+
+	const PartFilePersistenceSeams::PartMetWriteGuardDecision refreshedDecision = PartFilePersistenceSeams::ResolvePartMetWriteGuard(state.HasCachedResult, state.CanWrite, true, 0u);
+	CHECK_FALSE(refreshedDecision.UseCachedResult);
+	CHECK_FALSE(refreshedDecision.CanWrite);
+	CHECK_FALSE(PartFilePersistenceSeams::ShouldReusePartMetWriteCache(state.HasCachedResult, true));
 }
 
 TEST_CASE("Part-file persistence seam skips destructor flushes only during shutdown after the write thread is gone")

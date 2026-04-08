@@ -12,6 +12,8 @@ TEST_CASE("Part file numeric seam derives ordinary AICH hashset sizes without ch
 {
 	uint32 nHashSetSize = 0;
 
+	CHECK(PartFileNumericSeams::TryDeriveAICHHashSetSize(20u, 0u, &nHashSetSize));
+	CHECK_EQ(nHashSetSize, static_cast<uint32>(22u));
 	CHECK(PartFileNumericSeams::TryDeriveAICHHashSetSize(20u, 4u, &nHashSetSize));
 	CHECK_EQ(nHashSetSize, static_cast<uint32>(102u));
 }
@@ -20,6 +22,7 @@ TEST_CASE("Part file numeric seam rejects AICH hashset sizes that overflow the s
 {
 	uint32 nHashSetSize = 0;
 
+	CHECK_FALSE(PartFileNumericSeams::TryDeriveAICHHashSetSize(20u, 4u, NULL));
 	CHECK_FALSE(PartFileNumericSeams::TryDeriveAICHHashSetSize((std::numeric_limits<size_t>::max)() / 2u, 2u, &nHashSetSize));
 	CHECK_FALSE(PartFileNumericSeams::TryDeriveAICHHashSetSize(static_cast<size_t>((std::numeric_limits<uint32>::max)()), 1u, &nHashSetSize));
 }
@@ -44,13 +47,17 @@ TEST_CASE("Part file numeric seam preserves the rounded-up completion percentage
 
 TEST_CASE("Part file numeric seam clamps list counts and 32-bit scores before narrowing to uint16")
 {
+	CHECK_EQ(PartFileNumericSeams::ClampCountToUInt16(0), static_cast<uint16>(0u));
 	CHECK_EQ(PartFileNumericSeams::ClampCountToUInt16(-1), static_cast<uint16>(0u));
 	CHECK_EQ(PartFileNumericSeams::ClampCountToUInt16(42), static_cast<uint16>(42u));
+	CHECK_EQ(PartFileNumericSeams::ClampCountToUInt16(static_cast<INT_PTR>((std::numeric_limits<uint16>::max)())), (std::numeric_limits<uint16>::max)());
 	CHECK_EQ(PartFileNumericSeams::ClampCountToUInt16(static_cast<INT_PTR>((std::numeric_limits<uint16>::max)()) + 1), (std::numeric_limits<uint16>::max)());
 
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(17u), static_cast<uint16>(17u));
+	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(static_cast<uint32>((std::numeric_limits<uint16>::max)())), (std::numeric_limits<uint16>::max)());
 	CHECK_EQ(PartFileNumericSeams::ClampUInt32ToUInt16(static_cast<uint32>((std::numeric_limits<uint16>::max)()) + 1u), (std::numeric_limits<uint16>::max)());
 	CHECK_EQ(PartFileNumericSeams::ClampUInt64ToUInt16(17u), static_cast<uint16>(17u));
+	CHECK_EQ(PartFileNumericSeams::ClampUInt64ToUInt16(static_cast<uint64>((std::numeric_limits<uint16>::max)())), (std::numeric_limits<uint16>::max)());
 	CHECK_EQ(PartFileNumericSeams::ClampUInt64ToUInt16(static_cast<uint64>((std::numeric_limits<uint16>::max)()) + 1u), (std::numeric_limits<uint16>::max)());
 }
 

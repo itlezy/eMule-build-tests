@@ -59,6 +59,8 @@ param(
 
     [string]$BuildTag,
 
+    [string]$BuildLogSessionStamp,
+
     [switch]$SkipTrackedFilePrivacyGuard,
 
     [string[]]$TestArguments = @()
@@ -176,7 +178,11 @@ function Convert-ToFileToken {
 
 function Get-BuildLogSessionStamp {
     if (-not (Get-Variable -Name buildLogSessionStamp -Scope Script -ErrorAction SilentlyContinue)) {
-        $script:buildLogSessionStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        if (-not [string]::IsNullOrWhiteSpace($BuildLogSessionStamp)) {
+            $script:buildLogSessionStamp = $BuildLogSessionStamp
+        } else {
+            $script:buildLogSessionStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        }
     }
 
     return $script:buildLogSessionStamp
@@ -199,6 +205,30 @@ function Get-BuildLogDirectory {
     }
 
     return $sessionDirectory
+}
+
+function Write-BuildStepSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$Succeeded,
+
+        [string]$LogPath
+    )
+
+    if ($Succeeded) {
+        if ($BuildOutputMode -eq 'Full') {
+            return
+        }
+
+        Write-Host 'OK   TEST emule-tests' -ForegroundColor Green
+        return
+    }
+
+    $line = 'FAIL TEST emule-tests'
+    if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+        $line += " -> $LogPath"
+    }
+    Write-Host $line -ForegroundColor Red
 }
 
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
@@ -236,11 +266,6 @@ if (-not $SkipTrackedFilePrivacyGuard) {
 $projectPath = Join-Path $testRepoRootPath 'emule-tests.vcxproj'
 $msbuildPath = Get-MSBuildPath
 $buildRoot = Join-Path $testRepoRootPath ("build\{0}\{1}\{2}" -f $BuildTag, $Platform, $Configuration)
-$intermediateRoot = Join-Path $buildRoot 'obj'
-
-if (Test-Path -LiteralPath $intermediateRoot) {
-    Remove-Item -LiteralPath $intermediateRoot -Recurse -Force
-}
 
 $arguments = @(
     $projectPath,
@@ -254,7 +279,9 @@ $arguments = @(
     "/p:Platform=$Platform"
 )
 
-Write-Output "Building $projectPath for $workspaceRootPath using app root $appRootPath ($Platform|$Configuration, tag=$BuildTag)"
+if ($BuildOutputMode -eq 'Full') {
+    Write-Output "Building $projectPath for $workspaceRootPath using app root $appRootPath ($Platform|$Configuration, tag=$BuildTag)"
+}
 $logPath = $null
 if ($BuildOutputMode -ne 'Full') {
     $logPath = Join-Path (Get-BuildLogDirectory) ("{0}-{1}-{2}.log" -f (Convert-ToFileToken ("emule-tests-{0}" -f $BuildTag)), $Configuration.ToLowerInvariant(), $Platform.ToLowerInvariant())
@@ -272,10 +299,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "MSBuild failed with exit code $LASTEXITCODE."
     }
-} finally {
-    if ($logPath) {
-        Write-Host ("Full build log: {0}" -f $logPath) -ForegroundColor DarkGray
-    }
+    Write-BuildStepSummary -Succeeded $true -LogPath $logPath
+} catch {
+    Write-BuildStepSummary -Succeeded $false -LogPath $logPath
+    throw
 }
 
 if ($Run) {

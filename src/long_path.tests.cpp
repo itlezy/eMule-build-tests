@@ -1,0 +1,359 @@
+#include "../third_party/doctest/doctest.h"
+
+#include "../include/LongPathTestSupport.h"
+
+#include "LongPathSeams.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <io.h>
+#include <string>
+#include <vector>
+#include <windows.h>
+
+namespace
+{
+	std::vector<BYTE> ReadBytesFromStream(FILE *pStream)
+	{
+		std::vector<BYTE> bytes;
+		BYTE buffer[4096] = {};
+		size_t nRead = 0;
+		while ((nRead = fread(buffer, 1, sizeof buffer, pStream)) != 0)
+			bytes.insert(bytes.end(), buffer, buffer + nRead);
+		return bytes;
+	}
+
+	std::vector<BYTE> ReadBytesFromFd(const int fd)
+	{
+		std::vector<BYTE> bytes;
+		BYTE buffer[4096] = {};
+		int nRead = 0;
+		while ((nRead = _read(fd, buffer, sizeof buffer)) > 0)
+			bytes.insert(bytes.end(), buffer, buffer + nRead);
+		return bytes;
+	}
+}
+
+TEST_SUITE_BEGIN("divergence");
+
+TEST_CASE("Long-path seam matches the reference prefix policy for absolute and relative paths")
+{
+	std::wstring longDriveAbsolute = L"C:\\";
+	longDriveAbsolute.append(static_cast<size_t>(MAX_PATH), L'a');
+
+	std::wstring longUnc = L"\\\\server\\share\\";
+	longUnc.append(static_cast<size_t>(MAX_PATH), L'b');
+
+	std::wstring longRelative(static_cast<size_t>(MAX_PATH) + 16u, L'c');
+	std::wstring longDriveRelative = L"C:";
+	longDriveRelative.append(static_cast<size_t>(MAX_PATH), L'd');
+	std::wstring longRootRelative = L"\\";
+	longRootRelative.append(static_cast<size_t>(MAX_PATH), L'e');
+	std::wstring longDriveForwardSlash = L"C:/";
+	longDriveForwardSlash.append(static_cast<size_t>(MAX_PATH), L'f');
+
+	CHECK(LongPathSeams::PreparePathForLongPath(_T("C:\\Temp\\short.txt")) == LongPathSeams::PathString(_T("C:\\Temp\\short.txt")));
+	CHECK(LongPathSeams::PreparePathForLongPath(_T("\\\\server\\share\\short.txt")) == LongPathSeams::PathString(_T("\\\\server\\share\\short.txt")));
+	CHECK(LongPathSeams::PreparePathForLongPath(_T("\\\\?\\C:\\already-prefixed.txt")) == LongPathSeams::PathString(_T("\\\\?\\C:\\already-prefixed.txt")));
+
+	CHECK(LongPathSeams::PreparePathForLongPath(longDriveAbsolute.c_str()) == LongPathTestSupport::PreparePathForLongPath(longDriveAbsolute));
+	CHECK(LongPathSeams::PreparePathForLongPath(longUnc.c_str()) == LongPathTestSupport::PreparePathForLongPath(longUnc));
+	CHECK(LongPathSeams::PreparePathForLongPath(longRelative.c_str()) == LongPathTestSupport::PreparePathForLongPath(longRelative));
+	CHECK(LongPathSeams::PreparePathForLongPath(longDriveRelative.c_str()) == LongPathTestSupport::PreparePathForLongPath(longDriveRelative));
+	CHECK(LongPathSeams::PreparePathForLongPath(longRootRelative.c_str()) == LongPathTestSupport::PreparePathForLongPath(longRootRelative));
+	CHECK(LongPathSeams::PreparePathForLongPath(longDriveForwardSlash.c_str()) == LongPathTestSupport::PreparePathForLongPath(longDriveForwardSlash));
+}
+
+TEST_CASE("Long-path seam reads deterministic generated payloads from overlong unicode paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 65537u, 0xA17E5u));
+
+	FILE *pStream = LongPathSeams::OpenFileStreamSharedReadLongPath(fixture.FilePath().c_str(), false);
+	REQUIRE(pStream != NULL);
+	const std::vector<BYTE> bytes = ReadBytesFromStream(pStream);
+	fclose(pStream);
+
+	CHECK(bytes == fixture.Payload());
+	CHECK(LongPathTestSupport::ComputeFnv1a64(bytes) == fixture.PayloadFnv1a64());
+}
+
+TEST_CASE("Long-path seam opens CRT descriptors for overlong unicode paths and preserves golden vectors")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 32791u, 0x51A73u));
+
+	const int fd = LongPathSeams::OpenCrtReadOnlyLongPath(fixture.FilePath().c_str());
+	REQUIRE(fd != -1);
+	const std::vector<BYTE> bytes = ReadBytesFromFd(fd);
+	_close(fd);
+
+	CHECK(bytes == fixture.Payload());
+	CHECK(LongPathTestSupport::ComputeFnv1a64(bytes) == fixture.PayloadFnv1a64());
+}
+
+TEST_CASE("Long-path seam opens CRT write descriptors for overlong unicode paths and preserves golden vectors")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x44CC11u));
+
+	const std::wstring writtenPath = fixture.MakeSiblingPath(L".fdwrite");
+	const std::vector<BYTE> payload = LongPathTestSupport::BuildDeterministicPayload(5003u, 0x314159u);
+
+	const int fd = LongPathSeams::OpenCrtWriteOnlyLongPath(writtenPath.c_str());
+	REQUIRE(fd != -1);
+	REQUIRE(_write(fd, payload.data(), static_cast<unsigned int>(payload.size())) == static_cast<int>(payload.size()));
+	REQUIRE(_close(fd) == 0);
+
+	std::vector<BYTE> bytes;
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(writtenPath, bytes));
+	CHECK(bytes == payload);
+	CHECK(LongPathTestSupport::ComputeFnv1a64(bytes) == LongPathTestSupport::ComputeFnv1a64(payload));
+	REQUIRE(LongPathSeams::DeleteFile(writtenPath.c_str()) != FALSE);
+}
+
+TEST_CASE("Long-path seam reads and writes whole-file byte buffers on overlong unicode paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x110022u));
+
+	const std::wstring blobPath = fixture.MakeSiblingPath(L".blob");
+	const std::vector<BYTE> payload = LongPathTestSupport::BuildDeterministicPayload(7001u, 0xABC123u);
+
+	REQUIRE(LongPathSeams::WriteAllBytes(blobPath.c_str(), payload));
+
+	std::vector<unsigned char> loadedBytes;
+	REQUIRE(LongPathSeams::ReadAllBytes(blobPath.c_str(), loadedBytes));
+	std::vector<BYTE> roundTripBytes(loadedBytes.begin(), loadedBytes.end());
+	CHECK_EQ(roundTripBytes.size(), payload.size());
+	CHECK(std::equal(roundTripBytes.begin(), roundTripBytes.end(), payload.begin()));
+	CHECK_EQ(LongPathTestSupport::ComputeFnv1a64(roundTripBytes), LongPathTestSupport::ComputeFnv1a64(payload));
+
+	DWORD dwHigh = 0;
+	const DWORD dwLow = LongPathSeams::GetCompressedFileSize(blobPath.c_str(), &dwHigh);
+	const DWORD dwCompressedSizeError = ::GetLastError();
+	const bool bCompressedSizeOk = (dwLow != INVALID_FILE_SIZE) || (dwCompressedSizeError == NO_ERROR);
+	CHECK(bCompressedSizeOk);
+	const ULONGLONG nReportedSize = (static_cast<ULONGLONG>(dwHigh) << 32) | dwLow;
+	CHECK_EQ(nReportedSize, static_cast<ULONGLONG>(payload.size()));
+
+	REQUIRE(LongPathSeams::DeleteFileIfExists(blobPath.c_str()));
+	CHECK_FALSE(LongPathSeams::PathExists(blobPath.c_str()));
+}
+
+TEST_CASE("Long-path seam treats missing parent directories as successful delete-no-op cleanup")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x778899u));
+
+	const std::wstring missingPath = fixture.DirectoryPath() + L"\\missing_" + LongPathTestSupport::MakeSpecialSegment() + L"\\child.bin";
+	CHECK(LongPathSeams::DeleteFileIfExists(missingPath.c_str()));
+}
+
+TEST_CASE("Long-path seam copies moves enumerates and deletes deterministic payloads on overlong unicode paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 8192u + 37u, 0x9F31u));
+
+	const std::wstring copiedPath = fixture.MakeSiblingPath(L".copy");
+	const std::wstring renamedPath = fixture.MakeSiblingPath(L".renamed");
+
+	REQUIRE(LongPathSeams::CopyFile(fixture.FilePath().c_str(), copiedPath.c_str(), FALSE) != FALSE);
+	REQUIRE(LongPathSeams::MoveFileEx(copiedPath.c_str(), renamedPath.c_str(), MOVEFILE_REPLACE_EXISTING) != FALSE);
+
+	WIN32_FILE_ATTRIBUTE_DATA attributes = {};
+	REQUIRE(LongPathSeams::GetFileAttributesEx(renamedPath.c_str(), GetFileExInfoStandard, &attributes) != FALSE);
+	const ULONGLONG nFileSize = (static_cast<ULONGLONG>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
+	CHECK_EQ(nFileSize, static_cast<ULONGLONG>(fixture.Payload().size()));
+
+	std::vector<std::wstring> names;
+	WIN32_FIND_DATA findData = {};
+	const std::wstring searchPath = fixture.DirectoryPath() + L"\\*";
+	HANDLE hFind = LongPathSeams::FindFirstFile(searchPath.c_str(), &findData);
+	REQUIRE(hFind != INVALID_HANDLE_VALUE);
+	do {
+		const wchar_t *pszName = findData.cFileName;
+		if (wcscmp(pszName, L".") != 0 && wcscmp(pszName, L"..") != 0)
+			names.push_back(pszName);
+	} while (::FindNextFile(hFind, &findData) != FALSE);
+	REQUIRE(::GetLastError() == ERROR_NO_MORE_FILES);
+	REQUIRE(::FindClose(hFind) != FALSE);
+	std::sort(names.begin(), names.end());
+	CHECK(std::find(names.begin(), names.end(), std::wstring(L"payload_") + LongPathTestSupport::MakeSpecialSegment() + L".bin") != names.end());
+	CHECK(std::find(names.begin(), names.end(), std::wstring(L"payload_") + LongPathTestSupport::MakeSpecialSegment() + L".bin.renamed") != names.end());
+
+	std::vector<BYTE> copiedBytes;
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(renamedPath, copiedBytes));
+	CHECK(copiedBytes == fixture.Payload());
+	CHECK(LongPathTestSupport::ComputeFnv1a64(copiedBytes) == fixture.PayloadFnv1a64());
+
+	REQUIRE(LongPathSeams::DeleteFile(renamedPath.c_str()) != FALSE);
+	CHECK_FALSE(LongPathSeams::PathExists(renamedPath.c_str()));
+}
+
+TEST_CASE("Long-path seam preserves golden vectors across temp-file append move and backup flows")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x445566u));
+
+	const std::wstring tempPath = fixture.MakeSiblingPath(L".tmp");
+	const std::wstring finalPath = fixture.MakeSiblingPath(L".final");
+	const std::wstring backupPath = fixture.MakeSiblingPath(L".bak");
+	const std::vector<BYTE> firstPayload = LongPathTestSupport::BuildDeterministicPayload(6001u, 0x1234ABCDu);
+	const std::vector<BYTE> secondPayload = LongPathTestSupport::BuildDeterministicPayload(4097u, 0x55AA7711u);
+
+	FILE *pCreate = LongPathSeams::OpenFileStreamDenyWriteLongPath(tempPath.c_str(), _T("wb"));
+	REQUIRE(pCreate != NULL);
+	REQUIRE(fwrite(firstPayload.data(), 1, firstPayload.size(), pCreate) == firstPayload.size());
+	REQUIRE(fclose(pCreate) == 0);
+
+	FILE *pAppend = LongPathSeams::OpenFileStreamDenyWriteLongPath(tempPath.c_str(), _T("ab"));
+	REQUIRE(pAppend != NULL);
+	REQUIRE(fwrite(secondPayload.data(), 1, secondPayload.size(), pAppend) == secondPayload.size());
+	REQUIRE(fclose(pAppend) == 0);
+
+	REQUIRE(LongPathSeams::MoveFileWithProgress(tempPath.c_str(), finalPath.c_str(), NULL, NULL, MOVEFILE_REPLACE_EXISTING) != FALSE);
+	REQUIRE(LongPathSeams::CopyFile(finalPath.c_str(), backupPath.c_str(), FALSE) != FALSE);
+
+	std::vector<BYTE> expected = firstPayload;
+	expected.insert(expected.end(), secondPayload.begin(), secondPayload.end());
+
+	std::vector<unsigned char> finalBytesRaw;
+	REQUIRE(LongPathSeams::ReadAllBytes(finalPath.c_str(), finalBytesRaw));
+	const std::vector<BYTE> finalBytes(finalBytesRaw.begin(), finalBytesRaw.end());
+	CHECK(finalBytes == expected);
+	CHECK(LongPathTestSupport::ComputeFnv1a64(finalBytes) == LongPathTestSupport::ComputeFnv1a64(expected));
+
+	std::vector<BYTE> backupBytes;
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(backupPath, backupBytes));
+	CHECK(backupBytes == expected);
+	CHECK(LongPathTestSupport::ComputeFnv1a64(backupBytes) == LongPathTestSupport::ComputeFnv1a64(expected));
+
+	REQUIRE(LongPathSeams::DeleteFileIfExists(finalPath.c_str()));
+	REQUIRE(LongPathSeams::DeleteFileIfExists(backupPath.c_str()));
+	CHECK_FALSE(LongPathSeams::PathExists(finalPath.c_str()));
+	CHECK_FALSE(LongPathSeams::PathExists(backupPath.c_str()));
+}
+
+TEST_CASE("Long-path seam handles special-character short paths without changing the golden payload")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(false, 12345u, 0x20260409u));
+
+	FILE *pStream = LongPathSeams::OpenFileStreamSharedReadLongPath(fixture.FilePath().c_str(), false);
+	REQUIRE(pStream != NULL);
+	const std::vector<BYTE> bytes = ReadBytesFromStream(pStream);
+	fclose(pStream);
+
+	CHECK(bytes == fixture.Payload());
+	CHECK(LongPathTestSupport::ComputeFnv1a64(bytes) == fixture.PayloadFnv1a64());
+}
+
+TEST_CASE("Long-path seam supports deny-write FILE streams for create append and reread on overlong unicode paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x55AA11u));
+
+	const std::wstring streamPath = fixture.MakeSiblingPath(L".stream");
+	const std::vector<BYTE> firstPayload = LongPathTestSupport::BuildDeterministicPayload(4096u + 19u, 0x13579u);
+	const std::vector<BYTE> secondPayload = LongPathTestSupport::BuildDeterministicPayload(1024u + 7u, 0x24680u);
+
+	FILE *pCreate = LongPathSeams::OpenFileStreamDenyWriteLongPath(streamPath.c_str(), _T("wb"));
+	REQUIRE(pCreate != NULL);
+	REQUIRE(fwrite(firstPayload.data(), 1, firstPayload.size(), pCreate) == firstPayload.size());
+	REQUIRE(fclose(pCreate) == 0);
+
+	FILE *pAppend = LongPathSeams::OpenFileStreamDenyWriteLongPath(streamPath.c_str(), _T("ab"));
+	REQUIRE(pAppend != NULL);
+	REQUIRE(fwrite(secondPayload.data(), 1, secondPayload.size(), pAppend) == secondPayload.size());
+	REQUIRE(fclose(pAppend) == 0);
+
+	FILE *pRead = LongPathSeams::OpenFileStreamDenyWriteLongPath(streamPath.c_str(), _T("rb"));
+	REQUIRE(pRead != NULL);
+	const std::vector<BYTE> combinedBytes = ReadBytesFromStream(pRead);
+	fclose(pRead);
+
+	std::vector<BYTE> expected = firstPayload;
+	expected.insert(expected.end(), secondPayload.begin(), secondPayload.end());
+	CHECK(combinedBytes == expected);
+	REQUIRE(LongPathSeams::DeleteFile(streamPath.c_str()) != FALSE);
+}
+
+TEST_CASE("Long-path seam creates overlong unicode directories before file operations")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(false, 128u, 0xACEu));
+
+	std::wstring longDir = fixture.DirectoryPath() + L"\\generated_" + LongPathTestSupport::MakeSpecialSegment();
+	while (longDir.size() < MAX_PATH + 20u) {
+		longDir += L"\\segment_";
+		longDir += LongPathTestSupport::MakeSpecialSegment();
+	}
+
+	for (size_t i = fixture.DirectoryPath().size() + 1u; i < longDir.size(); ++i) {
+		if (longDir[i] != L'\\')
+			continue;
+		const std::wstring incrementalPath = longDir.substr(0, i);
+		const bool bExistsOrCreated = LongPathSeams::PathExists(incrementalPath.c_str()) || LongPathSeams::CreateDirectory(incrementalPath.c_str());
+		REQUIRE(bExistsOrCreated);
+	}
+	const bool bFinalExistsOrCreated = LongPathSeams::PathExists(longDir.c_str()) || LongPathSeams::CreateDirectory(longDir.c_str());
+	REQUIRE(bFinalExistsOrCreated);
+	CHECK(LongPathSeams::PathExists(longDir.c_str()));
+
+	for (std::wstring current = longDir; current.size() > fixture.DirectoryPath().size(); ) {
+		REQUIRE(::RemoveDirectoryW(LongPathTestSupport::PreparePathForLongPath(current).c_str()) != FALSE);
+		const size_t nLastSlash = current.find_last_of(L'\\');
+		REQUIRE(nLastSlash != std::wstring::npos);
+		current.erase(nLastSlash);
+	}
+}
+
+TEST_CASE("Long-path seam normalizes overlong forward-slash paths for directory and payload round-trips")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(false, 0u, 0xA1B2C3u));
+
+	std::wstring longDir = fixture.DirectoryPath() + L"\\forward_" + LongPathTestSupport::MakeSpecialSegment();
+	while (longDir.size() < MAX_PATH + 40u) {
+		longDir += L"\\segment_";
+		longDir += LongPathTestSupport::MakeSpecialSegment();
+	}
+	std::wstring forwardSlashDir = longDir;
+	std::replace(forwardSlashDir.begin(), forwardSlashDir.end(), L'\\', L'/');
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::EnsureDirectoryTree(fixture.DirectoryPath(), longDir));
+	CHECK(LongPathSeams::PathExists(forwardSlashDir.c_str()));
+
+	const std::wstring filePath = longDir + L"\\payload.bin";
+	std::wstring forwardSlashFilePath = filePath;
+	std::replace(forwardSlashFilePath.begin(), forwardSlashFilePath.end(), L'\\', L'/');
+	const std::vector<BYTE> payload = LongPathTestSupport::BuildDeterministicPayload(5432u, 0xCAFEBABEu);
+	REQUIRE(LongPathSeams::WriteAllBytes(forwardSlashFilePath.c_str(), payload));
+
+	std::vector<unsigned char> loadedRaw;
+	REQUIRE(LongPathSeams::ReadAllBytes(forwardSlashFilePath.c_str(), loadedRaw));
+	const std::vector<BYTE> loaded(loadedRaw.begin(), loadedRaw.end());
+	CHECK(loaded == payload);
+	CHECK(LongPathTestSupport::ComputeFnv1a64(loaded) == LongPathTestSupport::ComputeFnv1a64(payload));
+
+	REQUIRE(LongPathSeams::DeleteFileIfExists(forwardSlashFilePath.c_str()));
+	for (std::wstring current = longDir; current.size() > fixture.DirectoryPath().size(); ) {
+		REQUIRE(::RemoveDirectoryW(LongPathTestSupport::PreparePathForLongPath(current).c_str()) != FALSE);
+		const size_t nLastSlash = current.find_last_of(L'\\');
+		REQUIRE(nLastSlash != std::wstring::npos);
+		current.erase(nLastSlash);
+	}
+}
+
+TEST_SUITE_END;

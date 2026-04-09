@@ -1,4 +1,5 @@
 #include "../include/HashProbe.h"
+#include "../include/LongPathTestSupport.h"
 
 #include <Windows.h>
 #include <shellapi.h>
@@ -196,20 +197,6 @@ namespace
 		CProbeProgressReporter &m_rProgressReporter;
 		std::uint64_t m_nBytesProcessed = 0;
 	};
-
-	/**
-	 * @brief Preserves Win32 long-path semantics so probe runs match the eMule hashing code path.
-	 */
-	std::wstring PreparePathForLongPath(const std::wstring &path)
-	{
-		if (path.empty() || path.size() < MAX_PATH)
-			return path;
-		if (path.rfind(L"\\\\?\\", 0) == 0)
-			return path;
-		if (path.rfind(L"\\\\", 0) == 0)
-			return std::wstring(L"\\\\?\\UNC\\") + path.substr(2);
-		return std::wstring(L"\\\\?\\") + path;
-	}
 
 	/**
 	 * @brief Opens a sequential shared-read handle for the requested file path.
@@ -467,7 +454,7 @@ namespace
 	 */
 	int RunProbe(const CProbeOptions &options)
 	{
-		const std::wstring preparedPath = PreparePathForLongPath(options.FilePath);
+		const std::wstring preparedPath = LongPathTestSupport::PreparePathForLongPath(options.FilePath);
 		std::cout
 			<< "hash-probe path=" << EscapeForProbeOutput(options.FilePath)
 			<< "\nprepared-path=" << EscapeForProbeOutput(preparedPath)

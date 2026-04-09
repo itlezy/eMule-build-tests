@@ -1,4 +1,5 @@
 #include "../include/FullHashProbe.h"
+#include "../include/LongPathTestSupport.h"
 
 #include <Windows.h>
 #include <bcrypt.h>
@@ -174,20 +175,6 @@ namespace
 				out << "\\u" << std::setw(4) << std::setfill('0') << nCodeUnit << std::setfill(' ');
 		}
 		return out.str();
-	}
-
-	/**
-	 * @brief Applies the Win32 long-path prefix when the incoming path needs it.
-	 */
-	std::wstring PreparePathForLongPath(const std::wstring &path)
-	{
-		if (path.empty() || path.size() < MAX_PATH)
-			return path;
-		if (path.rfind(L"\\\\?\\", 0) == 0)
-			return path;
-		if (path.rfind(L"\\\\", 0) == 0)
-			return std::wstring(L"\\\\?\\UNC\\") + path.substr(2);
-		return std::wstring(L"\\\\?\\") + path;
 	}
 
 	const CHashAlgorithmProvider& GetHashAlgorithmProvider(LPCWSTR pszAlgorithmId)
@@ -509,7 +496,7 @@ int RunFullHashProbeIfRequested(int, char **)
 		return 1;
 	}
 
-	const std::wstring preparedPath = PreparePathForLongPath(options.FilePath);
+	const std::wstring preparedPath = LongPathTestSupport::PreparePathForLongPath(options.FilePath);
 	std::cout
 		<< "full-hash-probe path=" << EscapeForProbeOutput(options.FilePath)
 		<< "\nprepared-path=" << EscapeForProbeOutput(preparedPath)

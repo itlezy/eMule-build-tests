@@ -167,6 +167,8 @@
     <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LockScopeSeams.h')" />
     <ClCompile Include="src\listen_socket.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketSeams.h')" />
     <ClCompile Include="src\listen_socket_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketFlowSeams.h')" />
+    <ClCompile Include="src\long_path_fs_parity.tests.cpp" />
+    <ClCompile Include="src\long_path.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LongPathSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FileBufferSlider.h')" />
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
@@ -202,6 +204,7 @@
   <ItemGroup>
     <ClInclude Include="include\FullHashProbe.h" />
     <ClInclude Include="include\HashProbe.h" />
+    <ClInclude Include="include\LongPathTestSupport.h" />
     <ClInclude Include="include\TestSupport.h" />
     <ClInclude Include="$(AppRoot)\srchybrid\AICHSyncThreadSeams.h" Condition="Exists('$(AppRoot)\srchybrid\AICHSyncThreadSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\AsyncDatagramSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\AsyncDatagramSocketFlowSeams.h')" />
@@ -215,6 +218,7 @@
     <ClInclude Include="$(AppRoot)\srchybrid\KnownFileListSeams.h" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\LockScopeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\LockScopeSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\ListenSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketFlowSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\LongPathSeams.h" Condition="Exists('$(AppRoot)\srchybrid\LongPathSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\EMSocketSendSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EMSocketSendSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h')" />

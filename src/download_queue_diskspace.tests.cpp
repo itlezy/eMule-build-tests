@@ -73,6 +73,23 @@ TEST_CASE("Queue disk-space seam never pauses files that are already out of the 
 	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldPauseForDiskSpace(completeFile, 0u, 1u));
 }
 
+TEST_CASE("Queue disk-space seam never auto-resumes user-paused files and treats forced disk-full as zero free space")
+{
+	const VolumeKey volumeKey = MakeDriveVolumeKey(8);
+	const FileDiskSpaceState pausedFile = MakeFileDiskSpaceState(FileDiskSpaceStatus::Paused, volumeKey, true, 1024u);
+	const FileDiskSpaceState insufficientFile = MakeFileDiskSpaceState(FileDiskSpaceStatus::Insufficient, volumeKey, true, 1024u);
+	VolumeResumeBudget budget = MakeVolumeResumeBudget(volumeKey, 0u, 1024u);
+
+	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldResumeForDiskSpace(
+		pausedFile, budget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
+	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldResumeForDiskSpace(
+		insufficientFile, budget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
+}
+
+TEST_SUITE_END;
+
+TEST_SUITE_BEGIN("divergence");
+
 TEST_CASE("Queue disk-space seam resumes insufficient files only when the capped hysteresis budget is fully available")
 {
 	const VolumeKey volumeKey = MakeDriveVolumeKey(5);
@@ -132,19 +149,6 @@ TEST_CASE("Queue disk-space seam isolates auto-resume budgets by temp volume")
 		localFile, uncBudget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
 	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldResumeForDiskSpace(
 		uncFile, localBudget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
-}
-
-TEST_CASE("Queue disk-space seam never auto-resumes user-paused files and treats forced disk-full as zero free space")
-{
-	const VolumeKey volumeKey = MakeDriveVolumeKey(8);
-	const FileDiskSpaceState pausedFile = MakeFileDiskSpaceState(FileDiskSpaceStatus::Paused, volumeKey, true, 1024u);
-	const FileDiskSpaceState insufficientFile = MakeFileDiskSpaceState(FileDiskSpaceStatus::Insufficient, volumeKey, true, 1024u);
-	VolumeResumeBudget budget = MakeVolumeResumeBudget(volumeKey, 0u, 1024u);
-
-	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldResumeForDiskSpace(
-		pausedFile, budget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
-	CHECK_FALSE(DownloadQueueDiskSpaceSeams::ShouldResumeForDiskSpace(
-		insufficientFile, budget, PartFilePersistenceSeams::kMinDownloadFreeBytes));
 }
 
 TEST_SUITE_END;

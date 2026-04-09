@@ -1,3 +1,4 @@
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Runs the recommended Pipe API live matrix and soak profile.

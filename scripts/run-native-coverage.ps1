@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Builds the shared native test binary and records OpenCppCoverage results for seam suites.

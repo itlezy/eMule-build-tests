@@ -1,3 +1,4 @@
+#Requires -Version 7.6
 <#
 .SYNOPSIS
     Launches eMule under diagnostic monitoring to investigate hashing hangs.

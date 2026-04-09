@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Builds and runs the shared eMule test binary in two workspaces and compares suite-level XML results.

@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Resolves a usable OpenCppCoverage installation for shared native coverage runs.

@@ -73,6 +73,19 @@ namespace
 TEST_SUITE_BEGIN("parity");
 
 #if defined(EMULE_TEST_HAVE_PART_FILE_PERSISTENCE_SEAMS)
+TEST_CASE("Part-file persistence seams expose the fixed disk-space minimums")
+{
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloor(0u), PartFilePersistenceSeams::kMinDownloadFreeBytes);
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloor(PartFilePersistenceSeams::kMinDownloadFreeBytes - 1u), PartFilePersistenceSeams::kMinDownloadFreeBytes);
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloor(PartFilePersistenceSeams::kMinDownloadFreeBytes + 1u), PartFilePersistenceSeams::kMinDownloadFreeBytes + 1u);
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloor(PartFilePersistenceSeams::kMaxDownloadFreeBytes + PartFilePersistenceSeams::kDiskSpaceFloorUnitBytes), PartFilePersistenceSeams::kMaxDownloadFreeBytes);
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloorGiB(0u), PartFilePersistenceSeams::kMinDiskSpaceFloorGiB);
+	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloorGiB(PartFilePersistenceSeams::kMaxDiskSpaceFloorGiB + 1u), PartFilePersistenceSeams::kMaxDiskSpaceFloorGiB);
+	CHECK_EQ(PartFilePersistenceSeams::ConvertDownloadFreeSpaceFloorBytesToDisplayGiB(0u), PartFilePersistenceSeams::kMinDiskSpaceFloorGiB);
+	CHECK_EQ(PartFilePersistenceSeams::ConvertDownloadFreeSpaceFloorBytesToDisplayGiB(PartFilePersistenceSeams::kMaxDownloadFreeBytes), PartFilePersistenceSeams::kMaxDiskSpaceFloorGiB);
+	CHECK_EQ(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes, PartFilePersistenceSeams::kMinDownloadFreeBytes);
+}
+
 TEST_CASE("Part-file persistence seam keeps cache bookkeeping explicit")
 {
 	PartFilePersistenceSeams::PartMetWriteGuardState state = { false, false };
@@ -235,6 +248,33 @@ TEST_CASE("Part-file persistence seam blocks metadata writes when the free-space
 	CHECK_FALSE(PartFilePersistenceSeams::CanWritePartMetWithFreeSpace(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes - 1u));
 	CHECK(PartFilePersistenceSeams::CanWritePartMetWithFreeSpace(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes));
 	CHECK(PartFilePersistenceSeams::CanWritePartMetWithFreeSpace(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes + 1u));
+}
+
+TEST_CASE("Part-file persistence seam caps and aggregates insufficient resume headroom")
+{
+	CHECK_EQ(PartFilePersistenceSeams::GetInsufficientResumeHeadroomBytes(0u), 0u);
+	CHECK_EQ(PartFilePersistenceSeams::GetInsufficientResumeHeadroomBytes(PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes / 2u),
+		PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes / 2u);
+	CHECK_EQ(PartFilePersistenceSeams::GetInsufficientResumeHeadroomBytes(PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes + 1u),
+		PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes);
+	CHECK_EQ(PartFilePersistenceSeams::AddInsufficientResumeHeadroomBytes(
+		PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes, PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes),
+		PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes * 2u);
+}
+
+TEST_CASE("Part-file persistence seam only resumes insufficient files after the full hysteresis budget is available")
+{
+	const uint64_t nMinimumFreeBytes = PartFilePersistenceSeams::kMinDownloadFreeBytes;
+	const uint64_t nResumeHeadroomBytes = PartFilePersistenceSeams::AddInsufficientResumeHeadroomBytes(
+		PartFilePersistenceSeams::GetInsufficientResumeHeadroomBytes(PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes / 4u),
+		PartFilePersistenceSeams::kMaxInsufficientResumeHeadroomBytes + 123u);
+
+	CHECK_EQ(PartFilePersistenceSeams::GetInsufficientResumeThresholdBytes(nMinimumFreeBytes, nResumeHeadroomBytes),
+		nMinimumFreeBytes + nResumeHeadroomBytes);
+	CHECK_FALSE(PartFilePersistenceSeams::CanResumeInsufficientFileWithFreeSpace(
+		nMinimumFreeBytes + nResumeHeadroomBytes - 1u, nMinimumFreeBytes, nResumeHeadroomBytes));
+	CHECK(PartFilePersistenceSeams::CanResumeInsufficientFileWithFreeSpace(
+		nMinimumFreeBytes + nResumeHeadroomBytes, nMinimumFreeBytes, nResumeHeadroomBytes));
 }
 
 TEST_CASE("Part-file persistence seam invalidation forces a fresh low-space decision")

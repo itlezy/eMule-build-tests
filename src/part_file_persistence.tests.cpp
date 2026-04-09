@@ -73,6 +73,7 @@ namespace
 TEST_SUITE_BEGIN("parity");
 
 #if defined(EMULE_TEST_HAVE_PART_FILE_PERSISTENCE_SEAMS)
+#if defined(EMULE_TEST_HAVE_PART_FILE_DISKSPACE_FLOOR_SEAMS)
 TEST_CASE("Part-file persistence seams expose the fixed disk-space minimums")
 {
 	CHECK_EQ(PartFilePersistenceSeams::NormalizeDownloadFreeSpaceFloor(0u), PartFilePersistenceSeams::kMinDownloadFreeBytes);
@@ -85,6 +86,7 @@ TEST_CASE("Part-file persistence seams expose the fixed disk-space minimums")
 	CHECK_EQ(PartFilePersistenceSeams::ConvertDownloadFreeSpaceFloorBytesToDisplayGiB(PartFilePersistenceSeams::kMaxDownloadFreeBytes), PartFilePersistenceSeams::kMaxDiskSpaceFloorGiB);
 	CHECK_EQ(PartFilePersistenceSeams::kMinPartMetWriteFreeBytes, PartFilePersistenceSeams::kMinDownloadFreeBytes);
 }
+#endif
 
 TEST_CASE("Part-file persistence seam keeps cache bookkeeping explicit")
 {
@@ -242,6 +244,7 @@ TEST_SUITE_END;
 TEST_SUITE_BEGIN("divergence");
 
 #if defined(EMULE_TEST_HAVE_PART_FILE_PERSISTENCE_SEAMS)
+#if defined(EMULE_TEST_HAVE_PART_FILE_DISKSPACE_FLOOR_SEAMS)
 TEST_CASE("Part-file persistence seam blocks metadata writes when the free-space floor is not met")
 {
 	CHECK_FALSE(PartFilePersistenceSeams::CanWritePartMetWithFreeSpace(0u));
@@ -305,6 +308,7 @@ TEST_CASE("Part-file persistence seam force-refresh ignores stale cached write p
 	CHECK_FALSE(refreshedDecision.CanWrite);
 	CHECK_FALSE(PartFilePersistenceSeams::ShouldReusePartMetWriteCache(state.HasCachedResult, true));
 }
+#endif
 
 TEST_CASE("Part-file persistence seam skips destructor flushes only during shutdown after the write thread is gone")
 {

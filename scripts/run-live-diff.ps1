@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Builds and runs the shared eMule test binary in two workspaces and compares suite-level XML results.
@@ -120,7 +120,8 @@ function Invoke-LiveDiffBuild {
             -AppRoot $AppRoot `
             -Configuration $Configuration `
             -Platform $Platform `
-            -BuildTag $buildTag
+            -BuildTag $buildTag `
+            -BuildOutputMode Full
         return
     }
 
@@ -129,7 +130,8 @@ function Invoke-LiveDiffBuild {
         -WorkspaceRoot $WorkspaceRoot `
         -Configuration $Configuration `
         -Platform $Platform `
-        -BuildTag $buildTag
+        -BuildTag $buildTag `
+        -BuildOutputMode Full
 }
 
 function Get-TestCaseResults {

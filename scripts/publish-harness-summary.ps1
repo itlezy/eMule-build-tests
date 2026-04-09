@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Publishes a combined parity, coverage, and optional live-harness summary.

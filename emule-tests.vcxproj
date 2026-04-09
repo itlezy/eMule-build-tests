@@ -151,6 +151,7 @@
     <ClCompile Include="src\client_credits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientCreditsSeams.h')" />
     <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h')" />
     <ClCompile Include="src\collection.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\CollectionSeams.h')" />
+    <ClCompile Include="src\download_queue_diskspace.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\DownloadQueueDiskSpaceSeams.h')" />
     <ClCompile Include="src\download_queue_hostname_resolver.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\DownloadQueueHostnameResolverSeams.h')" />
     <ClCompile Include="src\emsocket_send.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EMSocketSendSeams.h')" />
     <ClCompile Include="src\udp_obfuscation_framing.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramFramingSeams.h')" />
@@ -170,6 +171,8 @@
     <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FileBufferSlider.h')" />
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PipeApiServerPolicy.h')" />
+    <ClCompile Include="src\part_file_persistence.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')" />
+    <ClCompile Include="src\part_file_pause_resume.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h')" />
     <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
     <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartStatusOwnershipSeams.h')" />
     <ClCompile Include="src\protocol_receive_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h')" />
@@ -206,6 +209,7 @@
     <ClInclude Include="$(AppRoot)\srchybrid\ClientCreditsSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ClientCreditsSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\CompressionBufferSeams.h" Condition="Exists('$(AppRoot)\srchybrid\CompressionBufferSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\CollectionSeams.h" Condition="Exists('$(AppRoot)\srchybrid\CollectionSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\DownloadQueueDiskSpaceSeams.h" Condition="Exists('$(AppRoot)\srchybrid\DownloadQueueDiskSpaceSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\kademlia\kademlia\Defines.h" Condition="Exists('$(AppRoot)\srchybrid\kademlia\kademlia\Defines.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\KnownFileListSeams.h" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
@@ -220,6 +224,8 @@
     <ClInclude Include="$(AppRoot)\srchybrid\FormatSafetySeams.h" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\MappedFileReader.h" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\NullGuardSeams.h" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\PartFilePersistenceSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\PartFileNumericSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\ResourceOwnershipSeams.h" Condition="Exists('$(AppRoot)\srchybrid\ResourceOwnershipSeams.h')" />
@@ -239,5 +245,3 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>
-
-

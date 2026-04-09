@@ -120,7 +120,8 @@ function Invoke-LiveDiffBuild {
             -AppRoot $AppRoot `
             -Configuration $Configuration `
             -Platform $Platform `
-            -BuildTag $buildTag
+            -BuildTag $buildTag `
+            -BuildOutputMode Full
         return
     }
 
@@ -129,7 +130,8 @@ function Invoke-LiveDiffBuild {
         -WorkspaceRoot $WorkspaceRoot `
         -Configuration $Configuration `
         -Platform $Platform `
-        -BuildTag $buildTag
+        -BuildTag $buildTag `
+        -BuildOutputMode Full
 }
 
 function Get-TestCaseResults {

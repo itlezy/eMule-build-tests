@@ -48,6 +48,9 @@ param(
     [ValidateSet('x64', 'ARM64')]
     [string]$Platform = 'x64',
 
+    [ValidateSet('Full', 'Warnings', 'ErrorsOnly')]
+    [string]$BuildOutputMode = 'ErrorsOnly',
+
     [switch]$Run,
 
     [string]$OutFile,
@@ -156,6 +159,48 @@ function Get-BuildTag {
     (($segments -join '-') -replace '[^A-Za-z0-9._-]', '_')
 }
 
+function Convert-ToFileToken {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $token = ($Value -replace '[\\/:*?"<>|\s]+', '-') -replace '[^A-Za-z0-9._-]+', '-'
+    $token = $token.Trim('-')
+    if ([string]::IsNullOrWhiteSpace($token)) {
+        return 'build'
+    }
+
+    return $token
+}
+
+function Get-BuildLogSessionStamp {
+    if (-not (Get-Variable -Name buildLogSessionStamp -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:buildLogSessionStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    }
+
+    return $script:buildLogSessionStamp
+}
+
+function Get-BuildLogDirectory {
+    $stateRoot = Join-Path $workspaceRootPath 'state'
+    if (-not (Test-Path -LiteralPath $stateRoot)) {
+        New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+    }
+
+    $buildLogsRoot = Join-Path $stateRoot 'build-logs'
+    if (-not (Test-Path -LiteralPath $buildLogsRoot)) {
+        New-Item -ItemType Directory -Path $buildLogsRoot -Force | Out-Null
+    }
+
+    $sessionDirectory = Join-Path $buildLogsRoot (Get-BuildLogSessionStamp)
+    if (-not (Test-Path -LiteralPath $sessionDirectory)) {
+        New-Item -ItemType Directory -Path $sessionDirectory -Force | Out-Null
+    }
+
+    return $sessionDirectory
+}
+
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $WorkspaceRoot = if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
@@ -210,9 +255,27 @@ $arguments = @(
 )
 
 Write-Output "Building $projectPath for $workspaceRootPath using app root $appRootPath ($Platform|$Configuration, tag=$BuildTag)"
-& $msbuildPath @arguments
-if ($LASTEXITCODE -ne 0) {
-    throw "MSBuild failed with exit code $LASTEXITCODE."
+$logPath = $null
+if ($BuildOutputMode -ne 'Full') {
+    $logPath = Join-Path (Get-BuildLogDirectory) ("{0}-{1}-{2}.log" -f (Convert-ToFileToken ("emule-tests-{0}" -f $BuildTag)), $Configuration.ToLowerInvariant(), $Platform.ToLowerInvariant())
+    $arguments += @(
+        ("/clp:{0}" -f $(switch ($BuildOutputMode) {
+            'Warnings' { 'WarningsOnly' }
+            'ErrorsOnly' { 'ErrorsOnly' }
+        })),
+        ("/flp:LogFile={0};Verbosity=normal;Encoding=UTF-8" -f $logPath)
+    )
+}
+
+try {
+    & $msbuildPath @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "MSBuild failed with exit code $LASTEXITCODE."
+    }
+} finally {
+    if ($logPath) {
+        Write-Host ("Full build log: {0}" -f $logPath) -ForegroundColor DarkGray
+    }
 }
 
 if ($Run) {

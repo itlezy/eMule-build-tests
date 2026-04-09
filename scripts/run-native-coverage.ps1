@@ -154,7 +154,7 @@ New-Item -ItemType Directory -Force -Path $runReportDir | Out-Null
 
 if (-not $SkipBuild) {
     $buildScriptPath = Join-Path $testRepoRootPath 'scripts\build-emule-tests.ps1'
-    & $buildScriptPath -TestRepoRoot $testRepoRootPath -WorkspaceRoot $workspaceRootPath -AppRoot $appRootPath -Configuration $Configuration -Platform $Platform -BuildTag $buildTag
+    & $buildScriptPath -TestRepoRoot $testRepoRootPath -WorkspaceRoot $workspaceRootPath -AppRoot $appRootPath -Configuration $Configuration -Platform $Platform -BuildTag $buildTag -BuildOutputMode Full
     if ($LASTEXITCODE -ne 0) {
         throw "Shared test build failed with exit code $LASTEXITCODE."
     }

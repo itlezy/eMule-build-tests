@@ -51,6 +51,8 @@ param(
     [ValidateSet('Full', 'Warnings', 'ErrorsOnly')]
     [string]$BuildOutputMode = 'ErrorsOnly',
 
+    [switch]$Clean,
+
     [switch]$Run,
 
     [string]$OutFile,
@@ -207,24 +209,40 @@ function Get-BuildLogDirectory {
     return $sessionDirectory
 }
 
+function Format-Duration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [double]$TotalSeconds
+    )
+
+    if ($TotalSeconds -lt 10) {
+        return ('{0:N1}s' -f $TotalSeconds)
+    }
+
+    return ('{0:N0}s' -f [Math]::Round($TotalSeconds))
+}
+
 function Write-BuildStepSummary {
     param(
         [Parameter(Mandatory = $true)]
         [bool]$Succeeded,
 
-        [string]$LogPath
+        [string]$LogPath,
+
+        [double]$DurationSeconds
     )
 
+    $durationText = Format-Duration -TotalSeconds $DurationSeconds
     if ($Succeeded) {
         if ($BuildOutputMode -eq 'Full') {
             return
         }
 
-        Write-Host 'OK   TEST emule-tests' -ForegroundColor Green
+        Write-Host ("OK   TEST emule-tests ({0})" -f $durationText) -ForegroundColor Green
         return
     }
 
-    $line = 'FAIL TEST emule-tests'
+    $line = "FAIL TEST emule-tests ({0})" -f $durationText
     if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
         $line += " -> $LogPath"
     }
@@ -266,42 +284,53 @@ if (-not $SkipTrackedFilePrivacyGuard) {
 $projectPath = Join-Path $testRepoRootPath 'emule-tests.vcxproj'
 $msbuildPath = Get-MSBuildPath
 $buildRoot = Join-Path $testRepoRootPath ("build\{0}\{1}\{2}" -f $BuildTag, $Platform, $Configuration)
+$logPath = Join-Path (Get-BuildLogDirectory) ("{0}-{1}-{2}.log" -f (Convert-ToFileToken ("emule-tests-{0}" -f $BuildTag)), $Configuration.ToLowerInvariant(), $Platform.ToLowerInvariant())
+$binaryLogPath = Join-Path (Get-BuildLogDirectory) ("{0}-{1}-{2}.binlog" -f (Convert-ToFileToken ("emule-tests-{0}" -f $BuildTag)), $Configuration.ToLowerInvariant(), $Platform.ToLowerInvariant())
+
+if ($Clean) {
+    $intermediateRoot = Join-Path $buildRoot 'obj'
+    if (Test-Path -LiteralPath $intermediateRoot) {
+        Remove-Item -LiteralPath $intermediateRoot -Recurse -Force
+    }
+}
 
 $arguments = @(
     $projectPath,
     '/m',
     '/nologo',
-    '/t:Build',
+    ("/t:{0}" -f $(if ($Clean) { 'Rebuild' } else { 'Build' })),
     "/p:AppRoot=$appRootPath",
     "/p:WorkspaceRoot=$workspaceRootPath",
     "/p:BuildTag=$BuildTag",
     "/p:Configuration=$Configuration",
-    "/p:Platform=$Platform"
+    "/p:Platform=$Platform",
+    ("/flp:LogFile={0};Verbosity=normal;Encoding=UTF-8" -f $logPath),
+    ("/bl:{0}" -f $binaryLogPath)
 )
 
 if ($BuildOutputMode -eq 'Full') {
     Write-Output "Building $projectPath for $workspaceRootPath using app root $appRootPath ($Platform|$Configuration, tag=$BuildTag)"
 }
-$logPath = $null
 if ($BuildOutputMode -ne 'Full') {
-    $logPath = Join-Path (Get-BuildLogDirectory) ("{0}-{1}-{2}.log" -f (Convert-ToFileToken ("emule-tests-{0}" -f $BuildTag)), $Configuration.ToLowerInvariant(), $Platform.ToLowerInvariant())
     $arguments += @(
         ("/clp:{0}" -f $(switch ($BuildOutputMode) {
             'Warnings' { 'WarningsOnly' }
             'ErrorsOnly' { 'ErrorsOnly' }
-        })),
-        ("/flp:LogFile={0};Verbosity=normal;Encoding=UTF-8" -f $logPath)
+        }))
     )
 }
 
+$stepStartedAt = Get-Date
 try {
     & $msbuildPath @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "MSBuild failed with exit code $LASTEXITCODE."
     }
-    Write-BuildStepSummary -Succeeded $true -LogPath $logPath
+    $durationSeconds = ((Get-Date) - $stepStartedAt).TotalSeconds
+    Write-BuildStepSummary -Succeeded $true -LogPath $logPath -DurationSeconds $durationSeconds
 } catch {
-    Write-BuildStepSummary -Succeeded $false -LogPath $logPath
+    $durationSeconds = ((Get-Date) - $stepStartedAt).TotalSeconds
+    Write-BuildStepSummary -Succeeded $false -LogPath $logPath -DurationSeconds $durationSeconds
     throw
 }
 

@@ -172,6 +172,7 @@
     <ClCompile Include="src\source_exchange_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClCompile Include="src\source_exchange_replay.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BaseClientFriendBuddySeams.h')" />
     <ClCompile Include="src\test-main.cpp" />
+    <ClCompile Include="src\tickcount64.tests.cpp" />
     <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
     <ClCompile Include="src\upload_bandwidth_throttler_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
     <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />

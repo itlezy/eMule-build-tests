@@ -144,11 +144,13 @@
     <ClCompile Include="src\format_safety.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
     <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
+    <ClCompile Include="src\ip_filter.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\IPFilterSeams.h')" />
     <ClCompile Include="src\known_file_metadata.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileMetadataSeams.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
     <ClCompile Include="src\lock_scope.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LockScopeSeams.h')" />
     <ClCompile Include="src\listen_socket.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketSeams.h')" />
     <ClCompile Include="src\listen_socket_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ListenSocketFlowSeams.h')" />
+    <ClCompile Include="src\log_file.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LogFileSeams.h')" />
     <ClCompile Include="src\long_path_fs_parity.tests.cpp" />
     <ClCompile Include="src\long_path.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\LongPathSeams.h')" />
     <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />

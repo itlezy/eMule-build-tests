@@ -184,6 +184,7 @@
     <ClCompile Include="src\tickcount64.tests.cpp" />
     <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
     <ClCompile Include="src\upload_bandwidth_throttler_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
+    <ClCompile Include="src\upload_score.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadScoreSeams.h')" />
     <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />
     <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
     <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />

@@ -63,6 +63,10 @@
     <BuildTag Condition="'$(BuildTag)'==''">default</BuildTag>
     <HasMappedFileReader>0</HasMappedFileReader>
     <HasMappedFileReader Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')">1</HasMappedFileReader>
+    <HasUploadScoreSeams>0</HasUploadScoreSeams>
+    <HasUploadScoreSeams Condition="Exists('$(AppRoot)\srchybrid\UploadScoreSeams.h')">1</HasUploadScoreSeams>
+    <HasPartFilePersistenceSeams>0</HasPartFilePersistenceSeams>
+    <HasPartFilePersistenceSeams Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')">1</HasPartFilePersistenceSeams>
     <OutDir>build\$(BuildTag)\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>build\$(BuildTag)\$(Platform)\$(Configuration)\obj\</IntDir>
     <TargetName>emule-tests</TargetName>
@@ -78,7 +82,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <Optimization>Disabled</Optimization>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);EMULE_TESTS_HAS_UPLOAD_SCORE_SEAMS=$(HasUploadScoreSeams);EMULE_TESTS_HAS_PART_FILE_PERSISTENCE_SEAMS=$(HasPartFilePersistenceSeams);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>
@@ -99,7 +103,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <Optimization>MaxSpeed</Optimization>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;_CONSOLE;EMULE_TESTS_HAS_MAPPED_FILE_READER=$(HasMappedFileReader);EMULE_TESTS_HAS_UPLOAD_SCORE_SEAMS=$(HasUploadScoreSeams);EMULE_TESTS_HAS_PART_FILE_PERSISTENCE_SEAMS=$(HasPartFilePersistenceSeams);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>
@@ -127,6 +131,7 @@
     <ClCompile Include="src\kad_base.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadClientSearcher.h')" />
     <ClCompile Include="src\kad_guards.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.h')" />
     <ClCompile Include="src\bind_startup_policy.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\BindStartupPolicy.h')" />
+    <ClCompile Include="src\bugfix_core_divergence.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
     <ClCompile Include="src\compression_buffer.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\CompressionBufferSeams.h')" />
     <ClCompile Include="src\client_credits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientCreditsSeams.h')" />
     <ClCompile Include="src\client_socket_lifetime.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ClientSocketLifetimeSeams.h')" />

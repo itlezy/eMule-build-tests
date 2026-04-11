@@ -127,6 +127,51 @@ TEST_CASE("Upload score seam reports friend-slot displays without forcing numeri
 	CHECK(UploadScoreSeams::FormatUploadScoreCooldownDetail(breakdown, 42000u, _T("-")) == CString(_T("-")));
 }
 
+TEST_CASE("Upload score seam keeps credit and file-priority multiplication in the base and effective score path")
+{
+	UploadScoreSeams::UploadScoreInputs inputs = {};
+	inputs.uBaseValueMs = 100000u;
+	inputs.fCreditRatio = 1.5f;
+	inputs.iFilePrioNumber = 8;
+	inputs.bUseCreditSystem = true;
+	inputs.bApplyPriority = true;
+
+	const UploadScoreSeams::UploadScoreBreakdown breakdown = UploadScoreSeams::BuildUploadScoreBreakdown(inputs);
+	CHECK_EQ(breakdown.eAvailability, UploadScoreSeams::uploadScoreAvailable);
+	CHECK_EQ(breakdown.uBaseScore, 120u);
+	CHECK_EQ(breakdown.uEffectiveScore, 120u);
+	CHECK_FALSE(breakdown.bLowRatioApplied);
+	CHECK_FALSE(breakdown.bLowIdPenaltyApplied);
+	CHECK_FALSE(breakdown.bOldClientPenaltyApplied);
+}
+
+TEST_CASE("Upload score seam derives stable modifier masks and sort keys from active modifiers")
+{
+	UploadScoreSeams::UploadScoreInputs lowRatioOnlyInputs = {};
+	lowRatioOnlyInputs.uBaseValueMs = 100000u;
+	lowRatioOnlyInputs.fCreditRatio = 1.0f;
+	lowRatioOnlyInputs.iFilePrioNumber = 7;
+	lowRatioOnlyInputs.bApplyLowRatioBonus = true;
+	lowRatioOnlyInputs.uLowRatioBonus = 25u;
+
+	UploadScoreSeams::UploadScoreInputs lowRatioAndLowIdInputs = lowRatioOnlyInputs;
+	lowRatioAndLowIdInputs.bApplyLowIdDivisor = true;
+	lowRatioAndLowIdInputs.uLowIdDivisor = 2u;
+
+	UploadScoreSeams::UploadScoreInputs cooldownInputs = lowRatioAndLowIdInputs;
+	cooldownInputs.bCooldownSuppressed = true;
+
+	const UploadScoreSeams::UploadScoreBreakdown lowRatioOnly = UploadScoreSeams::BuildUploadScoreBreakdown(lowRatioOnlyInputs);
+	const UploadScoreSeams::UploadScoreBreakdown lowRatioAndLowId = UploadScoreSeams::BuildUploadScoreBreakdown(lowRatioAndLowIdInputs);
+	const UploadScoreSeams::UploadScoreBreakdown cooldown = UploadScoreSeams::BuildUploadScoreBreakdown(cooldownInputs);
+
+	CHECK_EQ(UploadScoreSeams::BuildUploadScoreModifierMask(lowRatioOnly), 2u);
+	CHECK_EQ(UploadScoreSeams::BuildUploadScoreModifierMask(lowRatioAndLowId), 3u);
+	CHECK_EQ(UploadScoreSeams::BuildUploadScoreModifierMask(cooldown), 7u);
+	CHECK(UploadScoreSeams::BuildUploadScoreModifierSortKey(lowRatioOnly) < UploadScoreSeams::BuildUploadScoreModifierSortKey(lowRatioAndLowId));
+	CHECK(UploadScoreSeams::BuildUploadScoreModifierSortKey(lowRatioAndLowId) < UploadScoreSeams::BuildUploadScoreModifierSortKey(cooldown));
+}
+
 TEST_CASE("Upload score seam reports unavailable and cooldown displays consistently across split and detail fields")
 {
 	UploadScoreSeams::UploadScoreBreakdown unavailable = {};

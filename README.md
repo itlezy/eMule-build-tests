@@ -37,6 +37,24 @@ Current suite model:
 
 - `parity`: cases that must pass in both selected workspaces
 - `divergence`: cases that are expected to differ between two explicitly chosen workspace roots
+- focused comparison suites may be added when a specific branch-to-branch audit needs a tighter signal than the repo-wide `divergence` bucket
+
+Bugfix core comparison workflow:
+
+- `scripts\run-bugfix-core-coverage.ps1` is the operator-facing wrapper for the canonical `main` vs `release/v0.72a-bugfix` comparison
+- it runs native coverage for `app\eMule-main` with `parity` and `bugfix-core-divergence`
+- it runs the focused `bugfix-core-divergence` suite for main-only queue-scoring and persistence behavior
+- it runs native coverage for `app\eMule-v0.72a-bugfix` with `parity`
+- it runs `scripts\run-live-diff.ps1` against those two app roots and keeps the suite-level pass/fail split explicit
+- the wrapper writes a combined summary under `reports\bugfix-core-coverage`
+
+Current critical comparison slices:
+
+- upload queue entry access parity: `src\upload_queue.tests.cpp`
+- upload queue/scoring divergence and FEAT-023 consumer helpers: `src\bugfix_core_divergence.tests.cpp`, `src\upload_score.tests.cpp`
+- protocol receive replay parity with fragmented temp-file streams: `src\protocol_receive_flow.tests.cpp`
+- long-path and part/met persistence IO: `src\long_path_fs_parity.tests.cpp`, `src\part_file_persistence.tests.cpp`
+- core socket IO guards: `src\socket_io.tests.cpp`, `src\emsocket_send.tests.cpp`, `src\async_socket_ex.tests.cpp`
 
 Workspace quick reference:
 
@@ -83,6 +101,7 @@ Tracked-file privacy guard:
 Native seam coverage and shared reports:
 
 - `scripts\run-native-coverage.ps1` builds `emule-tests.exe`, runs the requested doctest suites under OpenCppCoverage, and writes Cobertura plus summary outputs under `reports\native-coverage`
+- `scripts\run-bugfix-core-coverage.ps1` chains the canonical `main` and `bugfix` native-coverage runs with the workspace live-diff pass and writes a combined summary under `reports\bugfix-core-coverage`
 - `helpers\helper-opencppcoverage-bootstrap.ps1` uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run-live-diff.ps1` now writes both text and JSON parity/divergence summaries under `reports`
 - `scripts\publish-harness-summary.ps1` combines native coverage, parity, and optional live-harness manifest data into one shared summary under `reports`

@@ -1,9 +1,11 @@
 #include "../third_party/doctest/doctest.h"
 
+#include "../include/LongPathTestSupport.h"
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <vector>
 #include <windows.h>
 
@@ -29,6 +31,18 @@ namespace
 		REQUIRE(stream.is_open());
 		stream.write(reinterpret_cast<const char*>(rBytes.data()), static_cast<std::streamsize>(rBytes.size()));
 		REQUIRE(stream.good());
+	}
+
+	void WriteProtocolReplayFixtureLongPath(const std::wstring &rPath, const std::vector<BYTE> &rBytes)
+	{
+		REQUIRE(LongPathTestSupport::ScopedLongPathFixture::WriteBytes(rPath, rBytes));
+	}
+
+	std::vector<BYTE> ReadProtocolReplayFixtureLongPath(const std::wstring &rPath)
+	{
+		std::vector<BYTE> bytes;
+		REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(rPath, bytes));
+		return bytes;
 	}
 
 	std::vector<size_t> ReplayProtocolStream(const std::vector<BYTE> &rStream, const std::vector<size_t> &rChunkSizes, bool *pbRejected = nullptr)
@@ -154,6 +168,49 @@ TEST_CASE("Protocol receive flow leaves a truncated trailing header unresolved i
 	const std::vector<size_t> payloadLengths = ReplayProtocolStream(stream, {stream.size()}, &bRejected);
 	CHECK(payloadLengths == std::vector<size_t>{1u});
 	CHECK_FALSE(bRejected);
+}
+
+TEST_CASE("Protocol receive flow replays one-byte fragmented packets from an overlong unicode temp stream")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x50524F54u));
+
+	const std::wstring replayLeaf = std::wstring(L"proto stream [") + LongPathTestSupport::MakeSpecialSegment() + L"].bin";
+	const std::wstring replayPath = fixture.MakeDirectoryChildPath(replayLeaf.c_str());
+	const std::vector<BYTE> stream = {
+		OP_EDONKEYPROT, 0x03, 0x00, 0x00, 0x00, OP_HELLO, 0x11, 0x22,
+		OP_EDONKEYPROT, 0x02, 0x00, 0x00, 0x00, OP_MESSAGE, 0x33
+	};
+
+	WriteProtocolReplayFixtureLongPath(replayPath, stream);
+	const std::vector<BYTE> fileBytes = ReadProtocolReplayFixtureLongPath(replayPath);
+	const std::vector<size_t> chunkSizes(fileBytes.size(), 1u);
+	const std::vector<size_t> payloadLengths = ReplayProtocolStream(fileBytes, chunkSizes);
+
+	CHECK(payloadLengths == std::vector<size_t>{2u, 1u});
+}
+
+TEST_CASE("Protocol receive flow rejects a malformed trailing packet from an overlong unicode temp replay after emitting earlier packets")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x4D414C46u));
+
+	const std::wstring replayLeaf = std::wstring(L"proto reject [") + LongPathTestSupport::MakeSpecialSegment() + L"].bin";
+	const std::wstring replayPath = fixture.MakeDirectoryChildPath(replayLeaf.c_str());
+	const std::vector<BYTE> stream = {
+		OP_EDONKEYPROT, 0x02, 0x00, 0x00, 0x00, OP_HELLO, 0xAB,
+		OP_EDONKEYPROT, 0x00, 0x00, 0x00, 0x00, OP_MESSAGE
+	};
+
+	WriteProtocolReplayFixtureLongPath(replayPath, stream);
+	const std::vector<BYTE> fileBytes = ReadProtocolReplayFixtureLongPath(replayPath);
+	bool bRejected = false;
+	const std::vector<size_t> payloadLengths = ReplayProtocolStream(fileBytes, {1u, 2u, 3u, 4u, 3u}, &bRejected);
+
+	CHECK(payloadLengths == std::vector<size_t>{1u});
+	CHECK(bRejected);
 }
 
 TEST_SUITE_END;

@@ -28,7 +28,9 @@ param(
     [string]$Configuration = 'Debug',
 
     [ValidateSet('x64')]
-    [string]$Platform = 'x64'
+    [string]$Platform = 'x64',
+
+    [string[]]$SuiteNames = @('parity', 'divergence')
 )
 
 Set-StrictMode -Version Latest
@@ -269,7 +271,7 @@ $summaryLines = [System.Collections.ArrayList]::new()
 $suiteSummaries = New-Object System.Collections.Generic.List[object]
 $failed = $false
 
-foreach ($suiteName in @('parity', 'divergence')) {
+foreach ($suiteName in $SuiteNames) {
     $devBuildTag = Get-BuildTag -WorkspaceRoot $DevWorkspaceRoot -AppRoot $DevAppRoot
     $oracleBuildTag = Get-BuildTag -WorkspaceRoot $OracleWorkspaceRoot -AppRoot $OracleAppRoot
     $devXml = Join-Path $reportRoot ("dev-{0}.xml" -f $suiteName)

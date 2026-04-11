@@ -155,6 +155,7 @@
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\part_file_persistence.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')" />
+    <ClCompile Include="src\part_file_preview.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePreviewSeams.h')" />
     <ClCompile Include="src\part_file_pause_resume.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h')" />
     <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
     <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartStatusOwnershipSeams.h')" />

@@ -160,6 +160,7 @@
     <ClCompile Include="src\part_file_preview.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePreviewSeams.h')" />
     <ClCompile Include="src\part_file_pause_resume.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h')" />
     <ClCompile Include="src\part_file_numeric.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />
+    <ClCompile Include="src\perf_log.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PerfLogSeams.h')" />
     <ClCompile Include="src\part_status_ownership.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartStatusOwnershipSeams.h')" />
     <ClCompile Include="src\protocol_receive_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ProtocolReceiveFlowSeams.h')" />
     <ClCompile Include="src\protocol.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\ProtocolGuards.h')" />

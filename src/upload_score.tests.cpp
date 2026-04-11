@@ -87,8 +87,29 @@ TEST_CASE("Upload score seam formats modifier and compact score displays consist
 	inputs.uLowIdDivisor = 2u;
 
 	const UploadScoreSeams::UploadScoreBreakdown breakdown = UploadScoreSeams::BuildUploadScoreBreakdown(inputs);
+	CHECK(UploadScoreSeams::FormatBaseUploadScore(breakdown, _T("Friend"), _T("-")) == CString(_T("100")));
+	CHECK(UploadScoreSeams::FormatEffectiveUploadScoreValue(breakdown, _T("Friend"), _T("-")) == CString(_T("75")));
 	CHECK(UploadScoreSeams::FormatUploadScoreModifiers(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown")) == CString(_T("Low ratio +50, LowID /2")));
-	CHECK(UploadScoreSeams::FormatEffectiveUploadScore(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend"), _T("-")) == CString(_T("75 (Low ratio +50, LowID /2)")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCompact(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend"), _T("-")) == CString(_T("75 (Low ratio +50, LowID /2)")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowRatioDetail(breakdown, _T("-")) == CString(_T("+50")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowIdDetail(breakdown, _T("-")) == CString(_T("/2")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCooldownDetail(breakdown, 0u, _T("-")) == CString(_T("-")));
+}
+
+TEST_CASE("Upload score seam formats plain available scores without modifier noise")
+{
+	UploadScoreSeams::UploadScoreInputs inputs = {};
+	inputs.uBaseValueMs = 120000u;
+	inputs.fCreditRatio = 1.0f;
+	inputs.iFilePrioNumber = 7;
+	inputs.bUseCreditSystem = false;
+	inputs.bApplyPriority = false;
+
+	const UploadScoreSeams::UploadScoreBreakdown breakdown = UploadScoreSeams::BuildUploadScoreBreakdown(inputs);
+	CHECK(UploadScoreSeams::FormatBaseUploadScore(breakdown, _T("Friend"), _T("-")) == CString(_T("120")));
+	CHECK(UploadScoreSeams::FormatEffectiveUploadScoreValue(breakdown, _T("Friend"), _T("-")) == CString(_T("120")));
+	CHECK(UploadScoreSeams::FormatUploadScoreModifiers(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCompact(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend"), _T("-")) == CString(_T("120")));
 }
 
 TEST_CASE("Upload score seam reports friend-slot displays without forcing numeric score text")
@@ -97,7 +118,35 @@ TEST_CASE("Upload score seam reports friend-slot displays without forcing numeri
 	breakdown.eAvailability = UploadScoreSeams::uploadScoreFriendSlot;
 	breakdown.uEffectiveScore = 0x0FFFFFFFu;
 
-	CHECK(UploadScoreSeams::FormatEffectiveUploadScore(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend slot"), _T("-")) == CString(_T("Friend slot")));
+	CHECK(UploadScoreSeams::FormatBaseUploadScore(breakdown, _T("Friend slot"), _T("-")) == CString(_T("Friend slot")));
+	CHECK(UploadScoreSeams::FormatEffectiveUploadScoreValue(breakdown, _T("Friend slot"), _T("-")) == CString(_T("Friend slot")));
+	CHECK(UploadScoreSeams::FormatUploadScoreModifiers(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCompact(breakdown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend slot"), _T("-")) == CString(_T("Friend slot")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowRatioDetail(breakdown, _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowIdDetail(breakdown, _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCooldownDetail(breakdown, 42000u, _T("-")) == CString(_T("-")));
+}
+
+TEST_CASE("Upload score seam reports unavailable and cooldown displays consistently across split and detail fields")
+{
+	UploadScoreSeams::UploadScoreBreakdown unavailable = {};
+	CHECK(UploadScoreSeams::FormatBaseUploadScore(unavailable, _T("Friend slot"), _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatEffectiveUploadScoreValue(unavailable, _T("Friend slot"), _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreModifiers(unavailable, _T("Low ratio"), _T("LowID"), _T("Cooldown")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCompact(unavailable, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend slot"), _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowRatioDetail(unavailable, _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreLowIdDetail(unavailable, _T("-")) == CString(_T("-")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCooldownDetail(unavailable, 1500u, _T("-")) == CString(_T("-")));
+
+	UploadScoreSeams::UploadScoreBreakdown cooldown = {};
+	cooldown.eAvailability = UploadScoreSeams::uploadScoreCooldown;
+	cooldown.uBaseScore = 120u;
+	cooldown.uEffectiveScore = 0u;
+	CHECK(UploadScoreSeams::FormatBaseUploadScore(cooldown, _T("Friend slot"), _T("-")) == CString(_T("120")));
+	CHECK(UploadScoreSeams::FormatEffectiveUploadScoreValue(cooldown, _T("Friend slot"), _T("-")) == CString(_T("0")));
+	CHECK(UploadScoreSeams::FormatUploadScoreModifiers(cooldown, _T("Low ratio"), _T("LowID"), _T("Cooldown")) == CString(_T("Cooldown")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCompact(cooldown, _T("Low ratio"), _T("LowID"), _T("Cooldown"), _T("Friend slot"), _T("-")) == CString(_T("0 (Cooldown)")));
+	CHECK(UploadScoreSeams::FormatUploadScoreCooldownDetail(cooldown, 1500u, _T("-")) == CString(_T("2s")));
 }
 
 TEST_SUITE_END;

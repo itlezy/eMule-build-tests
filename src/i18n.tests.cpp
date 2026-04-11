@@ -1,20 +1,32 @@
 #include "../third_party/doctest/doctest.h"
 
+#include "../include/LongPathTestSupport.h"
+
 #include "I18nSeams.h"
 
+#include <vector>
 #include <windows.h>
 
 TEST_SUITE_BEGIN("parity");
 
 TEST_CASE("I18n seam extracts the full language DLL basename without _MAX_FNAME truncation")
 {
-	CString strFileName(_T("C:\\lang"));
-	for (int i = 0; i < 24; ++i)
-		strFileName += _T("\\segmentsegment");
-	strFileName += _T("\\va_ES_RACV.dll");
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x4931384Eu));
+
+	const std::wstring dllPath = fixture.MakeDirectoryChildPath(L"va_ES_RACV.dll");
+	const std::vector<BYTE> payload = LongPathTestSupport::BuildDeterministicPayload(333u, 0xD11u);
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::WriteBytes(dllPath, payload));
+
+	CString strFileName(dllPath.c_str());
+	std::vector<BYTE> roundTrip;
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(dllPath, roundTrip));
 
 	CHECK(strFileName.GetLength() > MAX_PATH);
 	CHECK(I18nSeams::ExtractLanguageDllBaseName(strFileName) == CString(_T("va_ES_RACV")));
+	CHECK(roundTrip == payload);
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(dllPath));
 }
 
 TEST_CASE("I18n seam handles plain filenames and forward slashes")

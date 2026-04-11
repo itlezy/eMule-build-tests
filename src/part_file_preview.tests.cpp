@@ -1,18 +1,31 @@
 #include "../third_party/doctest/doctest.h"
 
+#include "../include/LongPathTestSupport.h"
+
 #include "PartFilePreviewSeams.h"
+
+#include <vector>
 
 TEST_SUITE_BEGIN("parity");
 
 TEST_CASE("Part-file preview seam extracts VLC from a long configured player path without truncation")
 {
-	CString strLongPath(_T("C:\\players"));
-	for (int i = 0; i < 24; ++i)
-		strLongPath += _T("\\segmentsegment");
-	strLongPath += _T("\\vlc.exe");
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x565343u));
+
+	const std::wstring playerPath = fixture.MakeDirectoryChildPath(L"vlc.exe");
+	const std::vector<BYTE> payload = LongPathTestSupport::BuildDeterministicPayload(3073u, 0x564C43u);
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::WriteBytes(playerPath, payload));
+
+	CString strLongPath(playerPath.c_str());
+	std::vector<BYTE> roundTrip;
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(playerPath, roundTrip));
 
 	CHECK(strLongPath.GetLength() > MAX_PATH);
 	CHECK(PartFilePreviewSeams::ExtractConfiguredVideoPlayerBaseName(strLongPath) == CString(_T("vlc")));
+	CHECK(roundTrip == payload);
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(playerPath));
 }
 
 TEST_CASE("Part-file preview seam handles slash variants and extensionless commands")

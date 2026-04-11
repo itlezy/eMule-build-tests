@@ -1,11 +1,15 @@
 #include "../third_party/doctest/doctest.h"
 
+#include "../include/LongPathTestSupport.h"
+
 #include "PartFilePersistenceSeams.h"
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace
 {
@@ -67,6 +71,20 @@ namespace
 	{
 		::SetLastError(ERROR_DISK_FULL);
 		return FALSE;
+	}
+
+	void WriteTextFileLongPath(const std::wstring &path, const char *pszText)
+	{
+		const BYTE *pBegin = reinterpret_cast<const BYTE *>(pszText);
+		const BYTE *pEnd = pBegin + std::strlen(pszText);
+		REQUIRE(LongPathTestSupport::ScopedLongPathFixture::WriteBytes(path, std::vector<BYTE>(pBegin, pEnd)));
+	}
+
+	std::string ReadTextFileLongPath(const std::wstring &path)
+	{
+		std::vector<BYTE> bytes;
+		REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(path, bytes));
+		return std::string(bytes.begin(), bytes.end());
 	}
 }
 
@@ -145,6 +163,21 @@ TEST_CASE("Part-file persistence seam exposes path existence without treating bl
 	CHECK(PartFilePersistenceSeams::PathExists(existingPath.c_str()));
 }
 
+TEST_CASE("Part-file persistence seam exposes overlong .part.met existence on real unicode temp paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x504D4554u));
+
+	const std::wstring rawPartMetPath = fixture.MakeDirectoryChildPath(L"001 odd-[state].part.met");
+	const std::wstring preparedPartMetPath = LongPathTestSupport::PreparePathForLongPath(rawPartMetPath);
+	WriteTextFileLongPath(rawPartMetPath, "present");
+
+	CHECK(PartFilePersistenceSeams::PathExists(preparedPartMetPath.c_str()));
+	CHECK_EQ(ReadTextFileLongPath(rawPartMetPath), std::string("present"));
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawPartMetPath));
+}
+
 TEST_CASE("Part-file persistence seam keeps the non-shutdown flush path intact")
 {
 	CHECK(PartFilePersistenceSeams::ShouldFlushPartFileOnDestroy(false, false, false));
@@ -190,6 +223,32 @@ TEST_CASE("Part-file persistence helper atomically replaces destination content"
 	CHECK_FALSE(std::filesystem::exists(sourcePath));
 }
 
+TEST_CASE("Part-file persistence helper atomically replaces overlong .part.met temp files on real temp storage")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x50415254u));
+
+	const std::wstring rawPartPath = fixture.MakeDirectoryChildPath(L"001 odd-[chunk].part");
+	const std::wstring rawDestinationPath = fixture.MakeDirectoryChildPath(L"001 odd-[chunk].part.met");
+	const std::wstring rawSourcePath = fixture.MakeDirectoryChildPath(L"001 odd-[chunk].part.met.tmp");
+	const std::wstring preparedDestinationPath = LongPathTestSupport::PreparePathForLongPath(rawDestinationPath);
+	const std::wstring preparedSourcePath = LongPathTestSupport::PreparePathForLongPath(rawSourcePath);
+
+	WriteTextFileLongPath(rawPartPath, "part-bytes");
+	WriteTextFileLongPath(rawDestinationPath, "before");
+	WriteTextFileLongPath(rawSourcePath, "after");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK(PartFilePersistenceSeams::TryReplaceFileAtomically(preparedSourcePath.c_str(), preparedDestinationPath.c_str(), &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
+	CHECK_EQ(ReadTextFileLongPath(rawDestinationPath), std::string("after"));
+	CHECK_FALSE(PartFilePersistenceSeams::PathExists(preparedSourcePath.c_str()));
+
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawPartPath));
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawDestinationPath));
+}
+
 TEST_CASE("Part-file persistence helper creates backups through a temp file replace path")
 {
 	ScopedTempDir tempDir;
@@ -205,6 +264,36 @@ TEST_CASE("Part-file persistence helper creates backups through a temp file repl
 	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
 	CHECK_EQ(ReadTextFile(backupPath), std::string("current"));
 	CHECK_FALSE(std::filesystem::exists(backupTmpPath));
+}
+
+TEST_CASE("Part-file persistence helper stages .part.met backups on overlong unicode temp paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x42414B75u));
+
+	const std::wstring rawPartPath = fixture.MakeDirectoryChildPath(L"002 odd-[chunk].part");
+	const std::wstring rawSourcePath = fixture.MakeDirectoryChildPath(L"002 odd-[chunk].part.met");
+	const std::wstring rawBackupPath = fixture.MakeDirectoryChildPath(L"002 odd-[chunk].part.met.bak");
+	const std::wstring rawBackupTmpPath = fixture.MakeDirectoryChildPath(L"002 odd-[chunk].part.met.bak.tmp");
+	const std::wstring preparedSourcePath = LongPathTestSupport::PreparePathForLongPath(rawSourcePath);
+	const std::wstring preparedBackupPath = LongPathTestSupport::PreparePathForLongPath(rawBackupPath);
+	const std::wstring preparedBackupTmpPath = LongPathTestSupport::PreparePathForLongPath(rawBackupTmpPath);
+
+	WriteTextFileLongPath(rawPartPath, "part-bytes");
+	WriteTextFileLongPath(rawSourcePath, "current");
+	WriteTextFileLongPath(rawBackupPath, "previous");
+	WriteTextFileLongPath(rawBackupTmpPath, "stale-temp");
+
+	DWORD dwLastError = ERROR_GEN_FAILURE;
+	CHECK(PartFilePersistenceSeams::TryCopyFileToTempAndReplace(preparedSourcePath.c_str(), preparedBackupPath.c_str(), preparedBackupTmpPath.c_str(), false, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_SUCCESS));
+	CHECK_EQ(ReadTextFileLongPath(rawBackupPath), std::string("current"));
+	CHECK_FALSE(PartFilePersistenceSeams::PathExists(preparedBackupTmpPath.c_str()));
+
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawPartPath));
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawSourcePath));
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(rawBackupPath));
 }
 
 TEST_CASE("Part-file persistence helper clears stale backup temp files before restaging")

@@ -10,6 +10,17 @@
 
 TEST_SUITE_BEGIN("parity");
 
+namespace
+{
+CString RepeatCString(LPCTSTR pszFragment, const int nCount)
+{
+	CString strRepeated;
+	for (int i = 0; i < nCount; ++i)
+		strRepeated += pszFragment;
+	return strRepeated;
+}
+}
+
 TEST_CASE("Ini2 seam prefixes relative ini paths from long base directories without truncation")
 {
 	LongPathTestSupport::ScopedLongPathFixture fixture;
@@ -81,6 +92,50 @@ TEST_CASE("Ini2 seam builds default ini file paths from module and current direc
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(moduleIniPath));
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(currentIniPath));
 	REQUIRE(::RemoveDirectoryW(LongPathTestSupport::PreparePathForLongPath(currentDirectory).c_str()) != FALSE);
+}
+
+TEST_CASE("Ini2 seam grows TCHAR profile-string buffers past the old 256 character limit")
+{
+	const CString strExpected = CString(_T("C:\\profiles\\")) + RepeatCString(_T("segment\\"), 70) + CString(_T("incoming\\"));
+	const CString strActual = Ini2Helpers::ReadProfileStringDynamic<CString>(
+		[&](LPTSTR pszBuffer, DWORD dwCapacity) -> DWORD {
+			const DWORD dwRequired = static_cast<DWORD>(strExpected.GetLength());
+			const DWORD dwToCopy = (dwCapacity > 0)
+				? (dwRequired < (dwCapacity - 1) ? dwRequired : (dwCapacity - 1))
+				: 0;
+			for (DWORD i = 0; i < dwToCopy; ++i)
+				pszBuffer[i] = strExpected[i];
+			if (dwCapacity > 0)
+				pszBuffer[dwToCopy] = _T('\0');
+			return (dwToCopy == dwRequired) ? dwRequired : (dwCapacity - 1);
+		});
+
+	CHECK(strActual == strExpected);
+	CHECK(strActual.GetLength() > 256);
+}
+
+TEST_CASE("Ini2 seam grows UTF-8 profile-string buffers past the old 256 character limit")
+{
+	const CStringA strExpected("Category-");
+	CStringA strRepeated;
+	for (int i = 0; i < 40; ++i)
+		strRepeated += "naive-utf8-";
+	const CStringA strFullExpected = strExpected + strRepeated + CStringA("fin");
+	const CStringA strActual = Ini2Helpers::ReadProfileStringDynamic<CStringA>(
+		[&](LPSTR pszBuffer, DWORD dwCapacity) -> DWORD {
+			const DWORD dwRequired = static_cast<DWORD>(strFullExpected.GetLength());
+			const DWORD dwToCopy = (dwCapacity > 0)
+				? (dwRequired < (dwCapacity - 1) ? dwRequired : (dwCapacity - 1))
+				: 0;
+			for (DWORD i = 0; i < dwToCopy; ++i)
+				pszBuffer[i] = strFullExpected[i];
+			if (dwCapacity > 0)
+				pszBuffer[dwToCopy] = '\0';
+			return (dwToCopy == dwRequired) ? dwRequired : (dwCapacity - 1);
+		});
+
+	CHECK(strActual == strFullExpected);
+	CHECK(strActual.GetLength() > 256);
 }
 
 TEST_SUITE_END;

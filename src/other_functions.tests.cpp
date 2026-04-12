@@ -44,6 +44,18 @@ TEST_CASE("Path-helper seam normalizes trailing separators across drive UNC and 
 	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\server\\share\\"))) == CString(_T("\\\\server\\share\\")));
 	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\server\\share\\folder\\"))) == CString(_T("\\\\server\\share\\folder")));
 	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\?\\UNC\\server\\share\\dir\\"))) == CString(_T("\\\\?\\UNC\\server\\share\\dir")));
+
+	CHECK(PathHelpers::TrimTrailingSeparatorForLeaf(CString(_T("C:\\"))) == CString(_T("C:")));
+	CHECK(PathHelpers::TrimTrailingSeparatorForLeaf(CString(_T("\\\\server\\share\\"))) == CString(_T("\\\\server\\share")));
+	CHECK(PathHelpers::TrimTrailingSeparatorForLeaf(CString(_T("\\\\server\\share\\folder\\"))) == CString(_T("\\\\server\\share\\folder")));
+}
+
+TEST_CASE("Shell/UI seam preserves folder roots when preparing shell selection paths")
+{
+	CHECK(ShellUiHelpers::PrepareFolderSelectionPathForShell(CString(_T("C:\\"))) == CString(_T("C:\\")));
+	CHECK(ShellUiHelpers::PrepareFolderSelectionPathForShell(CString(_T("\\\\server\\share\\"))) == CString(_T("\\\\server\\share\\")));
+	CHECK(ShellUiHelpers::PrepareFolderSelectionPathForShell(CString(_T("\\\\?\\C:\\deep\\folder\\"))) == CString(_T("C:\\deep\\folder")));
+	CHECK(ShellUiHelpers::PrepareFolderSelectionPathForShell(CString(_T("\\\\?\\UNC\\server\\share\\folder\\"))) == CString(_T("\\\\server\\share\\folder")));
 }
 
 TEST_CASE("Other-functions seam routes deep unicode deletes through the direct long-path path when recycle-bin delete is disabled")

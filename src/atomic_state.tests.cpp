@@ -25,6 +25,22 @@ TEST_CASE("Display refresh mask atomically merges new bits without losing the pr
 	CHECK(nPendingMask.load() == (DISPLAY_REFRESH_DOWNLOAD_LIST | DISPLAY_REFRESH_CLIENT_LIST));
 }
 
+TEST_CASE("Display refresh helper queues only when work is off the main thread")
+{
+	CHECK_FALSE(ShouldQueueDisplayRefresh(77u, 77u));
+	CHECK_FALSE(ShouldQueueDisplayRefresh(77u, 0u));
+	CHECK(ShouldQueueDisplayRefresh(41u, 77u));
+}
+
+TEST_CASE("Display refresh helper respects force and the randomized throttle window")
+{
+	CHECK_FALSE(ShouldRunDisplayRefresh(false, 199u, 100u, 100u, 0u));
+	CHECK(ShouldRunDisplayRefresh(false, 200u, 100u, 100u, 0u));
+	CHECK_FALSE(ShouldRunDisplayRefresh(false, 249u, 100u, 100u, 50u));
+	CHECK(ShouldRunDisplayRefresh(false, 250u, 100u, 100u, 50u));
+	CHECK(ShouldRunDisplayRefresh(true, 101u, 100u, 100u, 50u));
+}
+
 TEST_CASE("Display refresh mask exchange drains the queued bits and clears the pending state")
 {
 	std::atomic<LONG> nPendingMask(0);

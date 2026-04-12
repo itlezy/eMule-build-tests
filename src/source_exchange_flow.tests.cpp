@@ -1,8 +1,11 @@
 #include "../third_party/doctest/doctest.h"
 
+#include <cstdint>
+
 #include "TestSupport.h"
 #include "BaseClientFriendBuddySeams.h"
 #include "DownloadQueueHostnameResolverSeams.h"
+#include "SourceExchangeSeams.h"
 
 TEST_SUITE_BEGIN("parity");
 
@@ -39,6 +42,28 @@ TEST_CASE("Source flow only searches for replacement friends when the link snaps
 	CHECK_FALSE(ShouldSearchReplacementFriend(stableIpOnlyFriend));
 	CHECK(ShouldSearchReplacementFriend(hashedMismatchFriend));
 	CHECK(ShouldSearchReplacementFriend(missingFriend));
+}
+
+TEST_CASE("Source exchange seam only allows requests for extended protocol peers with SX2")
+{
+	CHECK(SourceExchangeSeams::ShouldAllowSourceExchangeRequest(true, true));
+	CHECK_FALSE(SourceExchangeSeams::ShouldAllowSourceExchangeRequest(true, false));
+	CHECK_FALSE(SourceExchangeSeams::ShouldAllowSourceExchangeRequest(false, true));
+	CHECK_FALSE(SourceExchangeSeams::ShouldAllowSourceExchangeRequest(false, false));
+}
+
+TEST_CASE("Source exchange seam resolves SX2-only response packets and rejects legacy request shapes")
+{
+	const SourceExchangeSeams::ResponsePlan plan = SourceExchangeSeams::ResolveSourceExchangeResponsePlan(true, 9);
+	CHECK(plan.bShouldSend);
+	CHECK_EQ(plan.byUsedVersion, static_cast<std::uint8_t>(SOURCEEXCHANGE2_VERSION));
+	CHECK_EQ(plan.byAnswerOpcode, static_cast<std::uint8_t>(OP_ANSWERSOURCES2));
+	CHECK_EQ(plan.nCountSeekOffset, static_cast<std::uint8_t>(17u));
+
+	CHECK(SourceExchangeSeams::IsValidSourceExchange2Request(1));
+	CHECK_FALSE(SourceExchangeSeams::IsValidSourceExchange2Request(0));
+	CHECK_FALSE(SourceExchangeSeams::ResolveSourceExchangeResponsePlan(true, 0).bShouldSend);
+	CHECK_FALSE(SourceExchangeSeams::ResolveSourceExchangeResponsePlan(false, 4).bShouldSend);
 }
 
 TEST_SUITE_END;

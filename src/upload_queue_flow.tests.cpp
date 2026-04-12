@@ -34,4 +34,18 @@ TEST_CASE("Upload queue flow demotes dropped clients and keeps removed entries m
 	CHECK_FALSE(AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::ReclaimIfSafe).bShouldReclaim);
 }
 
+TEST_CASE("Upload queue flow keeps retired entries unreclaimed after client detach until pending IO drains")
+{
+	UploadQueueFlowState state = CreateUploadQueueFlowState();
+
+	(void)AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::AddLiveEntry);
+	(void)AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::QueuePendingIO);
+	CHECK_EQ(AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::MarkRetired).eAccessState, uploadQueueEntryRetired);
+	CHECK_EQ(AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::DropClient).eAccessState, uploadQueueEntryRetired);
+	CHECK_FALSE(AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::ReclaimIfSafe).bShouldReclaim);
+
+	(void)AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::CompletePendingIO);
+	CHECK(AdvanceUploadQueueFlow(state, UploadQueueFlowEvent::ReclaimIfSafe).bShouldReclaim);
+}
+
 TEST_SUITE_END;

@@ -48,4 +48,11 @@ TEST_CASE("Compression buffer seam copies temporary vector data into legacy-owne
 	CHECK_FALSE(MakeOwnedByteBufferCopy(payload, 6u));
 }
 
+TEST_CASE("Compression buffer seam rejects zero-byte ownership handoff")
+{
+	const std::vector<unsigned char> payload{0x11u, 0x22u};
+
+	CHECK_FALSE(MakeOwnedByteBufferCopy(payload, 0u));
+}
+
 TEST_SUITE_END;

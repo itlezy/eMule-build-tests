@@ -47,4 +47,12 @@ TEST_CASE("Socket IO seam rejects null or overflowed send-progress bookkeeping")
 	CHECK_FALSE(TryAccumulateSocketSendProgress((std::numeric_limits<std::uint32_t>::max)(), 1u, (std::numeric_limits<std::uint32_t>::max)(), 1u, &nNextSent));
 }
 
+TEST_CASE("Socket IO seam rejects SOCKET_ERROR after unsigned promotion")
+{
+	std::uint32_t nNextSent = 0;
+	const std::uint32_t nSocketError = static_cast<std::uint32_t>(-1);
+
+	CHECK_FALSE(TryAccumulateSocketSendProgress(0u, 128u, 128u, nSocketError, &nNextSent));
+}
+
 TEST_SUITE_END;

@@ -195,7 +195,9 @@
     <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
     <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />
     <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')" />
-    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')" />
+    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadSupport.h')" />
   </ItemGroup>
   <ItemGroup>

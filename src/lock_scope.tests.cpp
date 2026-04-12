@@ -41,6 +41,13 @@ TEST_CASE("UDP control queue wakeups only happen when a queued packet can be sen
 	CHECK_FALSE(ShouldSignalUdpControlQueue(false, true));
 }
 
+TEST_CASE("UDP control queue wakeups are deferred until after the socket lock is released")
+{
+	CHECK(ClassifyUdpControlQueueSignal(false, false) == udpControlQueueSignalAfterUnlock);
+	CHECK(ClassifyUdpControlQueueSignal(true, false) == udpControlQueueNoSignal);
+	CHECK(ClassifyUdpControlQueueSignal(false, true) == udpControlQueueNoSignal);
+}
+
 TEST_CASE("Upload disk completion classification separates send, IO error, and discard")
 {
 	CHECK(ClassifyUploadDiskReadCompletion(uploadQueueEntryLive, false) == uploadDiskReadCompletionSendPackets);

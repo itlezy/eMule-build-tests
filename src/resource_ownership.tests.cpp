@@ -128,6 +128,18 @@ TEST_CASE("ReleaseOwnedObjectIfSuperseded drops the consumed temporary object wi
 	CHECK(pOwnedObject.get() == nullptr);
 }
 
+TEST_CASE("Hello attach ownership releases the temporary client when the list returns a known replacement")
+{
+	std::unique_ptr<FakeOwnedObject> pOwnedHelloClient(new FakeOwnedObject{7});
+	FakeOwnedObject *pTemporaryHelloClient = pOwnedHelloClient.get();
+	FakeOwnedObject knownClient = {8};
+
+	ReleaseOwnedObjectIfSuperseded(pOwnedHelloClient, pTemporaryHelloClient, &knownClient);
+
+	CHECK(pOwnedHelloClient.get() == nullptr);
+	CHECK(knownClient.value == 8);
+}
+
 TEST_CASE("ReleaseOwnedObjectIfSuperseded keeps ownership when the raw pointer was not replaced")
 {
 	std::unique_ptr<FakeOwnedObject> pOwnedObject(new FakeOwnedObject{6});

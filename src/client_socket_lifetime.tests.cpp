@@ -68,6 +68,26 @@ TEST_CASE("Client/socket relink detaches stale peers before reassigning the acce
 	CHECK(temporaryClient.socket == nullptr);
 }
 
+TEST_CASE("Client/socket detach ignores stale teardown after either side was already rebound")
+{
+	FakeClient originalClient = {};
+	FakeClient replacementClient = {};
+	FakeSocket originalSocket = {};
+	FakeSocket replacementSocket = {};
+
+	LinkClientSocketPair(&originalClient, &originalSocket);
+	LinkClientSocketPair(&replacementClient, &replacementSocket);
+
+	originalClient.socket = &replacementSocket;
+	replacementSocket.client = &replacementClient;
+
+	DetachClientSocketPair(&originalClient, &originalSocket);
+
+	CHECK(originalClient.socket == &replacementSocket);
+	CHECK(replacementSocket.client == &replacementClient);
+	CHECK(originalSocket.client == nullptr);
+}
+
 TEST_CASE("Client/socket seam routes banned disconnect decisions to the socket-owned timeout path")
 {
 	CHECK(ShouldDisconnectBannedClientSocket(true, true));

@@ -150,7 +150,7 @@
     <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\i18n.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\I18nSeams.h')" />
-    <ClCompile Include="src\ini2.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\Ini2Seams.h')" />
+    <ClCompile Include="src\ini2.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\Ini2Helpers.h')" />
     <ClCompile Include="src\ip_filter.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\IPFilterSeams.h')" />
     <ClCompile Include="src\known_file_metadata.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileMetadataSeams.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />

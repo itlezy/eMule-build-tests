@@ -2,7 +2,8 @@
 
 #include "../include/LongPathTestSupport.h"
 
-#include "Ini2Seams.h"
+#include "Ini2Helpers.h"
+#include "PathHelpers.h"
 
 #include <vector>
 #include <windows.h>
@@ -18,7 +19,7 @@ TEST_CASE("Ini2 seam prefixes relative ini paths from long base directories with
 	const CString strBase(fixture.DirectoryPath().c_str());
 	const CString strRelative(_T("prefs\\user.ini"));
 
-	const CString strResolved = Ini2Seams::BuildPathFromBaseDirectory(strBase, strRelative);
+	const CString strResolved = Ini2Helpers::BuildPathFromBaseDirectory(strBase, strRelative);
 	const std::wstring prefsDirectory = fixture.MakeDirectoryChildPath(L"prefs");
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::EnsureDirectoryTree(fixture.DirectoryPath(), prefsDirectory));
 	const std::wstring resolvedPath(strResolved.GetString());
@@ -29,10 +30,10 @@ TEST_CASE("Ini2 seam prefixes relative ini paths from long base directories with
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::ReadBytes(resolvedPath, roundTrip));
 
 	CHECK(strResolved.GetLength() > MAX_PATH);
-	CHECK(Ini2Seams::NeedsBaseDirectoryPrefix(strRelative));
-	CHECK_FALSE(Ini2Seams::NeedsBaseDirectoryPrefix(CString(_T("C:\\prefs\\user.ini"))));
-	CHECK_FALSE(Ini2Seams::NeedsBaseDirectoryPrefix(CString(_T("\\\\server\\share\\user.ini"))));
-	CHECK(strResolved == Ini2Seams::EnsureTrailingSlash(strBase) + strRelative);
+	CHECK(Ini2Helpers::NeedsBaseDirectoryPrefix(strRelative));
+	CHECK_FALSE(Ini2Helpers::NeedsBaseDirectoryPrefix(CString(_T("C:\\prefs\\user.ini"))));
+	CHECK_FALSE(Ini2Helpers::NeedsBaseDirectoryPrefix(CString(_T("\\\\server\\share\\user.ini"))));
+	CHECK(strResolved == PathHelpers::EnsureTrailingSeparator(strBase) + strRelative);
 	CHECK(roundTrip == payload);
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(resolvedPath));
 	REQUIRE(::RemoveDirectoryW(LongPathTestSupport::PreparePathForLongPath(prefsDirectory).c_str()) != FALSE);
@@ -42,8 +43,8 @@ TEST_CASE("Ini2 seam builds default ini file paths from module and current direc
 {
 	CString strModulePath(_T("C:\\apps\\eMule.exe"));
 	CString strCurrentDirectory(_T("D:\\profiles"));
-	CHECK(Ini2Seams::BuildDefaultIniFilePath(strModulePath, strCurrentDirectory, true) == CString(_T("C:\\apps\\eMule.ini")));
-	CHECK(Ini2Seams::BuildDefaultIniFilePath(strModulePath, strCurrentDirectory, false) == CString(_T("D:\\profiles\\eMule.ini")));
+	CHECK(Ini2Helpers::BuildDefaultIniFilePath(strModulePath, strCurrentDirectory, true) == CString(_T("C:\\apps\\eMule.ini")));
+	CHECK(Ini2Helpers::BuildDefaultIniFilePath(strModulePath, strCurrentDirectory, false) == CString(_T("D:\\profiles\\eMule.ini")));
 
 	LongPathTestSupport::ScopedLongPathFixture fixture;
 	INFO(fixture.LastError());
@@ -56,11 +57,11 @@ TEST_CASE("Ini2 seam builds default ini file paths from module and current direc
 
 	const CString strLongModulePath(modulePath.c_str());
 	const CString strLongCurrentDirectory(currentDirectory.c_str());
-	const CString strLongIniPath = Ini2Seams::BuildDefaultIniFilePath(strLongModulePath, strLongCurrentDirectory, true);
-	const CString strCurrentIniPath = Ini2Seams::BuildDefaultIniFilePath(strLongModulePath, strLongCurrentDirectory, false);
+	const CString strLongIniPath = Ini2Helpers::BuildDefaultIniFilePath(strLongModulePath, strLongCurrentDirectory, true);
+	const CString strCurrentIniPath = Ini2Helpers::BuildDefaultIniFilePath(strLongModulePath, strLongCurrentDirectory, false);
 	CHECK(strLongIniPath.GetLength() > MAX_PATH);
-	CHECK(strLongIniPath == Ini2Seams::ExtractDirectoryPath(strLongModulePath) + CString(_T("client.build.ini")));
-	CHECK(strCurrentIniPath == Ini2Seams::EnsureTrailingSlash(strLongCurrentDirectory) + CString(_T("client.build.ini")));
+	CHECK(strLongIniPath == PathHelpers::EnsureTrailingSeparator(PathHelpers::GetDirectoryPath(strLongModulePath)) + CString(_T("client.build.ini")));
+	CHECK(strCurrentIniPath == PathHelpers::EnsureTrailingSeparator(strLongCurrentDirectory) + CString(_T("client.build.ini")));
 
 	const std::wstring moduleIniPath(strLongIniPath.GetString());
 	const std::wstring currentIniPath(strCurrentIniPath.GetString());

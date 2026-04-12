@@ -4,8 +4,8 @@
 
 #include "LongPathSeams.h"
 #include "OtherFunctionsSeams.h"
-#include "PathHelperSeams.h"
-#include "ShellUiSeams.h"
+#include "PathHelpers.h"
+#include "ShellUiHelpers.h"
 
 #include <windows.h>
 
@@ -24,9 +24,26 @@ CString RepeatPathFragment(LPCTSTR pszFragment, const int nCount)
 
 TEST_CASE("Other-functions seam strips Win32 long-path prefixes before shell parsing")
 {
-	CHECK(OtherFunctionsSeams::PreparePathForShellOperation(CString(_T("\\\\?\\C:\\deep\\leaf.bin"))) == CString(_T("C:\\deep\\leaf.bin")));
-	CHECK(OtherFunctionsSeams::PreparePathForShellOperation(CString(_T("\\\\?\\UNC\\server\\share\\leaf.bin"))) == CString(_T("\\\\server\\share\\leaf.bin")));
-	CHECK(OtherFunctionsSeams::PreparePathForShellOperation(CString(_T("C:\\short\\leaf.bin"))) == CString(_T("C:\\short\\leaf.bin")));
+	CHECK(PathHelpers::HasExtendedLengthPrefix(CString(_T("\\\\?\\C:\\deep\\leaf.bin"))));
+	CHECK(PathHelpers::HasExtendedLengthPrefix(CString(_T("\\\\?\\UNC\\server\\share\\leaf.bin"))));
+	CHECK_FALSE(PathHelpers::HasExtendedLengthPrefix(CString(_T("C:\\short\\leaf.bin"))));
+	CHECK(PathHelpers::StripExtendedLengthPrefix(CString(_T("\\\\?\\C:\\deep\\leaf.bin"))) == CString(_T("C:\\deep\\leaf.bin")));
+	CHECK(PathHelpers::StripExtendedLengthPrefix(CString(_T("\\\\?\\UNC\\server\\share\\leaf.bin"))) == CString(_T("\\\\server\\share\\leaf.bin")));
+	CHECK(PathHelpers::StripExtendedLengthPrefix(CString(_T("C:\\short\\leaf.bin"))) == CString(_T("C:\\short\\leaf.bin")));
+}
+
+TEST_CASE("Path-helper seam normalizes trailing separators across drive UNC and long paths")
+{
+	CHECK(PathHelpers::EnsureTrailingSeparator(CString(_T("C:\\temp"))) == CString(_T("C:\\temp\\")));
+	CHECK(PathHelpers::EnsureTrailingSeparator(CString(_T("C:\\"))) == CString(_T("C:\\")));
+	CHECK(PathHelpers::EnsureTrailingSeparator(CString(_T("\\\\server\\share"))) == CString(_T("\\\\server\\share\\")));
+	CHECK(PathHelpers::EnsureTrailingSeparator(CString(_T("\\\\?\\C:\\deep\\path"))) == CString(_T("\\\\?\\C:\\deep\\path\\")));
+
+	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("C:\\temp\\"))) == CString(_T("C:\\temp")));
+	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("C:\\"))) == CString(_T("C:\\")));
+	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\server\\share\\"))) == CString(_T("\\\\server\\share\\")));
+	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\server\\share\\folder\\"))) == CString(_T("\\\\server\\share\\folder")));
+	CHECK(PathHelpers::TrimTrailingSeparator(CString(_T("\\\\?\\UNC\\server\\share\\dir\\"))) == CString(_T("\\\\?\\UNC\\server\\share\\dir")));
 }
 
 TEST_CASE("Other-functions seam routes deep unicode deletes through the direct long-path path when recycle-bin delete is disabled")
@@ -96,7 +113,7 @@ TEST_CASE("Path-helper seam grows module-path buffers past MAX_PATH")
 {
 	const CString strExpected = CString(_T("C:\\module-root\\")) + RepeatPathFragment(_T("segment\\"), 80) + CString(_T("emule.exe"));
 
-	const CString strActual = PathHelperSeams::GetModuleFilePath(
+	const CString strActual = PathHelpers::GetModuleFilePath(
 		reinterpret_cast<HMODULE>(static_cast<INT_PTR>(0x7777)),
 		[&](HMODULE hModule, LPTSTR pszBuffer, DWORD cchBuffer) -> DWORD {
 			CHECK(hModule == reinterpret_cast<HMODULE>(static_cast<INT_PTR>(0x7777)));
@@ -125,7 +142,7 @@ TEST_CASE("Path-helper seam grows module-path buffers past MAX_PATH")
 TEST_CASE("Path-helper seam joins MediaInfo DLL candidates without MAX_PATH truncation")
 {
 	const CString strBase = CString(_T("C:\\Program Files\\")) + RepeatPathFragment(_T("MediaInfo\\segment\\"), 40) + CString(_T("bin"));
-	const CString strJoined = PathHelperSeams::AppendPathComponent(strBase, _T("MEDIAINFO.DLL"));
+	const CString strJoined = PathHelpers::AppendPathComponent(strBase, _T("MEDIAINFO.DLL"));
 
 	CHECK(strJoined == strBase + CString(_T("\\MEDIAINFO.DLL")));
 	CHECK(strJoined.GetLength() > MAX_PATH);
@@ -137,14 +154,14 @@ TEST_CASE("Path-helper seam canonicalizes overlong paths lexically")
 	const CString strInput = strPrefix + CString(_T(".\\theme\\..\\icons\\logo.gif"));
 	const CString strExpected = strPrefix + CString(_T("icons\\logo.gif"));
 
-	CHECK(PathHelperSeams::CanonicalizePath(strInput) == strExpected);
+	CHECK(PathHelpers::CanonicalizePath(strInput) == strExpected);
 	CHECK(strInput.GetLength() > MAX_PATH);
 }
 
 TEST_CASE("Path-helper seam formats MiniMule resource URLs from overlong module paths")
 {
 	const CString strModulePath = CString(_T("C:\\Program Files\\eMule\\")) + RepeatPathFragment(_T("segment\\"), 70) + CString(_T("emule.exe"));
-	const CString strResourceUrl = PathHelperSeams::BuildModuleResourceBaseUrl(
+	const CString strResourceUrl = PathHelpers::BuildModuleResourceBaseUrl(
 		reinterpret_cast<HMODULE>(static_cast<INT_PTR>(0x2222)),
 		[&](HMODULE hModule, LPTSTR pszBuffer, DWORD cchBuffer) -> DWORD {
 			CHECK(hModule == reinterpret_cast<HMODULE>(static_cast<INT_PTR>(0x2222)));
@@ -172,25 +189,27 @@ TEST_CASE("Path-helper seam formats MiniMule resource URLs from overlong module 
 
 TEST_CASE("Shell/UI seam ignores Windows shortcuts by extension")
 {
-	CHECK(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("sample.lnk")));
-	CHECK(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("SAMPLE.LNK")));
-	CHECK_FALSE(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("sample.txt")));
+	CHECK(ShellUiHelpers::ShouldIgnoreShortcutFileName(_T("sample.lnk")));
+	CHECK(ShellUiHelpers::ShouldIgnoreShortcutFileName(_T("SAMPLE.LNK")));
+	CHECK_FALSE(ShellUiHelpers::ShouldIgnoreShortcutFileName(_T("sample.txt")));
 }
 
 TEST_CASE("Shell/UI seam limits shell display-name enrichment to shell-friendly paths")
 {
-	CHECK(ShellUiSeams::CanUseShellDisplayName(_T("C:\\short\\folder")));
-	CHECK_FALSE(ShellUiSeams::CanUseShellDisplayName(_T("\\\\?\\C:\\deep\\folder")));
-	CHECK_FALSE(ShellUiSeams::CanUseShellDisplayName(CString(_T("C:\\")) + RepeatPathFragment(_T("segment\\"), 80)));
+	CHECK(ShellUiHelpers::CanUseShellDisplayName(_T("C:\\short\\folder")));
+	CHECK_FALSE(ShellUiHelpers::CanUseShellDisplayName(_T("\\\\?\\C:\\deep\\folder")));
+	CHECK_FALSE(ShellUiHelpers::CanUseShellDisplayName(CString(_T("C:\\")) + RepeatPathFragment(_T("segment\\"), 80)));
 }
 
 TEST_CASE("Shell/UI seam builds stable extension and directory icon queries")
 {
-	const ShellUiSeams::ShellIconQuery fileQuery = ShellUiSeams::BuildShellIconQuery(_T("C:\\deep\\folder\\movie.mkv"));
+	const ShellUiHelpers::ShellIconDescriptor fileQuery = ShellUiHelpers::DescribeShellIcon(_T("C:\\deep\\folder\\movie.mkv"));
+	CHECK(fileQuery.strCacheKey == CString(_T("mkv")));
 	CHECK(fileQuery.strQueryPath == CString(_T("file.mkv")));
 	CHECK_EQ(fileQuery.dwFileAttributes, static_cast<DWORD>(FILE_ATTRIBUTE_NORMAL));
 
-	const ShellUiSeams::ShellIconQuery folderQuery = ShellUiSeams::BuildShellIconQuery(_T("C:\\deep\\folder\\"));
+	const ShellUiHelpers::ShellIconDescriptor folderQuery = ShellUiHelpers::DescribeShellIcon(_T("C:\\deep\\folder\\"));
+	CHECK(folderQuery.strCacheKey == CString(_T("\\")));
 	CHECK(folderQuery.strQueryPath == CString(_T("folder\\")));
 	CHECK_EQ(folderQuery.dwFileAttributes, static_cast<DWORD>(FILE_ATTRIBUTE_DIRECTORY));
 }
@@ -198,17 +217,17 @@ TEST_CASE("Shell/UI seam builds stable extension and directory icon queries")
 TEST_CASE("Shell/UI seam splits initial picker selections and restores trailing folder separators")
 {
 	const CString strInput = CString(_T("C:\\skins\\")) + RepeatPathFragment(_T("segment\\"), 50) + CString(_T("theme.ini"));
-	const ShellUiSeams::DialogInitialSelection selection = ShellUiSeams::SplitDialogInitialSelection(strInput);
+	const ShellUiHelpers::DialogInitialSelection selection = ShellUiHelpers::SplitDialogInitialSelection(strInput);
 
-	CHECK(selection.strInitialFolder == PathHelperSeams::GetDirectoryPath(strInput));
+	CHECK(selection.strInitialFolder == PathHelpers::GetDirectoryPath(strInput));
 	CHECK(selection.strFileName == CString(_T("theme.ini")));
-	CHECK(ShellUiSeams::FinalizeFolderSelection(selection.strInitialFolder).Right(1) == CString(_T("\\")));
+	CHECK(ShellUiHelpers::FinalizeFolderSelection(selection.strInitialFolder).Right(1) == CString(_T("\\")));
 }
 
 TEST_CASE("Shell/UI seam resolves skin resources after environment expansion without MAX_PATH truncation")
 {
 	const CString strSkinProfile = CString(_T("C:\\profiles\\")) + RepeatPathFragment(_T("segment\\"), 45) + CString(_T("skin.ini"));
-	const CString strResolved = ShellUiSeams::ResolveSkinResourcePath(
+	const CString strResolved = ShellUiHelpers::ResolveSkinResourcePath(
 		strSkinProfile,
 		_T("%SKINROOT%\\icons\\toolbar.bmp"),
 		[](const CString &rstrInput) -> CString {
@@ -216,14 +235,14 @@ TEST_CASE("Shell/UI seam resolves skin resources after environment expansion wit
 			return CString(_T("relative-root\\icons\\toolbar.bmp"));
 		});
 
-	CHECK(strResolved == PathHelperSeams::AppendPathComponent(PathHelperSeams::GetDirectoryPath(strSkinProfile), _T("relative-root\\icons\\toolbar.bmp")));
+	CHECK(strResolved == PathHelpers::AppendPathComponent(PathHelpers::GetDirectoryPath(strSkinProfile), _T("relative-root\\icons\\toolbar.bmp")));
 	CHECK(strResolved.GetLength() > MAX_PATH);
 }
 
 TEST_CASE("Shell/UI seam grows profile-string buffers past MAX_PATH")
 {
 	const CString strExpected = CString(_T("C:\\skins\\")) + RepeatPathFragment(_T("theme\\"), 70) + CString(_T("toolbar.bmp"));
-	const CString strActual = ShellUiSeams::GetProfileString(
+	const CString strActual = ShellUiHelpers::GetProfileString(
 		_T("Skin"),
 		_T("Toolbar"),
 		NULL,

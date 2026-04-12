@@ -5,6 +5,7 @@
 #include "LongPathSeams.h"
 #include "OtherFunctionsSeams.h"
 #include "PathHelperSeams.h"
+#include "ShellUiSeams.h"
 
 #include <windows.h>
 
@@ -167,6 +168,90 @@ TEST_CASE("Path-helper seam formats MiniMule resource URLs from overlong module 
 
 	CHECK(strResourceUrl == CString(_T("res://")) + strModulePath);
 	CHECK(strResourceUrl.GetLength() > MAX_PATH);
+}
+
+TEST_CASE("Shell/UI seam ignores Windows shortcuts by extension")
+{
+	CHECK(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("sample.lnk")));
+	CHECK(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("SAMPLE.LNK")));
+	CHECK_FALSE(ShellUiSeams::ShouldIgnoreShortcutFileName(_T("sample.txt")));
+}
+
+TEST_CASE("Shell/UI seam limits shell display-name enrichment to shell-friendly paths")
+{
+	CHECK(ShellUiSeams::CanUseShellDisplayName(_T("C:\\short\\folder")));
+	CHECK_FALSE(ShellUiSeams::CanUseShellDisplayName(_T("\\\\?\\C:\\deep\\folder")));
+	CHECK_FALSE(ShellUiSeams::CanUseShellDisplayName(CString(_T("C:\\")) + RepeatPathFragment(_T("segment\\"), 80)));
+}
+
+TEST_CASE("Shell/UI seam builds stable extension and directory icon queries")
+{
+	const ShellUiSeams::ShellIconQuery fileQuery = ShellUiSeams::BuildShellIconQuery(_T("C:\\deep\\folder\\movie.mkv"));
+	CHECK(fileQuery.strQueryPath == CString(_T("file.mkv")));
+	CHECK_EQ(fileQuery.dwFileAttributes, static_cast<DWORD>(FILE_ATTRIBUTE_NORMAL));
+
+	const ShellUiSeams::ShellIconQuery folderQuery = ShellUiSeams::BuildShellIconQuery(_T("C:\\deep\\folder\\"));
+	CHECK(folderQuery.strQueryPath == CString(_T("folder\\")));
+	CHECK_EQ(folderQuery.dwFileAttributes, static_cast<DWORD>(FILE_ATTRIBUTE_DIRECTORY));
+}
+
+TEST_CASE("Shell/UI seam splits initial picker selections and restores trailing folder separators")
+{
+	const CString strInput = CString(_T("C:\\skins\\")) + RepeatPathFragment(_T("segment\\"), 50) + CString(_T("theme.ini"));
+	const ShellUiSeams::DialogInitialSelection selection = ShellUiSeams::SplitDialogInitialSelection(strInput);
+
+	CHECK(selection.strInitialFolder == PathHelperSeams::GetDirectoryPath(strInput));
+	CHECK(selection.strFileName == CString(_T("theme.ini")));
+	CHECK(ShellUiSeams::FinalizeFolderSelection(selection.strInitialFolder).Right(1) == CString(_T("\\")));
+}
+
+TEST_CASE("Shell/UI seam resolves skin resources after environment expansion without MAX_PATH truncation")
+{
+	const CString strSkinProfile = CString(_T("C:\\profiles\\")) + RepeatPathFragment(_T("segment\\"), 45) + CString(_T("skin.ini"));
+	const CString strResolved = ShellUiSeams::ResolveSkinResourcePath(
+		strSkinProfile,
+		_T("%SKINROOT%\\icons\\toolbar.bmp"),
+		[](const CString &rstrInput) -> CString {
+			CHECK(rstrInput == CString(_T("%SKINROOT%\\icons\\toolbar.bmp")));
+			return CString(_T("relative-root\\icons\\toolbar.bmp"));
+		});
+
+	CHECK(strResolved == PathHelperSeams::AppendPathComponent(PathHelperSeams::GetDirectoryPath(strSkinProfile), _T("relative-root\\icons\\toolbar.bmp")));
+	CHECK(strResolved.GetLength() > MAX_PATH);
+}
+
+TEST_CASE("Shell/UI seam grows profile-string buffers past MAX_PATH")
+{
+	const CString strExpected = CString(_T("C:\\skins\\")) + RepeatPathFragment(_T("theme\\"), 70) + CString(_T("toolbar.bmp"));
+	const CString strActual = ShellUiSeams::GetProfileString(
+		_T("Skin"),
+		_T("Toolbar"),
+		NULL,
+		_T("C:\\profiles\\skin.ini"),
+		[&](const CString &rstrSection, const CString &rstrKey, LPCTSTR, LPTSTR pszBuffer, DWORD cchBuffer, const CString &rstrProfileFile) -> DWORD {
+			CHECK(rstrSection == CString(_T("Skin")));
+			CHECK(rstrKey == CString(_T("Toolbar")));
+			CHECK(rstrProfileFile == CString(_T("C:\\profiles\\skin.ini")));
+			if (cchBuffer == 0)
+				return 0;
+
+			const DWORD cchRequired = static_cast<DWORD>(strExpected.GetLength());
+			if (cchBuffer <= cchRequired) {
+				const DWORD cchToCopy = cchBuffer - 1;
+				for (DWORD i = 0; i < cchToCopy; ++i)
+					pszBuffer[i] = strExpected[i];
+				pszBuffer[cchToCopy] = _T('\0');
+				return cchBuffer - 1;
+			}
+
+			for (DWORD i = 0; i < cchRequired; ++i)
+				pszBuffer[i] = strExpected[i];
+			pszBuffer[cchRequired] = _T('\0');
+			return cchRequired;
+		});
+
+	CHECK(strActual == strExpected);
+	CHECK(strActual.GetLength() > MAX_PATH);
 }
 
 TEST_SUITE_END;

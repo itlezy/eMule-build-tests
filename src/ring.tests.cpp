@@ -57,6 +57,25 @@ TEST_CASE("CRing restarts cleanly after RemoveAll")
 	CHECK_EQ(ring.Tail().timestamp, static_cast<DWORD>(42));
 }
 
+TEST_CASE("CRing restarts cleanly after removing the last element")
+{
+	CRing<TransferredData> ring(4, 4);
+
+	ring.AddTail(MakeTransferredData(7, 70));
+	ring.RemoveHead();
+
+	CHECK(ring.IsEmpty());
+	CHECK_EQ(ring.Count(), 0);
+	CHECK_THROWS_AS(ring.Head(), CTestAssertException);
+	CHECK_THROWS_AS(ring.Tail(), CTestAssertException);
+
+	ring.AddTail(MakeTransferredData(8, 80));
+
+	CHECK_EQ(ring.Count(), 1);
+	CHECK_EQ(ring.Head().datalen, static_cast<uint64>(8));
+	CHECK_EQ(ring.Tail().timestamp, static_cast<DWORD>(80));
+}
+
 TEST_CASE("CRing preserves logical order across wrap-around")
 {
 	CRing<TransferredData> ring(4, 4);

@@ -99,6 +99,27 @@ TEST_CASE("Long-path seam matches the reference prefix policy for overlong and e
 	CHECK(LongPathSeams::PreparePathForLongPath(reservedDevicePath.c_str()) == LongPathTestSupport::PreparePathForLongPath(reservedDevicePath));
 }
 
+TEST_CASE("Long-path seam memoizes prepared path facts across repeated calls")
+{
+	LongPathSeams::ClearPreparedPathMemoizationCache();
+	const LongPathSeams::PreparedPathMemoStats emptyStats = LongPathSeams::GetPreparedPathMemoizationStats();
+	CHECK_EQ(emptyStats.uEntryCount, 0u);
+
+	const std::wstring path = L"C:\\tmp\\00_long_paths\\memo-target\\leaf.bin";
+	const std::wstring preparedPath = LongPathSeams::PreparePathForLongPath(path.c_str());
+	const LongPathSeams::PreparedPathMemoStats afterMiss = LongPathSeams::GetPreparedPathMemoizationStats();
+	CHECK_EQ(afterMiss.uEntryCount, 1u);
+	CHECK_EQ(afterMiss.ullCacheMisses, 1ull);
+
+	const std::wstring strippedPath = LongPathSeams::StripLongPathPrefix(preparedPath.c_str());
+	const std::wstring normalizedPath = LongPathSeams::GetNormalizedPathText(path.c_str());
+	const LongPathSeams::PreparedPathMemoStats afterHits = LongPathSeams::GetPreparedPathMemoizationStats();
+	CHECK_EQ(strippedPath, path);
+	CHECK_EQ(normalizedPath, path);
+	CHECK(afterHits.ullCacheHits >= 2ull);
+	CHECK_EQ(afterHits.uEntryCount, 1u);
+}
+
 TEST_CASE("Long-path seam reads deterministic generated payloads from overlong unicode paths")
 {
 	LongPathTestSupport::ScopedLongPathFixture fixture;

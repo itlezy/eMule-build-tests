@@ -339,14 +339,14 @@ TEST_CASE("Shared startup cache trusted NTFS mode requires a volume guard and di
 	record.volumeRecord.ullVolumeSerialNumber = 77u;
 	record.volumeRecord.ullUsnJournalId = 88u;
 	record.volumeRecord.llJournalCheckpointUsn = 99;
-	record.ullDirectoryFileReferenceNumber = 123u;
+	record.directoryFileReference = LongPathSeams::MakeUsnFileReferenceFromUInt64(123u);
 	record.uCachedFileCount = 1;
 	record.files.push_back({ CString(L"file.bin"), 55, 66u });
 
 	CHECK(SharedStartupCachePolicy::IsStructurallyValid(record));
 	CHECK(SharedStartupCachePolicy::UsesTrustedNtfsFastPath(record));
 
-	record.ullDirectoryFileReferenceNumber = 0;
+	record.directoryFileReference = LongPathSeams::UsnFileReference{};
 	CHECK_FALSE(SharedStartupCachePolicy::IsStructurallyValid(record));
 	CHECK_FALSE(SharedStartupCachePolicy::UsesTrustedNtfsFastPath(record));
 }
@@ -384,6 +384,70 @@ TEST_CASE("Shared startup cache verification also requires matching file date an
 #endif
 
 #if defined(EMULE_TESTS_HAS_LONG_PATH_SEAMS) && defined(EMULE_LONG_PATH_SEAMS_HAS_NTFS_JOURNAL_HELPERS)
+TEST_CASE("Long path seams parse V2 V3 and V4 USN record identities")
+{
+	{
+		USN_RECORD_V2 record = {};
+		USN_RECORD_COMMON_HEADER *pHeader = reinterpret_cast<USN_RECORD_COMMON_HEADER *>(&record);
+		pHeader->MajorVersion = 2;
+		pHeader->RecordLength = sizeof(record);
+		record.FileReferenceNumber = 0x1122334455667788ull;
+		record.ParentFileReferenceNumber = 0x8877665544332211ull;
+		record.Usn = 123;
+
+		LongPathSeams::UsnFileReference fileReference = {};
+		LongPathSeams::UsnFileReference parentReference = {};
+		LONGLONG llUsn = 0;
+		DWORD dwError = ERROR_SUCCESS;
+		REQUIRE(LongPathSeams::TryParseUsnRecordIdentity(reinterpret_cast<const USN_RECORD_COMMON_HEADER *>(&record), sizeof(record), fileReference, &parentReference, &llUsn, &dwError));
+		CHECK(fileReference == LongPathSeams::MakeUsnFileReferenceFromUInt64(record.FileReferenceNumber));
+		CHECK(parentReference == LongPathSeams::MakeUsnFileReferenceFromUInt64(record.ParentFileReferenceNumber));
+		CHECK(llUsn == record.Usn);
+	}
+
+	{
+		USN_RECORD_V3 record = {};
+		USN_RECORD_COMMON_HEADER *pHeader = reinterpret_cast<USN_RECORD_COMMON_HEADER *>(&record);
+		pHeader->MajorVersion = 3;
+		pHeader->RecordLength = sizeof(record);
+		for (int i = 0; i < 16; ++i) {
+			record.FileReferenceNumber.Identifier[i] = static_cast<BYTE>(i + 1);
+			record.ParentFileReferenceNumber.Identifier[i] = static_cast<BYTE>(0xF0 + i);
+		}
+		record.Usn = 456;
+
+		LongPathSeams::UsnFileReference fileReference = {};
+		LongPathSeams::UsnFileReference parentReference = {};
+		LONGLONG llUsn = 0;
+		DWORD dwError = ERROR_SUCCESS;
+		REQUIRE(LongPathSeams::TryParseUsnRecordIdentity(reinterpret_cast<const USN_RECORD_COMMON_HEADER *>(&record), sizeof(record), fileReference, &parentReference, &llUsn, &dwError));
+		CHECK(fileReference == LongPathSeams::MakeUsnFileReferenceFromFileId128(record.FileReferenceNumber));
+		CHECK(parentReference == LongPathSeams::MakeUsnFileReferenceFromFileId128(record.ParentFileReferenceNumber));
+		CHECK(llUsn == record.Usn);
+	}
+
+	{
+		USN_RECORD_V4 record = {};
+		USN_RECORD_COMMON_HEADER *pHeader = reinterpret_cast<USN_RECORD_COMMON_HEADER *>(&record);
+		pHeader->MajorVersion = 4;
+		pHeader->RecordLength = sizeof(record);
+		for (int i = 0; i < 16; ++i) {
+			record.FileReferenceNumber.Identifier[i] = static_cast<BYTE>(0x10 + i);
+			record.ParentFileReferenceNumber.Identifier[i] = static_cast<BYTE>(0x80 + i);
+		}
+		record.Usn = 789;
+
+		LongPathSeams::UsnFileReference fileReference = {};
+		LongPathSeams::UsnFileReference parentReference = {};
+		LONGLONG llUsn = 0;
+		DWORD dwError = ERROR_SUCCESS;
+		REQUIRE(LongPathSeams::TryParseUsnRecordIdentity(reinterpret_cast<const USN_RECORD_COMMON_HEADER *>(&record), sizeof(record), fileReference, &parentReference, &llUsn, &dwError));
+		CHECK(fileReference == LongPathSeams::MakeUsnFileReferenceFromFileId128(record.FileReferenceNumber));
+		CHECK(parentReference == LongPathSeams::MakeUsnFileReferenceFromFileId128(record.ParentFileReferenceNumber));
+		CHECK(llUsn == record.Usn);
+	}
+}
+
 TEST_CASE("Long path seams resolve the containing local volume instead of guessing from the drive root")
 {
 	LongPathTestSupport::ScopedLongPathFixture fixture;
@@ -427,8 +491,8 @@ TEST_CASE("Long path seams mark cached NTFS directories dirty through one journa
 	LongPathSeams::NtfsDirectoryJournalState directoryState = {};
 	REQUIRE(LongPathSeams::TryGetNtfsDirectoryJournalState(CString(fixture.DirectoryPath().c_str()), directoryState, &dwError));
 
-	std::unordered_set<ULONGLONG> trackedDirectoryRefs = { directoryState.ullFileReferenceNumber };
-	std::unordered_set<ULONGLONG> changedDirectoryRefs;
+	std::unordered_set<LongPathSeams::UsnFileReference, LongPathSeams::UsnFileReferenceHasher> trackedDirectoryRefs = { directoryState.fileReference };
+	std::unordered_set<LongPathSeams::UsnFileReference, LongPathSeams::UsnFileReferenceHasher> changedDirectoryRefs;
 	CHECK(LongPathSeams::TryCollectChangedDirectoryFileReferences(CString(fixture.DirectoryPath().c_str()), volumeState.ullUsnJournalId, volumeState.llNextUsn, trackedDirectoryRefs, changedDirectoryRefs, &dwError));
 	CHECK(changedDirectoryRefs.empty());
 
@@ -438,7 +502,7 @@ TEST_CASE("Long path seams mark cached NTFS directories dirty through one journa
 
 	changedDirectoryRefs.clear();
 	CHECK(LongPathSeams::TryCollectChangedDirectoryFileReferences(CString(fixture.DirectoryPath().c_str()), volumeState.ullUsnJournalId, volumeState.llNextUsn, trackedDirectoryRefs, changedDirectoryRefs, &dwError));
-	CHECK(changedDirectoryRefs.find(directoryState.ullFileReferenceNumber) != changedDirectoryRefs.end());
+	CHECK(changedDirectoryRefs.find(directoryState.fileReference) != changedDirectoryRefs.end());
 
 	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(addedPath));
 }

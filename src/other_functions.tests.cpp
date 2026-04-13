@@ -2,6 +2,7 @@
 
 #include "../include/LongPathTestSupport.h"
 
+#include "FilenameNormalizationPolicy.h"
 #include "LongPathSeams.h"
 #include "OtherFunctionsSeams.h"
 #include "PathHelpers.h"
@@ -257,6 +258,31 @@ TEST_CASE("Path-helper seam treats prefixed, dotted, and DOS 8.3 aliases as the 
 		return;
 
 	CHECK(PathHelpers::ArePathsEquivalent(strLongPath, CString(shortAlias.c_str())));
+}
+
+TEST_CASE("Download filename normalization trims trailing Win32-invalid leaf characters and preserves extensions")
+{
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("  bad__name .txt. "))) == CString(_T("bad name.txt")));
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("archive+++cut===final .mkv.."))) == CString(_T("archive cut final.mkv")));
+}
+
+TEST_CASE("Download filename normalization keeps reserved-name protection without destroying the extension")
+{
+	CHECK(FilenameNormalizationPolicy::StripInvalidFilenameChars(CString(_T("AUX.txt... "))) == CString(_T("AUX_.txt")));
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("NUL .txt"))) == CString(_T("NUL_.txt")));
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("COM1"))) == CString(_T("COM1_")));
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("CLOCK$.log"))) == CString(_T("CLOCK$_.log")));
+}
+
+TEST_CASE("Download filename normalization falls back when cleanup empties the name")
+{
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("...   "))) == CString(_T("download")));
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("\t\t"))) == CString(_T("download")));
+}
+
+TEST_CASE("Always-on download normalization does not strip prettify cleanup tokens")
+{
+	CHECK(FilenameNormalizationPolicy::NormalizeDownloadFilename(CString(_T("shared_file.txt"))) == CString(_T("shared file.txt")));
 }
 
 TEST_CASE("Path-helper seam treats descendant checks as equivalent across canonical path spellings")

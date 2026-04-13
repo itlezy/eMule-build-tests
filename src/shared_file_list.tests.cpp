@@ -9,6 +9,10 @@
 #include "SharedFileIntakePolicy.h"
 #define EMULE_TESTS_HAS_SHARED_FILE_INTAKE_POLICY 1
 #endif
+#if __has_include("SharedStartupCachePolicy.h")
+#include "SharedStartupCachePolicy.h"
+#define EMULE_TESTS_HAS_SHARED_STARTUP_CACHE_POLICY 1
+#endif
 #if __has_include("SharedFilesWndSeams.h")
 #include "SharedFilesWndSeams.h"
 #define EMULE_TESTS_HAS_SHARED_FILES_WND_SEAMS 1
@@ -287,3 +291,39 @@ TEST_CASE("Shared file import yield only applies to active full-part imports")
 	CHECK_FALSE(SharedFileListSeams::ShouldYieldAfterImportProgress(true, true, false));
 	CHECK(SharedFileListSeams::kImportPartProgressYieldMs == 100);
 }
+
+#ifdef EMULE_TESTS_HAS_SHARED_STARTUP_CACHE_POLICY
+TEST_CASE("Shared startup cache policy rejects malformed blocks and lookup misses wholesale")
+{
+	CHECK(SharedStartupCachePolicy::ShouldRejectWholeCacheOnMalformedBlock());
+	CHECK(SharedStartupCachePolicy::ShouldRescanDirectoryOnCachedLookupMiss());
+}
+
+TEST_CASE("Shared startup cache only persists stable directories without pending hashes")
+{
+	CHECK(SharedStartupCachePolicy::CanPersistDirectorySnapshot(false));
+	CHECK_FALSE(SharedStartupCachePolicy::CanPersistDirectorySnapshot(true));
+}
+
+TEST_CASE("Shared startup cache verification requires structural validity and matching directory state")
+{
+	SharedStartupCachePolicy::DirectoryRecord record = {};
+	record.strDirectoryPath = CString(L"C:\\share\\");
+	record.bHasIdentity = true;
+	record.utcDirectoryDate = 1234;
+	record.uCachedFileCount = 1;
+	record.files.push_back({ CString(L"file.bin"), 55, 66u });
+
+	CHECK(SharedStartupCachePolicy::IsStructurallyValid(record));
+	CHECK(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, true, true, 1234));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, false, true, 1234));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, true, false, 1234));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, true, true, 9999));
+
+	record.uCachedFileCount = 2;
+	CHECK_FALSE(SharedStartupCachePolicy::IsStructurallyValid(record));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, true, true, 1234));
+}
+#endif
+
+TEST_SUITE_END;

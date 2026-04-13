@@ -13,6 +13,10 @@
 #include "SharedStartupCachePolicy.h"
 #define EMULE_TESTS_HAS_SHARED_STARTUP_CACHE_POLICY 1
 #endif
+#if __has_include("LongPathSeams.h")
+#include "LongPathSeams.h"
+#define EMULE_TESTS_HAS_LONG_PATH_SEAMS 1
+#endif
 #if __has_include("SharedFilesWndSeams.h")
 #include "SharedFilesWndSeams.h"
 #define EMULE_TESTS_HAS_SHARED_FILES_WND_SEAMS 1
@@ -323,6 +327,120 @@ TEST_CASE("Shared startup cache verification requires structural validity and ma
 	record.uCachedFileCount = 2;
 	CHECK_FALSE(SharedStartupCachePolicy::IsStructurallyValid(record));
 	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedDirectoryState(record, true, true, 1234));
+}
+
+#ifdef EMULE_SHARED_STARTUP_CACHE_POLICY_HAS_NTFS_FAST_PATH
+TEST_CASE("Shared startup cache trusted NTFS mode requires a volume guard and directory reference")
+{
+	SharedStartupCachePolicy::DirectoryRecord record = {};
+	record.strDirectoryPath = CString(L"C:\\share\\");
+	record.eValidationMode = SharedStartupCachePolicy::ValidationMode::LocalNtfsJournalFastPath;
+	record.volumeRecord.strVolumeKey = CString(L"\\\\?\\volume{test}\\");
+	record.volumeRecord.ullVolumeSerialNumber = 77u;
+	record.volumeRecord.ullUsnJournalId = 88u;
+	record.volumeRecord.llJournalCheckpointUsn = 99;
+	record.ullDirectoryFileReferenceNumber = 123u;
+	record.uCachedFileCount = 1;
+	record.files.push_back({ CString(L"file.bin"), 55, 66u });
+
+	CHECK(SharedStartupCachePolicy::IsStructurallyValid(record));
+	CHECK(SharedStartupCachePolicy::UsesTrustedNtfsFastPath(record));
+
+	record.ullDirectoryFileReferenceNumber = 0;
+	CHECK_FALSE(SharedStartupCachePolicy::IsStructurallyValid(record));
+	CHECK_FALSE(SharedStartupCachePolicy::UsesTrustedNtfsFastPath(record));
+}
+
+TEST_CASE("Shared startup cache trusted NTFS volume guard rejects journal resets and range loss")
+{
+	SharedStartupCachePolicy::VolumeRecord record = {};
+	record.strVolumeKey = CString(L"\\\\?\\volume{test}\\");
+	record.ullVolumeSerialNumber = 77u;
+	record.ullUsnJournalId = 88u;
+	record.llJournalCheckpointUsn = 100;
+
+	CHECK(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{test}\\"), 77u, 88u, 90, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, false, CString(L"\\\\?\\volume{test}\\"), 77u, 88u, 90, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{other}\\"), 77u, 88u, 90, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{test}\\"), 78u, 88u, 90, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{test}\\"), 77u, 89u, 90, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{test}\\"), 77u, 88u, 101, 150));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesTrustedNtfsVolumeGuard(record, true, CString(L"\\\\?\\volume{test}\\"), 77u, 88u, 90, 99));
+}
+#endif
+
+TEST_CASE("Shared startup cache verification also requires matching file date and size")
+{
+	SharedStartupCachePolicy::FileRecord record = {};
+	record.strLeafName = CString(L"file.bin");
+	record.utcFileDate = 55;
+	record.ullFileSize = 66u;
+
+	CHECK(SharedStartupCachePolicy::MatchesVerifiedFileState(record, true, 55, 66u));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedFileState(record, false, 55, 66u));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedFileState(record, true, 56, 66u));
+	CHECK_FALSE(SharedStartupCachePolicy::MatchesVerifiedFileState(record, true, 55, 67u));
+}
+#endif
+
+#if defined(EMULE_TESTS_HAS_LONG_PATH_SEAMS) && defined(EMULE_LONG_PATH_SEAMS_HAS_NTFS_JOURNAL_HELPERS)
+TEST_CASE("Long path seams resolve the containing local volume instead of guessing from the drive root")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 64u, 0xB0FF01u));
+
+	LongPathSeams::ResolvedVolumeContext context = {};
+	DWORD dwError = ERROR_SUCCESS;
+	REQUIRE(LongPathSeams::TryResolveContainingVolumeContext(CString(fixture.DirectoryPath().c_str()), context, &dwError));
+	CHECK_FALSE(context.strMountRoot.empty());
+	CHECK_FALSE(context.strVolumeGuidPath.empty());
+	CHECK_FALSE(context.strVolumeKey.empty());
+	CHECK(context.bIsLocal);
+}
+
+TEST_CASE("Long path seams resolve mounted-folder volumes to the mounted root instead of the parent drive")
+{
+	const CString strMountedRoot(L"C:\\M\\H20T00\\");
+	if (::GetFileAttributesW(strMountedRoot) == INVALID_FILE_ATTRIBUTES)
+		return;
+
+	LongPathSeams::ResolvedVolumeContext context = {};
+	DWORD dwError = ERROR_SUCCESS;
+	REQUIRE(LongPathSeams::TryResolveContainingVolumeContext(strMountedRoot + L"probe", context, &dwError));
+	CHECK(CString(context.strMountRoot.c_str()).CompareNoCase(strMountedRoot) == 0);
+	CHECK(CString(context.strVolumeGuidPath.c_str()).Find(L"\\\\?\\Volume{") == 0);
+	CHECK(CString(context.strMountRoot.c_str()).CompareNoCase(L"C:\\") != 0);
+}
+
+TEST_CASE("Long path seams mark cached NTFS directories dirty through one journal delta scan")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 64u, 0xB10001u));
+
+	LongPathSeams::NtfsJournalVolumeState volumeState = {};
+	DWORD dwError = ERROR_SUCCESS;
+	if (!LongPathSeams::TryGetLocalNtfsJournalVolumeState(CString(fixture.DirectoryPath().c_str()), volumeState, &dwError))
+		return;
+
+	LongPathSeams::NtfsDirectoryJournalState directoryState = {};
+	REQUIRE(LongPathSeams::TryGetNtfsDirectoryJournalState(CString(fixture.DirectoryPath().c_str()), directoryState, &dwError));
+
+	std::unordered_set<ULONGLONG> trackedDirectoryRefs = { directoryState.ullFileReferenceNumber };
+	std::unordered_set<ULONGLONG> changedDirectoryRefs;
+	CHECK(LongPathSeams::TryCollectChangedDirectoryFileReferences(CString(fixture.DirectoryPath().c_str()), volumeState.ullUsnJournalId, volumeState.llNextUsn, trackedDirectoryRefs, changedDirectoryRefs, &dwError));
+	CHECK(changedDirectoryRefs.empty());
+
+	const std::wstring addedPath = fixture.MakeDirectoryChildPath(L"journal-delta.bin");
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::WriteBytes(addedPath, LongPathTestSupport::BuildDeterministicPayload(17u, 0xB10002u)));
+	::Sleep(50);
+
+	changedDirectoryRefs.clear();
+	CHECK(LongPathSeams::TryCollectChangedDirectoryFileReferences(CString(fixture.DirectoryPath().c_str()), volumeState.ullUsnJournalId, volumeState.llNextUsn, trackedDirectoryRefs, changedDirectoryRefs, &dwError));
+	CHECK(changedDirectoryRefs.find(directoryState.ullFileReferenceNumber) != changedDirectoryRefs.end());
+
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(addedPath));
 }
 #endif
 

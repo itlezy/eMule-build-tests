@@ -9,7 +9,7 @@ TEST_CASE("Startup config override parses an absolute drive path and normalizes 
 	TCHAR *argv[] = {
 		const_cast<TCHAR*>(_T("emule.exe")),
 		const_cast<TCHAR*>(_T("-c")),
-		const_cast<TCHAR*>(_T("C:/profiles/test-root"))
+		const_cast<TCHAR*>(_T("C:\\profiles\\test-root"))
 	};
 
 	CString strBaseDir;
@@ -22,7 +22,7 @@ TEST_CASE("Startup config override parses an absolute drive path and normalizes 
 	CHECK(StartupConfigOverride::GetPreferencesIniPathFromBaseDir(strBaseDir) == CString(_T("C:\\profiles\\test-root\\config\\preferences.ini")));
 }
 
-TEST_CASE("Startup config override accepts an absolute UNC base path")
+TEST_CASE("Startup config override rejects an absolute UNC base path")
 {
 	TCHAR *argv[] = {
 		const_cast<TCHAR*>(_T("emule.exe")),
@@ -32,9 +32,8 @@ TEST_CASE("Startup config override accepts an absolute UNC base path")
 
 	CString strBaseDir;
 	CString strError;
-	CHECK(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv), argv, strBaseDir, strError));
-	CHECK(strError.IsEmpty());
-	CHECK(strBaseDir == CString(_T("\\\\server\\share\\profile\\")));
+	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv), argv, strBaseDir, strError));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
 }
 
 TEST_CASE("Startup config override rejects a relative base path")
@@ -48,7 +47,35 @@ TEST_CASE("Startup config override rejects a relative base path")
 	CString strBaseDir;
 	CString strError;
 	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv), argv, strBaseDir, strError));
-	CHECK(strError == CString(_T("The -c option requires an absolute eMule base directory.")));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
+}
+
+TEST_CASE("Startup config override rejects non-canonical drive paths")
+{
+	TCHAR *argv1[] = {
+		const_cast<TCHAR*>(_T("emule.exe")),
+		const_cast<TCHAR*>(_T("-c")),
+		const_cast<TCHAR*>(_T("C:\\profiles\\.\\test-root"))
+	};
+	TCHAR *argv2[] = {
+		const_cast<TCHAR*>(_T("emule.exe")),
+		const_cast<TCHAR*>(_T("-c")),
+		const_cast<TCHAR*>(_T("C:\\profiles\\..\\test-root"))
+	};
+	TCHAR *argv3[] = {
+		const_cast<TCHAR*>(_T("emule.exe")),
+		const_cast<TCHAR*>(_T("-c")),
+		const_cast<TCHAR*>(_T("C:/profiles/test-root"))
+	};
+
+	CString strBaseDir;
+	CString strError;
+	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv1), argv1, strBaseDir, strError));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
+	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv2), argv2, strBaseDir, strError));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
+	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv3), argv3, strBaseDir, strError));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
 }
 
 TEST_CASE("Startup config override rejects a missing value")
@@ -61,7 +88,7 @@ TEST_CASE("Startup config override rejects a missing value")
 	CString strBaseDir;
 	CString strError;
 	CHECK_FALSE(StartupConfigOverride::TryParseConfigBaseDirOverride(_countof(argv), argv, strBaseDir, strError));
-	CHECK(strError == CString(_T("The -c option requires an absolute eMule base directory.")));
+	CHECK(strError == CString(_T("The -c option requires a canonical absolute eMule base directory like C:\\path.")));
 }
 
 TEST_CASE("Startup config override rejects duplicate options")

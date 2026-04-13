@@ -41,14 +41,14 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -150,7 +150,7 @@
     <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\i18n.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\I18nSeams.h')" />
-    <ClCompile Include="src\ini2.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\Ini2Seams.h')" />
+    <ClCompile Include="src\ini2.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\Ini2Helpers.h')" />
     <ClCompile Include="src\ip_filter.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\IPFilterSeams.h')" />
     <ClCompile Include="src\known_file_metadata.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileMetadataSeams.h')" />
     <ClCompile Include="src\known_file_list.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\KnownFileListSeams.h')" />
@@ -163,6 +163,7 @@
     <ClCompile Include="src\mapped_file_reader.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\modern_limits.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FileBufferSlider.h')" />
     <ClCompile Include="src\null_guard.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
+    <ClCompile Include="src\other_functions.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\OtherFunctionsSeams.h')" />
     <ClCompile Include="src\pipe_api.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PipeApiServerPolicy.h')" />
     <ClCompile Include="src\part_file_completion.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFileCompletionSeams.h')" />
     <ClCompile Include="src\part_file_persistence.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')" />
@@ -190,11 +191,21 @@
     <ClCompile Include="src\upload_bandwidth_throttler.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
     <ClCompile Include="src\upload_bandwidth_throttler_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
     <ClCompile Include="src\upload_score.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadScoreSeams.h')" />
-    <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />
-    <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')" />
-    <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />
-    <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')" />
-    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')" />
+    <ClCompile Include="src\upload_queue_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\upload_queue.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="src\worker_ui_message_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageFlowSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="src\uint128-lite.testsupport.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\KadSupport.h')" />
   </ItemGroup>
   <ItemGroup>
@@ -224,6 +235,7 @@
     <ClInclude Include="$(AppRoot)\srchybrid\FormatSafetySeams.h" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\MappedFileReader.h" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\NullGuardSeams.h" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\OtherFunctionsSeams.h" Condition="Exists('$(AppRoot)\srchybrid\OtherFunctionsSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\PartFilePersistenceSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFilePersistenceSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFilePauseResumeSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\PartFileNumericSeams.h" Condition="Exists('$(AppRoot)\srchybrid\PartFileNumericSeams.h')" />

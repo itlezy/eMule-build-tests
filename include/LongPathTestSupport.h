@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <windows.h>
+#include <winioctl.h>
 
 namespace LongPathTestSupport
 {
@@ -22,6 +23,14 @@ inline std::wstring NormalizeAbsolutePathSeparators(const std::wstring &path)
 }
 
 /**
+ * @brief Returns true when the character is treated as a Win32 path separator.
+ */
+inline bool IsPathSeparator(const wchar_t ch)
+{
+	return ch == L'\\' || ch == L'/';
+}
+
+/**
  * @brief Returns a mixed Cyrillic and emoji path segment to stress Unicode handling in real-FS tests.
  */
 inline std::wstring MakeSpecialSegment()
@@ -35,6 +44,19 @@ inline std::wstring MakeSpecialSegment()
 inline bool HasLongPathPrefix(const std::wstring &path)
 {
 	return path.rfind(L"\\\\?\\", 0) == 0;
+}
+
+/**
+ * @brief Removes an existing extended-length prefix so tests can inspect the logical DOS/UNC path text.
+ */
+inline std::wstring StripLongPathPrefix(const std::wstring &path)
+{
+	const std::wstring normalized = NormalizeAbsolutePathSeparators(path);
+	if (normalized.rfind(L"\\\\?\\UNC\\", 0) == 0)
+		return std::wstring(L"\\\\") + normalized.substr(8);
+	if (normalized.rfind(L"\\\\?\\", 0) == 0)
+		return normalized.substr(4);
+	return normalized;
 }
 
 /**
@@ -59,13 +81,124 @@ inline bool IsUncPath(const std::wstring &path)
 }
 
 /**
+ * @brief Returns the index at which logical filesystem components begin after a DOS drive or UNC root.
+ */
+inline size_t GetLogicalPathComponentStart(const std::wstring &path)
+{
+	if (path.empty())
+		return 0u;
+
+	const std::wstring logicalPath = StripLongPathPrefix(path);
+	if (logicalPath.size() >= 3u
+		&& ((logicalPath[0] >= L'A' && logicalPath[0] <= L'Z') || (logicalPath[0] >= L'a' && logicalPath[0] <= L'z'))
+		&& logicalPath[1] == L':'
+		&& IsPathSeparator(logicalPath[2]))
+	{
+		return 3u;
+	}
+
+	if (logicalPath.size() >= 2u && logicalPath[0] == L'\\' && logicalPath[1] == L'\\') {
+		size_t iIndex = 2u;
+		while (iIndex < logicalPath.size() && !IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+		while (iIndex < logicalPath.size() && IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+		while (iIndex < logicalPath.size() && !IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+		while (iIndex < logicalPath.size() && IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+		return iIndex;
+	}
+
+	return 0u;
+}
+
+/**
+ * @brief Returns true when a logical path component is a reserved Win32 device alias.
+ */
+inline bool IsReservedWin32DeviceName(const std::wstring &segment)
+{
+	if (segment.empty())
+		return false;
+
+	std::wstring candidate(segment);
+	while (!candidate.empty() && (candidate.back() == L' ' || candidate.back() == L'.'))
+		candidate.pop_back();
+	if (candidate.empty())
+		return false;
+
+	const size_t iDot = candidate.find(L'.');
+	if (iDot != std::wstring::npos)
+		candidate.erase(iDot);
+
+	std::wstring upper(candidate);
+	std::transform(upper.begin(), upper.end(), upper.begin(), [](const wchar_t ch) { return static_cast<wchar_t>(towupper(ch)); });
+
+	if (upper == L"CON" || upper == L"PRN" || upper == L"AUX" || upper == L"NUL")
+		return true;
+
+	const auto IsReservedPortName = [&](const wchar_t *prefix) -> bool {
+		const size_t nPrefixLength = std::wcslen(prefix);
+		if (upper.compare(0u, nPrefixLength, prefix) != 0 || upper.size() != nPrefixLength + 1u)
+			return false;
+
+		const wchar_t chDigit = upper[nPrefixLength];
+		return (chDigit >= L'1' && chDigit <= L'9')
+			|| chDigit == static_cast<wchar_t>(0x00B9)
+			|| chDigit == static_cast<wchar_t>(0x00B2)
+			|| chDigit == static_cast<wchar_t>(0x00B3);
+	};
+
+	return IsReservedPortName(L"COM") || IsReservedPortName(L"LPT");
+}
+
+/**
+ * @brief Returns true when any logical path component needs namespace semantics to preserve its exact Win32 meaning.
+ */
+inline bool RequiresExtendedLengthPathForExactName(const std::wstring &path)
+{
+	if (path.empty())
+		return false;
+
+	const std::wstring logicalPath = StripLongPathPrefix(path);
+	size_t iIndex = GetLogicalPathComponentStart(logicalPath);
+	while (iIndex < logicalPath.size()) {
+		while (iIndex < logicalPath.size() && IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+		if (iIndex >= logicalPath.size())
+			break;
+
+		const size_t iStart = iIndex;
+		while (iIndex < logicalPath.size() && !IsPathSeparator(logicalPath[iIndex]))
+			++iIndex;
+
+		const std::wstring segment = logicalPath.substr(iStart, iIndex - iStart);
+		if (!segment.empty()
+			&& segment != L"."
+			&& segment != L".."
+			&& (segment.front() == L' '
+				|| segment.back() == L' '
+				|| segment.back() == L'.'
+				|| IsReservedWin32DeviceName(segment)))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
  * @brief Applies the reference extended-length prefix policy used by the real-FS tests and probes.
  */
 inline std::wstring PreparePathForLongPath(const std::wstring &path)
 {
-	if (path.empty() || path.size() < MAX_PATH || HasLongPathPrefix(path))
+	if (path.empty() || HasLongPathPrefix(path))
 		return path;
 	const std::wstring normalized = NormalizeAbsolutePathSeparators(path);
+	const bool bRequiresExactNamePrefix = RequiresExtendedLengthPathForExactName(normalized);
+	if (normalized.size() < MAX_PATH && !bRequiresExactNamePrefix)
+		return path;
 	if (!IsDriveAbsolutePath(normalized) && !IsUncPath(normalized))
 		return path;
 	if (IsUncPath(normalized))
@@ -80,14 +213,46 @@ inline std::wstring PrepareDirectoryCreatePathForLongPath(const std::wstring &pa
 {
 	if (path.empty() || HasLongPathPrefix(path))
 		return path;
-	if (path.size() + kCreateDirectoryLegacyHeadroom < MAX_PATH)
-		return path;
 	const std::wstring normalized = NormalizeAbsolutePathSeparators(path);
+	const bool bRequiresExactNamePrefix = RequiresExtendedLengthPathForExactName(normalized);
+	if (normalized.size() + kCreateDirectoryLegacyHeadroom < MAX_PATH && !bRequiresExactNamePrefix)
+		return path;
 	if (!IsDriveAbsolutePath(normalized) && !IsUncPath(normalized))
 		return path;
 	if (IsUncPath(normalized))
 		return std::wstring(L"\\\\?\\UNC\\") + normalized.substr(2);
 	return std::wstring(L"\\\\?\\") + normalized;
+}
+
+/**
+ * @brief Returns the preferred real-FS root used for long-path regression scenarios.
+ */
+inline std::wstring PreferredFixtureRoot()
+{
+	return std::wstring(L"C:\\tmp\\00_long_paths\\emule-longpath-tests");
+}
+
+/**
+ * @brief Queries the DOS 8.3 short-name alias for an existing path when the volume exposes one.
+ */
+inline bool TryGetShortPathAlias(const std::wstring &path, std::wstring &aliasOut)
+{
+	aliasOut.clear();
+	if (path.empty())
+		return false;
+
+	const std::wstring preparedPath = PreparePathForLongPath(path);
+	DWORD cchRequired = ::GetShortPathNameW(preparedPath.c_str(), NULL, 0);
+	if (cchRequired == 0)
+		return false;
+
+	std::vector<wchar_t> buffer(static_cast<size_t>(cchRequired), L'\0');
+	const DWORD cchWritten = ::GetShortPathNameW(preparedPath.c_str(), buffer.data(), cchRequired);
+	if (cchWritten == 0 || cchWritten >= cchRequired)
+		return false;
+
+	aliasOut.assign(buffer.data(), cchWritten);
+	return !aliasOut.empty() && _wcsicmp(aliasOut.c_str(), path.c_str()) != 0;
 }
 
 /**
@@ -118,6 +283,83 @@ inline std::uint64_t ComputeFnv1a64(const std::vector<BYTE> &payload)
 }
 
 /**
+ * @brief Creates a directory junction that resolves to the target directory.
+ */
+inline bool CreateDirectoryJunction(const std::wstring &junctionPath, const std::wstring &targetPath)
+{
+	struct MountPointReparseBuffer
+	{
+		DWORD ReparseTag;
+		WORD ReparseDataLength;
+		WORD Reserved;
+		WORD SubstituteNameOffset;
+		WORD SubstituteNameLength;
+		WORD PrintNameOffset;
+		WORD PrintNameLength;
+		WCHAR PathBuffer[1];
+	};
+
+	if (::CreateDirectoryW(PrepareDirectoryCreatePathForLongPath(junctionPath).c_str(), NULL) == FALSE
+		&& ::GetLastError() != ERROR_ALREADY_EXISTS)
+	{
+		return false;
+	}
+
+	HANDLE hJunction = ::CreateFileW(
+		PreparePathForLongPath(junctionPath).c_str(),
+		GENERIC_WRITE,
+		0,
+		NULL,
+		OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+		NULL);
+	if (hJunction == INVALID_HANDLE_VALUE) {
+		(void)::RemoveDirectoryW(PreparePathForLongPath(junctionPath).c_str());
+		return false;
+	}
+
+	const std::wstring substituteName = std::wstring(L"\\??\\") + StripLongPathPrefix(targetPath);
+	const std::wstring printName = StripLongPathPrefix(targetPath);
+	const USHORT cbSubstituteName = static_cast<USHORT>(substituteName.size() * sizeof(wchar_t));
+	const USHORT cbPrintName = static_cast<USHORT>(printName.size() * sizeof(wchar_t));
+	const size_t cbPathBuffer = static_cast<size_t>(cbSubstituteName) + sizeof(wchar_t) + static_cast<size_t>(cbPrintName) + sizeof(wchar_t);
+	const size_t cbReparseBuffer = FIELD_OFFSET(MountPointReparseBuffer, PathBuffer) + cbPathBuffer;
+
+	std::vector<BYTE> buffer(cbReparseBuffer, 0);
+	MountPointReparseBuffer *pReparseData = reinterpret_cast<MountPointReparseBuffer *>(buffer.data());
+	pReparseData->ReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
+	pReparseData->ReparseDataLength = static_cast<USHORT>(cbPathBuffer + 8u);
+	pReparseData->Reserved = 0;
+	pReparseData->SubstituteNameOffset = 0;
+	pReparseData->SubstituteNameLength = cbSubstituteName;
+	pReparseData->PrintNameOffset = static_cast<USHORT>(cbSubstituteName + sizeof(wchar_t));
+	pReparseData->PrintNameLength = cbPrintName;
+
+	BYTE *pPathBuffer = reinterpret_cast<BYTE *>(pReparseData->PathBuffer);
+	memcpy(pPathBuffer, substituteName.data(), cbSubstituteName);
+	memcpy(pPathBuffer + cbSubstituteName + sizeof(wchar_t), printName.data(), cbPrintName);
+
+	DWORD dwBytesReturned = 0;
+	const BOOL bOk = ::DeviceIoControl(
+		hJunction,
+		FSCTL_SET_REPARSE_POINT,
+		pReparseData,
+		static_cast<DWORD>(FIELD_OFFSET(MountPointReparseBuffer, PathBuffer) + pReparseData->ReparseDataLength),
+		NULL,
+		0,
+		&dwBytesReturned,
+		NULL);
+	const DWORD dwError = bOk ? ERROR_SUCCESS : ::GetLastError();
+	(void)::CloseHandle(hJunction);
+	if (bOk != FALSE)
+		return true;
+
+	(void)::RemoveDirectoryW(PreparePathForLongPath(junctionPath).c_str());
+	::SetLastError(dwError);
+	return false;
+}
+
+/**
  * @brief Owns a temporary Unicode-heavy fixture tree and deterministic payload file for long-path integration tests.
  */
 class ScopedLongPathFixture
@@ -128,17 +370,15 @@ public:
 	 */
 	bool Initialize(const bool bMakeLongPath, const size_t nPayloadBytes, const std::uint32_t nSeed)
 	{
-		WCHAR szTempPath[MAX_PATH] = {};
-		if (::GetTempPathW(_countof(szTempPath), szTempPath) == 0) {
-			m_dwLastError = ::GetLastError();
-			return false;
-		}
-
 		m_directories.clear();
 		m_payload = BuildDeterministicPayload(nPayloadBytes, nSeed);
 		m_dwLastError = ERROR_SUCCESS;
 
-		const std::wstring root = std::wstring(szTempPath) + L"emule-longpath-tests";
+		const std::wstring root = PreferredFixtureRoot();
+		if (!EnsureDirectoryTree(std::wstring(L"C:\\"), root)) {
+			m_dwLastError = ::GetLastError();
+			return false;
+		}
 		if (!CreateDirectoryIfNeeded(root))
 			return false;
 		m_directories.push_back(root);
@@ -377,6 +617,22 @@ public:
 	static bool DeleteFilePath(const std::wstring &path)
 	{
 		return ::DeleteFileW(PreparePathForLongPath(path).c_str()) != FALSE;
+	}
+
+	/**
+	 * @brief Creates a directory through the reference long-path preparation helper.
+	 */
+	static bool CreateDirectoryPath(const std::wstring &path)
+	{
+		return ::CreateDirectoryW(PrepareDirectoryCreatePathForLongPath(path).c_str(), NULL) != FALSE || ::GetLastError() == ERROR_ALREADY_EXISTS;
+	}
+
+	/**
+	 * @brief Removes a directory through the reference long-path preparation helper.
+	 */
+	static bool RemoveDirectoryPath(const std::wstring &path)
+	{
+		return ::RemoveDirectoryW(PreparePathForLongPath(path).c_str()) != FALSE;
 	}
 
 	/**

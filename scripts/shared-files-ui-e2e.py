@@ -19,6 +19,7 @@ import win32process
 from pywinauto import Application, findwindows, mouse
 
 import emule_live_profile_common as live_common
+import test_create_long_paths_tree as generated_fixture
 
 WM_COMMAND = 0x0111
 BM_CLICK = 0x00F5
@@ -219,7 +220,7 @@ def win_path(path: Path, trailing_slash: bool = False) -> str:
 
 
 def prepare_fixture(seed_config_dir: Path, artifacts_dir: Path) -> dict:
-    """Creates an isolated profile base plus deterministic shared roots for the UI harness."""
+    """Creates the small deterministic three-file fixture used by the UI smoke coverage."""
 
     incoming_dir = artifacts_dir / "incoming"
     temp_dir = artifacts_dir / "temp"
@@ -258,6 +259,38 @@ def prepare_fixture(seed_config_dir: Path, artifacts_dir: Path) -> dict:
             "expected_name_order_by_name_descending": ["zeta_large.bin", "middle_small.txt", "alpha_medium.txt"],
             "expected_name_order_by_size_ascending": ["middle_small.txt", "alpha_medium.txt", "zeta_large.bin"],
             "expected_name_order_by_size_descending": ["zeta_large.bin", "alpha_medium.txt", "middle_small.txt"],
+        }
+    )
+    return fixture
+
+
+def prepare_generated_robustness_fixture(seed_config_dir: Path, artifacts_dir: Path, shared_root: Path) -> dict:
+    """Creates an isolated profile base that shares the generated robustness subtree recursively."""
+
+    manifest = generated_fixture.ensure_fixture(shared_root)
+    subtree = manifest["subtrees"]["shared_files_robustness"]
+    subtree_root = Path(str(subtree["root"])).resolve()
+    shared_dirs = live_common.enumerate_recursive_directories(subtree_root)
+    fixture = live_common.prepare_profile_base(
+        seed_config_dir=seed_config_dir,
+        artifacts_dir=artifacts_dir,
+        shared_dirs=shared_dirs,
+    )
+    fixture.update(
+        {
+            "manifest_path": str(Path(str(manifest["manifest_path"])).resolve()),
+            "shared_root": live_common.win_path(shared_root.resolve(), trailing_slash=True),
+            "subtree_root": live_common.win_path(subtree_root, trailing_slash=True),
+            "expected_row_count": int(subtree["expected_visible_file_count"]),
+            "expected_file_names": [str(name) for name in subtree["expected_visible_file_names"]],
+            "expected_excluded_file_names": [str(name) for name in subtree["expected_excluded_file_names"]],
+            "expected_size_ascending_prefix": [
+                str(entry["name"]) for entry in subtree["expected_visible_smallest_files_by_size"][:6]
+            ],
+            "expected_size_descending_prefix": [
+                str(entry["name"]) for entry in subtree["expected_visible_largest_files_by_size"][:6]
+            ],
+            "shared_directory_count": len(shared_dirs),
         }
     )
     return fixture
@@ -487,6 +520,16 @@ def wait_for_list_count(list_hwnd: int, minimum_count: int) -> int:
     return wait_for(resolve, timeout=90.0, interval=0.5, description="Shared Files list rows")
 
 
+def wait_for_exact_list_count(list_hwnd: int, expected_count: int) -> int:
+    """Waits until the Shared Files list exposes exactly the requested item count."""
+
+    def resolve():
+        count = win32gui.SendMessage(list_hwnd, LVM_GETITEMCOUNT, 0, 0)
+        return count if count == expected_count else 0
+
+    return wait_for(resolve, timeout=90.0, interval=0.5, description=f"Shared Files row count {expected_count}")
+
+
 def wait_for_static_text(static_hwnd: int, expected_text: str) -> None:
     """Waits until a static control shows the expected file name."""
 
@@ -542,11 +585,59 @@ def wait_for_list_names_one_of(
     return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
 
 
+def wait_for_list_prefix(process_handle: int, list_hwnd: int, expected_prefix: list[str], description: str) -> list[str]:
+    """Waits until the first visible Shared Files rows match the expected ordered prefix."""
+
+    def resolve():
+        count = win32gui.SendMessage(list_hwnd, LVM_GETITEMCOUNT, 0, 0)
+        if count < len(expected_prefix):
+            return None
+        names = get_list_names(process_handle, list_hwnd, len(expected_prefix))
+        return names if names == expected_prefix else None
+
+    return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
+
+
+def wait_for_list_prefix_one_of(
+    process_handle: int,
+    list_hwnd: int,
+    expected_prefixes: list[list[str]],
+    description: str,
+) -> list[str]:
+    """Waits until the first visible Shared Files rows match one of the expected ordered prefixes."""
+
+    expected_lookup = {tuple(prefix): prefix for prefix in expected_prefixes}
+
+    def resolve():
+        required_count = max(len(prefix) for prefix in expected_prefixes)
+        count = win32gui.SendMessage(list_hwnd, LVM_GETITEMCOUNT, 0, 0)
+        if count < required_count:
+            return None
+        names = get_list_names(process_handle, list_hwnd, required_count)
+        return names if tuple(names) in expected_lookup else None
+
+    return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
+
+
 def click_reload_button(main_hwnd: int) -> None:
     """Invokes the real Reload button on the Shared Files page."""
 
     reload_hwnd = get_control_handle(main_hwnd, IDC_RELOADSHAREDFILES, "Button")
     win32gui.SendMessage(reload_hwnd, BM_CLICK, 0, 0)
+
+
+def open_shared_files_page(main_hwnd: int) -> tuple[int, int]:
+    """Opens the Shared Files page and returns the list and details control handles."""
+
+    win32gui.SendMessage(main_hwnd, WM_COMMAND, MP_HM_FILES, 0)
+    list_hwnd = wait_for(
+        lambda: get_control_handle(main_hwnd, IDC_SFLIST, "SysListView32"),
+        30.0,
+        0.5,
+        "Shared Files list control",
+    )
+    static_hwnd = get_control_handle(main_hwnd, IDC_SF_FNAME, "Static")
+    return list_hwnd, static_hwnd
 
 
 def close_app_cleanly(app: Application) -> None:
@@ -576,6 +667,8 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
 
     fixture = prepare_fixture(seed_config_dir, artifacts_dir)
     summary = {
+        "name": "fixture-three-files",
+        "status": "failed",
         "app_exe": str(app_exe),
         "profile_base": str(fixture["profile_base"]),
         "command_line": subprocess.list2cmdline(
@@ -747,9 +840,12 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
 
         summary["names_by_name_ascending"] = names_by_name_ascending
         summary["names_by_name_descending"] = names_by_name_descending
+        summary["status"] = "passed"
+        summary["error"] = None
 
         write_json(artifacts_dir / "result.json", summary)
-    except Exception:
+    except Exception as exc:
+        summary["error"] = str(exc)
         if app is not None:
             try:
                 main_window = app.top_window()
@@ -761,6 +857,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
                     pass
             except Exception:
                 pass
+        write_json(artifacts_dir / "result.json", summary)
         raise
     finally:
         if process_handle:
@@ -775,23 +872,246 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
                     pass
 
 
+def run_generated_robustness_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Path, shared_root: Path) -> None:
+    """Executes a larger Shared Files regression against the generated robustness subtree."""
+
+    fixture = prepare_generated_robustness_fixture(seed_config_dir, artifacts_dir, shared_root)
+    expected_names_sorted = sorted(fixture["expected_file_names"], key=str.lower)
+    summary = {
+        "name": "generated-robustness-recursive",
+        "status": "failed",
+        "app_exe": str(app_exe),
+        "profile_base": str(fixture["profile_base"]),
+        "shared_root": fixture["shared_root"],
+        "subtree_root": fixture["subtree_root"],
+        "generated_fixture_manifest_path": fixture["manifest_path"],
+        "shared_directory_count": fixture["shared_directory_count"],
+        "expected_row_count": fixture["expected_row_count"],
+        "expected_excluded_file_names": fixture["expected_excluded_file_names"],
+        "expected_size_ascending_prefix": fixture["expected_size_ascending_prefix"],
+        "expected_size_descending_prefix": fixture["expected_size_descending_prefix"],
+        "command_line": subprocess.list2cmdline(
+            [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
+        ),
+    }
+
+    app = None
+    process_handle = 0
+    try:
+        app = live_common.launch_app(app_exe, fixture["profile_base"])
+        main_window = live_common.wait_for_main_window(app)
+        main_hwnd = main_window.handle
+        main_window.set_focus()
+        process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
+        summary["process_id"] = process_id
+        summary["main_window_show_cmd"] = live_common.get_window_show_cmd(main_hwnd)
+        summary["main_window_is_maximized"] = summary["main_window_show_cmd"] == win32con.SW_SHOWMAXIMIZED
+        if not summary["main_window_is_maximized"]:
+            raise RuntimeError(f"Expected the seeded profile to start maximized, got showCmd={summary['main_window_show_cmd']}.")
+
+        startup_profile_text = live_common.wait_for_startup_profile_complete(fixture["startup_profile_path"])
+        startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
+        summary["startup_profile_path"] = str(fixture["startup_profile_path"])
+        summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
+            startup_profile_phases,
+            [
+                "Construct CSharedFileList (share cache/scan)",
+                "CSharedFilesWnd::OnInitDialog total",
+                "StartupTimer complete",
+            ],
+        )
+        process_handle = open_process(process_id)
+
+        dump_window_tree(main_hwnd, artifacts_dir / "window-tree-initial.json")
+
+        list_hwnd, static_hwnd = open_shared_files_page(main_hwnd)
+        count = wait_for_exact_list_count(list_hwnd, fixture["expected_row_count"])
+        summary["initial_row_count"] = count
+
+        names_before_sort = get_list_names(process_handle, list_hwnd, count)
+        summary["names_before_sort_preview"] = names_before_sort[:12]
+        summary["names_before_sort_tail"] = names_before_sort[-12:]
+        if sorted(names_before_sort, key=str.lower) != expected_names_sorted:
+            raise RuntimeError("Shared Files list did not expose the expected generated robustness file set.")
+
+        click_list_column(process_handle, list_hwnd, 1, "Size")
+        first_size_sort_prefix = wait_for_list_prefix_one_of(
+            process_handle,
+            list_hwnd,
+            [
+                fixture["expected_size_ascending_prefix"],
+                fixture["expected_size_descending_prefix"],
+            ],
+            "Generated robustness first size sort prefix",
+        )
+        summary["first_size_sort_prefix"] = first_size_sort_prefix
+
+        if first_size_sort_prefix == fixture["expected_size_ascending_prefix"]:
+            size_ascending_prefix = first_size_sort_prefix
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_size_ascending_prefix"][0])
+            summary["details_after_ascending_sort_selection"] = fixture["expected_size_ascending_prefix"][0]
+
+            click_list_column(process_handle, list_hwnd, 1, "Size")
+            size_descending_prefix = wait_for_list_prefix(
+                process_handle,
+                list_hwnd,
+                fixture["expected_size_descending_prefix"],
+                "Generated robustness descending size prefix",
+            )
+        else:
+            size_descending_prefix = first_size_sort_prefix
+            click_list_column(process_handle, list_hwnd, 1, "Size")
+            size_ascending_prefix = wait_for_list_prefix(
+                process_handle,
+                list_hwnd,
+                fixture["expected_size_ascending_prefix"],
+                "Generated robustness ascending size prefix",
+            )
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_size_ascending_prefix"][0])
+            summary["details_after_ascending_sort_selection"] = fixture["expected_size_ascending_prefix"][0]
+
+            click_list_column(process_handle, list_hwnd, 1, "Size")
+            size_descending_prefix = wait_for_list_prefix(
+                process_handle,
+                list_hwnd,
+                fixture["expected_size_descending_prefix"],
+                "Generated robustness descending size prefix",
+            )
+
+        summary["size_ascending_prefix"] = size_ascending_prefix
+        summary["size_descending_prefix"] = size_descending_prefix
+
+        set_list_row_selected(process_handle, list_hwnd, 0)
+        wait_for_static_text(static_hwnd, fixture["expected_size_descending_prefix"][0])
+        summary["details_after_descending_sort_selection"] = fixture["expected_size_descending_prefix"][0]
+
+        click_reload_button(main_hwnd)
+        count_after_reload = wait_for_exact_list_count(list_hwnd, fixture["expected_row_count"])
+        summary["row_count_after_reload"] = count_after_reload
+        names_after_reload_prefix = get_list_names(process_handle, list_hwnd, len(fixture["expected_size_descending_prefix"]))
+        summary["names_after_reload_prefix"] = names_after_reload_prefix
+        if names_after_reload_prefix != fixture["expected_size_descending_prefix"]:
+            raise RuntimeError(
+                "Reload did not preserve the generated robustness descending size prefix: "
+                f"{names_after_reload_prefix!r}"
+            )
+
+        names_after_reload_all = get_list_names(process_handle, list_hwnd, fixture["expected_row_count"])
+        summary["names_after_reload_preview"] = names_after_reload_all[:12]
+        summary["names_after_reload_tail"] = names_after_reload_all[-12:]
+        if sorted(names_after_reload_all, key=str.lower) != expected_names_sorted:
+            raise RuntimeError("Reload changed the generated robustness Shared Files set unexpectedly.")
+
+        summary["status"] = "passed"
+        summary["error"] = None
+        write_json(artifacts_dir / "result.json", summary)
+    except Exception as exc:
+        summary["error"] = str(exc)
+        if app is not None:
+            try:
+                main_window = app.top_window()
+                dump_window_tree(main_window.handle, artifacts_dir / "window-tree-failure.json")
+                try:
+                    image = main_window.capture_as_image()
+                    image.save(artifacts_dir / "failure.png")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        write_json(artifacts_dir / "result.json", summary)
+        raise
+    finally:
+        if process_handle:
+            close_process(process_handle)
+        if app is not None:
+            try:
+                live_common.close_app_cleanly(app)
+            except Exception:
+                try:
+                    app.kill()
+                except Exception:
+                    pass
+
+
+def run_shared_files_ui_suite(
+    app_exe: Path,
+    seed_config_dir: Path,
+    artifacts_dir: Path,
+    shared_root: Path,
+    scenario_names: list[str],
+) -> None:
+    """Runs the requested Shared Files UI scenarios and writes one combined result."""
+
+    combined = {
+        "status": "passed",
+        "app_exe": str(app_exe),
+        "shared_root": live_common.win_path(shared_root.resolve(), trailing_slash=True),
+        "scenario_names": scenario_names,
+        "scenario_count": len(scenario_names),
+        "generated_fixture_manifest_path": None,
+        "scenarios": [],
+    }
+    failures = []
+
+    for scenario_name in scenario_names:
+        scenario_dir = artifacts_dir / scenario_name
+        scenario_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if scenario_name == "fixture-three-files":
+                run_shared_files_e2e(app_exe, seed_config_dir, scenario_dir)
+            elif scenario_name == "generated-robustness-recursive":
+                run_generated_robustness_e2e(app_exe, seed_config_dir, scenario_dir, shared_root)
+            else:
+                raise RuntimeError(f"Unknown Shared Files UI scenario: {scenario_name}")
+        except Exception:
+            failures.append(scenario_name)
+
+        result_path = scenario_dir / "result.json"
+        if not result_path.exists():
+            raise RuntimeError(f"Shared Files UI scenario '{scenario_name}' did not produce result.json.")
+        scenario_result = json.loads(result_path.read_text(encoding="utf-8"))
+        combined["scenarios"].append(scenario_result)
+        generated_manifest_path = scenario_result.get("generated_fixture_manifest_path")
+        if generated_manifest_path:
+            combined["generated_fixture_manifest_path"] = generated_manifest_path
+
+    if failures:
+        combined["status"] = "failed"
+
+    write_json(artifacts_dir / "result.json", combined)
+    if failures:
+        raise RuntimeError("Shared Files UI scenarios failed: " + ", ".join(failures))
+
+
 def main(argv: list[str]) -> int:
-    """Parses arguments, executes the UI regression, and writes failure artifacts on disk."""
+    """Parses arguments, executes the requested UI scenarios, and writes failure artifacts on disk."""
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--app-exe", required=True)
     parser.add_argument("--seed-config-dir", required=True)
     parser.add_argument("--artifacts-dir", required=True)
+    parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
+    parser.add_argument(
+        "--scenario",
+        dest="scenarios",
+        action="append",
+        choices=["fixture-three-files", "generated-robustness-recursive"],
+    )
     args = parser.parse_args(argv)
 
     artifacts_dir = Path(args.artifacts_dir).resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    scenario_names = args.scenarios or ["fixture-three-files", "generated-robustness-recursive"]
 
     try:
-        run_shared_files_e2e(
+        run_shared_files_ui_suite(
             app_exe=Path(args.app_exe).resolve(),
             seed_config_dir=Path(args.seed_config_dir).resolve(),
             artifacts_dir=artifacts_dir,
+            shared_root=Path(args.shared_root).resolve(),
+            scenario_names=scenario_names,
         )
         return 0
     except Exception as exc:

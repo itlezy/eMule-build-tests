@@ -6,6 +6,8 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$ArtifactsRoot,
+    [string]$SharedRoot = 'C:\tmp\00_long_paths',
+    [string[]]$Scenario = @(),
     [switch]$KeepArtifacts
 )
 
@@ -276,12 +278,17 @@ $runStatus = 'failed'
 $errorMessage = ''
 
 try {
-    Invoke-PythonChecked -PythonInvocation $pythonInvocation -Environment $pythonEnvironment -Arguments @(
+    $pythonArguments = @(
         $pythonScriptPath,
         '--app-exe', $appExePath,
         '--seed-config-dir', $seedConfigDir,
-        '--artifacts-dir', $sourceArtifactsRoot
+        '--artifacts-dir', $sourceArtifactsRoot,
+        '--shared-root', $SharedRoot
     )
+    foreach ($scenarioName in $Scenario) {
+        $pythonArguments += @('--scenario', $scenarioName)
+    }
+    Invoke-PythonChecked -PythonInvocation $pythonInvocation -Environment $pythonEnvironment -Arguments $pythonArguments
     $runStatus = 'passed'
 }
 catch {

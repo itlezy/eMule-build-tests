@@ -13,6 +13,7 @@ import win32gui
 import win32process
 
 import emule_live_profile_common as live_common
+import test_create_long_paths_tree as generated_fixture
 
 HIGHLIGHTED_PHASES = [
     "Construct CSharedFileList (share cache/scan)",
@@ -55,6 +56,7 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
     resolved_root = shared_root.resolve()
     emule_fixture_root = resolved_root / "emule-longpath-tests"
     long_path_output_root = resolved_root / "long_path_output"
+    shared_files_robustness_root = resolved_root / "shared_files_robustness"
     if name == "baseline-no-shares":
         return {
             "name": name,
@@ -129,6 +131,25 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
             "name": name,
             "description": "Shares only the emule-longpath-tests root without expanding child directories into shareddir.dat.",
             "shared_dirs": [live_common.win_path(emule_fixture_root, trailing_slash=True)],
+            "tree_summary": tree_summary,
+        }
+    if name == "shared-files-robustness-root-only":
+        tree_summary = live_common.summarize_existing_tree(shared_files_robustness_root)
+        tree_summary["shared_directory_count"] = 1
+        return {
+            "name": name,
+            "description": "Shares only the generated Shared Files robustness root without expanding child directories into shareddir.dat.",
+            "shared_dirs": [live_common.win_path(shared_files_robustness_root, trailing_slash=True)],
+            "tree_summary": tree_summary,
+        }
+    if name == "shared-files-robustness-recursive":
+        shared_dirs = live_common.enumerate_recursive_directories(shared_files_robustness_root)
+        tree_summary = live_common.summarize_existing_tree(shared_files_robustness_root)
+        tree_summary["shared_directory_count"] = len(shared_dirs)
+        return {
+            "name": name,
+            "description": "Recursively shares the generated Shared Files robustness subtree.",
+            "shared_dirs": shared_dirs,
             "tree_summary": tree_summary,
         }
     raise RuntimeError(f"Unknown startup-profile scenario: {name}")
@@ -339,6 +360,8 @@ def main(argv: list[str]) -> int:
             "long-path-output-recursive",
             "long-path-emule-fixture-root-only",
             "long-path-emule-fixture-recursive",
+            "shared-files-robustness-root-only",
+            "shared-files-robustness-recursive",
         ],
     )
     args = parser.parse_args(argv)
@@ -355,10 +378,23 @@ def main(argv: list[str]) -> int:
         "long-path-output-recursive",
         "long-path-emule-fixture-root-only",
         "long-path-emule-fixture-recursive",
+        "shared-files-robustness-root-only",
+        "shared-files-robustness-recursive",
     ]
     shared_root = Path(args.shared_root).resolve()
-    if any(name.startswith("long-path") for name in scenario_names) and not shared_root.exists():
-        raise RuntimeError(f"Shared root was not found at '{shared_root}'.")
+    generated_fixture_manifest = None
+    if any(
+        name in {
+            "long-paths-root-only",
+            "long-paths-recursive",
+            "long-path-output-root-only",
+            "long-path-output-recursive",
+            "shared-files-robustness-root-only",
+            "shared-files-robustness-recursive",
+        }
+        for name in scenario_names
+    ):
+        generated_fixture_manifest = generated_fixture.ensure_fixture(shared_root)
 
     combined = {
         "generated_at": None,
@@ -367,6 +403,11 @@ def main(argv: list[str]) -> int:
         "seed_config_dir": str(Path(args.seed_config_dir).resolve()),
         "artifact_dir": str(artifacts_dir),
         "shared_root": live_common.win_path(shared_root, trailing_slash=True),
+        "generated_fixture_manifest_path": (
+            str(Path(str(generated_fixture_manifest["manifest_path"])).resolve())
+            if generated_fixture_manifest is not None
+            else None
+        ),
         "scenarios": [],
     }
 
@@ -391,7 +432,9 @@ def main(argv: list[str]) -> int:
         ("long-paths-recursive", "long-paths-root-only"),
         ("long-path-output-recursive", "long-path-output-root-only"),
         ("long-path-emule-fixture-recursive", "long-path-emule-fixture-root-only"),
+        ("shared-files-robustness-recursive", "shared-files-robustness-root-only"),
         ("long-path-output-recursive", "long-path-emule-fixture-recursive"),
+        ("shared-files-robustness-recursive", "long-path-output-recursive"),
         ("long-paths-recursive", "baseline-no-shares"),
     ):
         left = results_by_name.get(left_name)

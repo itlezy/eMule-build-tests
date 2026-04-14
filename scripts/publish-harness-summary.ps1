@@ -92,6 +92,8 @@ $combinedSummary = [ordered]@{
             latest_report_dir = $liveUiSummary.latest_report_dir
             app_exe = $liveUiSummary.app_exe
             configuration = $liveUiSummary.configuration
+            shared_root = if ($null -ne $liveUiSummary.result) { $liveUiSummary.result.shared_root } else { $null }
+            scenario_count = if ($null -ne $liveUiSummary.result -and $null -ne $liveUiSummary.result.scenarios) { @($liveUiSummary.result.scenarios).Count } else { 0 }
             error = $liveUiSummary.error
         }
     } else {

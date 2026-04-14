@@ -99,18 +99,21 @@ Shared Files live UI regression:
 - `scripts\run-shared-files-ui-e2e.ps1` is the operator-facing entrypoint for the real Win32 Shared Files regression
 - it launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` so the run stays isolated from local user sessions
 - the checked-in seed profile must stay initialized; the Python harness validates the seed keys, writes deterministic maximized window placement, and patches only per-run incoming, temp, and shared-directory paths
-- the regression now also asserts that the main window starts maximized and exercises exact default-name ordering, size ascending and descending sorts, name ascending and descending sorts after reload, selection-detail updates, and reload preservation of the active descending size sort
+- the default UI run now covers two scenarios: the original three-file deterministic smoke case plus a generated recursive robustness tree under `C:\tmp\00_long_paths\shared_files_robustness`
+- the regression asserts that the main window starts maximized and exercises exact default-name ordering, size ascending and descending sorts, name ascending and descending sorts after reload, selection-detail updates, reload preservation of the active descending size sort, and large-tree row-count/set/prefix checks driven by the generated manifest
+- `-Scenario` can be repeated on the PowerShell wrapper to run only `fixture-three-files` or only `generated-robustness-recursive`
 - each run publishes artifacts and `ui-summary.json` under `reports\shared-files-ui-e2e\...` and refreshes `reports\shared-files-ui-e2e-latest`
 - the shared `reports\harness-summary.json` now includes a `live_ui` section when that regression is run
 
 Startup-profile scenarios:
 
 - `scripts\run-startup-profile-scenarios.ps1` builds deterministic `startup-profile.txt` artifacts for multiple live-profile scenarios without changing app behavior
-- the default run covers `baseline-no-shares`, `fixture-three-files`, `long-paths-root-only`, `long-paths-recursive`, `long-path-output-root-only`, `long-path-output-recursive`, `long-path-emule-fixture-root-only`, and `long-path-emule-fixture-recursive`
+- the default run covers `baseline-no-shares`, `fixture-three-files`, `long-paths-root-only`, `long-paths-recursive`, `long-path-output-root-only`, `long-path-output-recursive`, `long-path-emule-fixture-root-only`, `long-path-emule-fixture-recursive`, `shared-files-robustness-root-only`, and `shared-files-robustness-recursive`
 - `-Scenario` can be repeated on the PowerShell wrapper to run only the scenarios you want
-- the long-path scenarios target `C:\tmp\00_long_paths` by default and expand `shareddir.dat` deterministically in the recursive case
+- `scripts\test_create_long_paths_tree.py` now lives in this repo and materializes the generated long-path fixture trees plus `generated-fixture-manifest.json` under `C:\tmp\00_long_paths`
+- the long-path scenarios target `C:\tmp\00_long_paths` by default, regenerate the repo-owned fixture tree as needed, and expand `shareddir.dat` deterministically in the recursive cases
 - each scenario summary now also records shareddir payload metrics plus tree-shape metrics such as depth, longest paths, and counts beyond the Windows path thresholds
-- each scenario summary includes highlighted timings, normalized derived timings, and the top slowest startup phases, and the combined summary adds direct delta comparisons between the main long-path root-only and recursive variants
+- each scenario summary includes highlighted timings, normalized derived timings, and the top slowest startup phases, and the combined summary adds direct delta comparisons between the main long-path, generated output, and Shared Files robustness root-only vs recursive variants
 - each run publishes scenario artifacts plus `startup-profiles-summary.json` and `startup-profiles-wrapper-summary.json` under `reports\startup-profile-scenarios\...` and refreshes `reports\startup-profile-scenarios-latest`
 - the shared `reports\harness-summary.json` now includes a `startup_profiles` section when that runner is used
 

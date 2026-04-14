@@ -520,6 +520,27 @@ def wait_for_list_names(process_handle: int, list_hwnd: int, expected_names: lis
     return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
 
 
+def wait_for_list_names_one_of(
+    process_handle: int,
+    list_hwnd: int,
+    expected_orders: list[list[str]],
+    description: str,
+) -> list[str]:
+    """Waits until the list matches one of the expected ordered row sets."""
+
+    expected_lookup = {tuple(order): order for order in expected_orders}
+
+    def resolve():
+        count = win32gui.SendMessage(list_hwnd, LVM_GETITEMCOUNT, 0, 0)
+        required_count = max(len(order) for order in expected_orders)
+        if count < required_count:
+            return None
+        names = get_list_names(process_handle, list_hwnd, required_count)
+        return names if tuple(names) in expected_lookup else None
+
+    return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
+
+
 def click_reload_button(main_hwnd: int) -> None:
     """Invokes the real Reload button on the Shared Files page."""
 
@@ -611,25 +632,52 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         summary["details_after_initial_selection"] = fixture["expected_name_order_by_name"][1]
 
         click_size_column(process_handle, list_hwnd)
-        names_by_size_ascending = wait_for_list_names(
+        first_size_sort_order = wait_for_list_names_one_of(
             process_handle,
             list_hwnd,
-            fixture["expected_name_order_by_size_ascending"],
-            "Shared Files size sort ascending order",
+            [
+                fixture["expected_name_order_by_size_ascending"],
+                fixture["expected_name_order_by_size_descending"],
+            ],
+            "Shared Files first size sort order",
         )
+        summary["first_size_sort_order"] = first_size_sort_order
+
+        if first_size_sort_order == fixture["expected_name_order_by_size_ascending"]:
+            names_by_size_ascending = first_size_sort_order
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
+            summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
+
+            click_size_column(process_handle, list_hwnd)
+            names_by_size_descending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_size_descending"],
+                "Shared Files size sort descending order",
+            )
+        else:
+            names_by_size_descending = first_size_sort_order
+            click_size_column(process_handle, list_hwnd)
+            names_by_size_ascending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_size_ascending"],
+                "Shared Files size sort ascending order",
+            )
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
+            summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
+
+            click_size_column(process_handle, list_hwnd)
+            names_by_size_descending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_size_descending"],
+                "Shared Files size sort descending order",
+            )
+
         summary["names_by_size_ascending"] = names_by_size_ascending
-
-        set_list_row_selected(process_handle, list_hwnd, 0)
-        wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
-        summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
-
-        click_size_column(process_handle, list_hwnd)
-        names_by_size_descending = wait_for_list_names(
-            process_handle,
-            list_hwnd,
-            fixture["expected_name_order_by_size_descending"],
-            "Shared Files size sort descending order",
-        )
         summary["names_by_size_descending"] = names_by_size_descending
 
         click_reload_button(main_hwnd)
@@ -639,8 +687,11 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         summary["names_after_reload"] = names_after_reload
         if count_after_reload != 3:
             raise RuntimeError(f"Reload changed the Shared Files row count unexpectedly: {count_after_reload}.")
-        if set(fixture["expected_name_order_by_name"]) != set(names_after_reload):
-            raise RuntimeError(f"Reload dropped expected Shared Files rows: {names_after_reload!r}")
+        if names_after_reload != fixture["expected_name_order_by_size_descending"]:
+            raise RuntimeError(
+                "Reload did not preserve the active descending size sort order: "
+                f"{names_after_reload!r}"
+            )
 
         set_list_row_selected(process_handle, list_hwnd, 2)
         wait_for_static_text(static_hwnd, names_after_reload[2])

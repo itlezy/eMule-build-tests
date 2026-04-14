@@ -53,6 +53,8 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
     """Resolves one named startup-profile scenario into concrete shared roots and metadata."""
 
     resolved_root = shared_root.resolve()
+    emule_fixture_root = resolved_root / "emule-longpath-tests"
+    long_path_output_root = resolved_root / "long_path_output"
     if name == "baseline-no-shares":
         return {
             "name": name,
@@ -91,7 +93,60 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
             "shared_dirs": shared_dirs,
             "tree_summary": tree_summary,
         }
+    if name == "long-path-output-recursive":
+        shared_dirs = live_common.enumerate_recursive_directories(long_path_output_root)
+        tree_summary = live_common.summarize_existing_tree(long_path_output_root)
+        tree_summary["shared_directory_count"] = len(shared_dirs)
+        return {
+            "name": name,
+            "description": "Recursively shares only the generated long_path_output subtree.",
+            "shared_dirs": shared_dirs,
+            "tree_summary": tree_summary,
+        }
+    if name == "long-path-emule-fixture-recursive":
+        shared_dirs = live_common.enumerate_recursive_directories(emule_fixture_root)
+        tree_summary = live_common.summarize_existing_tree(emule_fixture_root)
+        tree_summary["shared_directory_count"] = len(shared_dirs)
+        return {
+            "name": name,
+            "description": "Recursively shares only the emule-longpath-tests subtree.",
+            "shared_dirs": shared_dirs,
+            "tree_summary": tree_summary,
+        }
     raise RuntimeError(f"Unknown startup-profile scenario: {name}")
+
+
+def get_highlight_duration(summary: dict[str, object], name: str) -> int | None:
+    """Returns one highlighted startup phase duration from a scenario result when present."""
+
+    highlights = summary.get("startup_profile_highlights")
+    if not isinstance(highlights, dict):
+        return None
+    phase = highlights.get(name)
+    if not isinstance(phase, dict):
+        return None
+    value = phase.get("duration_ms")
+    return int(value) if value is not None else None
+
+
+def build_comparison(left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
+    """Builds a compact duration comparison between two scenario summaries."""
+
+    result = {
+        "left": left["name"],
+        "right": right["name"],
+    }
+    for phase_name, token in (
+        ("Construct CSharedFileList (share cache/scan)", "shared_file_scan_duration_delta_ms"),
+        ("BuildSharedDirectoryTree done", "shared_tree_build_duration_delta_ms"),
+        ("StartupTimer complete", "startup_timer_duration_delta_ms"),
+    ):
+        left_value = get_highlight_duration(left, phase_name)
+        right_value = get_highlight_duration(right, phase_name)
+        if left_value is None or right_value is None:
+            continue
+        result[token] = left_value - right_value
+    return result
 
 
 def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, shared_root: Path, name: str) -> dict[str, object]:
@@ -141,6 +196,7 @@ def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, share
             startup_profile_phases,
             HIGHLIGHTED_PHASES,
         )
+        summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
         summary["status"] = "passed"
         summary["error"] = None
         live_common.write_json(scenario_dir / "result.json", summary)
@@ -188,6 +244,8 @@ def main(argv: list[str]) -> int:
             "fixture-three-files",
             "long-paths-root-only",
             "long-paths-recursive",
+            "long-path-output-recursive",
+            "long-path-emule-fixture-recursive",
         ],
     )
     args = parser.parse_args(argv)
@@ -200,6 +258,8 @@ def main(argv: list[str]) -> int:
         "fixture-three-files",
         "long-paths-root-only",
         "long-paths-recursive",
+        "long-path-output-recursive",
+        "long-path-emule-fixture-recursive",
     ]
     shared_root = Path(args.shared_root).resolve()
     if any(name.startswith("long-paths-") for name in scenario_names) and not shared_root.exists():
@@ -229,6 +289,20 @@ def main(argv: list[str]) -> int:
         combined["scenarios"].append(result)
         if result["status"] != "passed":
             failures.append(name)
+
+    results_by_name = {str(result["name"]): result for result in combined["scenarios"]}
+    comparisons = []
+    for left_name, right_name in (
+        ("long-paths-recursive", "long-paths-root-only"),
+        ("long-path-output-recursive", "long-path-emule-fixture-recursive"),
+        ("long-paths-recursive", "baseline-no-shares"),
+    ):
+        left = results_by_name.get(left_name)
+        right = results_by_name.get(right_name)
+        if left is None or right is None:
+            continue
+        comparisons.append(build_comparison(left, right))
+    combined["comparisons"] = comparisons
 
     combined["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     if failures:

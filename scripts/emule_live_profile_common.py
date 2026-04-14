@@ -371,3 +371,20 @@ def summarize_startup_profile(phases: list[dict[str, object]], interesting_names
             "duration_ms": int(phase["duration_ms"]),
         }
     return highlights
+
+
+def get_top_slowest_phases(phases: list[dict[str, object]], limit: int = 10) -> list[dict[str, object]]:
+    """Returns the slowest startup-profile phases ordered by descending duration and absolute time."""
+
+    ranked = sorted(
+        phases,
+        key=lambda phase: (-int(phase["duration_ms"]), -int(phase["absolute_ms"]), str(phase["name"])),
+    )
+    return [
+        {
+            "name": str(phase["name"]),
+            "absolute_ms": int(phase["absolute_ms"]),
+            "duration_ms": int(phase["duration_ms"]),
+        }
+        for phase in ranked[:limit]
+    ]

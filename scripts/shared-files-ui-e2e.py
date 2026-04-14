@@ -255,6 +255,7 @@ def prepare_fixture(seed_config_dir: Path, artifacts_dir: Path) -> dict:
             "shared_a_dir": shared_a_dir,
             "shared_b_dir": shared_b_dir,
             "expected_name_order_by_name": ["alpha_medium.txt", "middle_small.txt", "zeta_large.bin"],
+            "expected_name_order_by_name_descending": ["zeta_large.bin", "middle_small.txt", "alpha_medium.txt"],
             "expected_name_order_by_size_ascending": ["middle_small.txt", "alpha_medium.txt", "zeta_large.bin"],
             "expected_name_order_by_size_descending": ["zeta_large.bin", "alpha_medium.txt", "middle_small.txt"],
         }
@@ -496,13 +497,13 @@ def wait_for_static_text(static_hwnd: int, expected_text: str) -> None:
     actual = wait_for(resolve, timeout=10.0, interval=0.2, description=f"details text '{expected_text}'")
 
 
-def click_size_column(process_handle: int, list_hwnd: int) -> None:
-    """Clicks the Size header once on the Shared Files list."""
+def click_list_column(process_handle: int, list_hwnd: int, column_index: int, description: str) -> None:
+    """Clicks one Shared Files header column by zero-based index."""
 
     header_hwnd = win32gui.SendMessage(list_hwnd, LVM_GETHEADER, 0, 0)
     if not header_hwnd:
         raise RuntimeError("Shared Files list header was not found.")
-    rect = get_remote_rect(process_handle, header_hwnd, HDM_GETITEMRECT, 1)
+    rect = get_remote_rect(process_handle, header_hwnd, HDM_GETITEMRECT, column_index)
     click_client_rect(header_hwnd, rect)
     time.sleep(0.5)
 
@@ -581,6 +582,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
             [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
         ),
         "expected_name_order_by_name": fixture["expected_name_order_by_name"],
+        "expected_name_order_by_name_descending": fixture["expected_name_order_by_name_descending"],
         "expected_name_order_by_size_ascending": fixture["expected_name_order_by_size_ascending"],
         "expected_name_order_by_size_descending": fixture["expected_name_order_by_size_descending"],
     }
@@ -631,7 +633,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         wait_for_static_text(static_hwnd, fixture["expected_name_order_by_name"][1])
         summary["details_after_initial_selection"] = fixture["expected_name_order_by_name"][1]
 
-        click_size_column(process_handle, list_hwnd)
+        click_list_column(process_handle, list_hwnd, 1, "Size")
         first_size_sort_order = wait_for_list_names_one_of(
             process_handle,
             list_hwnd,
@@ -649,7 +651,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
             wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
             summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
 
-            click_size_column(process_handle, list_hwnd)
+            click_list_column(process_handle, list_hwnd, 1, "Size")
             names_by_size_descending = wait_for_list_names(
                 process_handle,
                 list_hwnd,
@@ -658,7 +660,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
             )
         else:
             names_by_size_descending = first_size_sort_order
-            click_size_column(process_handle, list_hwnd)
+            click_list_column(process_handle, list_hwnd, 1, "Size")
             names_by_size_ascending = wait_for_list_names(
                 process_handle,
                 list_hwnd,
@@ -669,7 +671,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
             wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
             summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
 
-            click_size_column(process_handle, list_hwnd)
+            click_list_column(process_handle, list_hwnd, 1, "Size")
             names_by_size_descending = wait_for_list_names(
                 process_handle,
                 list_hwnd,
@@ -696,6 +698,55 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         set_list_row_selected(process_handle, list_hwnd, 2)
         wait_for_static_text(static_hwnd, names_after_reload[2])
         summary["details_after_reload_selection"] = names_after_reload[2]
+
+        click_list_column(process_handle, list_hwnd, 0, "Name")
+        first_name_sort_order_after_reload = wait_for_list_names_one_of(
+            process_handle,
+            list_hwnd,
+            [
+                fixture["expected_name_order_by_name"],
+                fixture["expected_name_order_by_name_descending"],
+            ],
+            "Shared Files first name sort order after reload",
+        )
+        summary["first_name_sort_order_after_reload"] = first_name_sort_order_after_reload
+
+        if first_name_sort_order_after_reload == fixture["expected_name_order_by_name"]:
+            names_by_name_ascending = first_name_sort_order_after_reload
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_name_order_by_name"][0])
+            summary["details_after_name_ascending_selection"] = fixture["expected_name_order_by_name"][0]
+
+            click_list_column(process_handle, list_hwnd, 0, "Name")
+            names_by_name_descending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_name_descending"],
+                "Shared Files name sort descending order",
+            )
+        else:
+            names_by_name_descending = first_name_sort_order_after_reload
+            click_list_column(process_handle, list_hwnd, 0, "Name")
+            names_by_name_ascending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_name"],
+                "Shared Files name sort ascending order",
+            )
+            set_list_row_selected(process_handle, list_hwnd, 0)
+            wait_for_static_text(static_hwnd, fixture["expected_name_order_by_name"][0])
+            summary["details_after_name_ascending_selection"] = fixture["expected_name_order_by_name"][0]
+
+            click_list_column(process_handle, list_hwnd, 0, "Name")
+            names_by_name_descending = wait_for_list_names(
+                process_handle,
+                list_hwnd,
+                fixture["expected_name_order_by_name_descending"],
+                "Shared Files name sort descending order",
+            )
+
+        summary["names_by_name_ascending"] = names_by_name_ascending
+        summary["names_by_name_descending"] = names_by_name_descending
 
         write_json(artifacts_dir / "result.json", summary)
     except Exception:

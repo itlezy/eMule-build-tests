@@ -103,6 +103,15 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
             "shared_dirs": shared_dirs,
             "tree_summary": tree_summary,
         }
+    if name == "long-path-output-root-only":
+        tree_summary = live_common.summarize_existing_tree(long_path_output_root)
+        tree_summary["shared_directory_count"] = 1
+        return {
+            "name": name,
+            "description": "Shares only the long_path_output root without expanding child directories into shareddir.dat.",
+            "shared_dirs": [live_common.win_path(long_path_output_root, trailing_slash=True)],
+            "tree_summary": tree_summary,
+        }
     if name == "long-path-emule-fixture-recursive":
         shared_dirs = live_common.enumerate_recursive_directories(emule_fixture_root)
         tree_summary = live_common.summarize_existing_tree(emule_fixture_root)
@@ -113,11 +122,20 @@ def build_scenario_definition(name: str, artifacts_dir: Path, shared_root: Path)
             "shared_dirs": shared_dirs,
             "tree_summary": tree_summary,
         }
+    if name == "long-path-emule-fixture-root-only":
+        tree_summary = live_common.summarize_existing_tree(emule_fixture_root)
+        tree_summary["shared_directory_count"] = 1
+        return {
+            "name": name,
+            "description": "Shares only the emule-longpath-tests root without expanding child directories into shareddir.dat.",
+            "shared_dirs": [live_common.win_path(emule_fixture_root, trailing_slash=True)],
+            "tree_summary": tree_summary,
+        }
     raise RuntimeError(f"Unknown startup-profile scenario: {name}")
 
 
-def get_highlight_duration(summary: dict[str, object], name: str) -> int | None:
-    """Returns one highlighted startup phase duration from a scenario result when present."""
+def get_highlight_metric(summary: dict[str, object], name: str, field: str) -> int | None:
+    """Returns one highlighted startup metric from a scenario result when present."""
 
     highlights = summary.get("startup_profile_highlights")
     if not isinstance(highlights, dict):
@@ -125,26 +143,97 @@ def get_highlight_duration(summary: dict[str, object], name: str) -> int | None:
     phase = highlights.get(name)
     if not isinstance(phase, dict):
         return None
-    value = phase.get("duration_ms")
+    value = phase.get(field)
     return int(value) if value is not None else None
 
 
+def get_derived_metric(summary: dict[str, object], key: str) -> float | int | None:
+    """Returns one derived startup-profile metric from a scenario result when present."""
+
+    metrics = summary.get("startup_profile_derived_metrics")
+    if not isinstance(metrics, dict):
+        return None
+    value = metrics.get(key)
+    if isinstance(value, (int, float)):
+        return value
+    return None
+
+
+def build_derived_metrics(summary: dict[str, object]) -> dict[str, object]:
+    """Adds normalized startup-profile metrics that are easier to compare between scenarios."""
+
+    metrics: dict[str, object] = {}
+    tree_summary = summary.get("tree_summary")
+    file_count = 0
+    directory_count = 0
+    if isinstance(tree_summary, dict):
+        file_count = int(tree_summary.get("file_count", 0) or 0)
+        directory_count = int(tree_summary.get("directory_count_including_root", 0) or 0)
+    shared_directory_count = int(summary.get("shared_directory_count", 0) or 0)
+
+    startup_complete_absolute_ms = get_highlight_metric(summary, "StartupTimer complete", "absolute_ms")
+    if startup_complete_absolute_ms is not None:
+        metrics["startup_complete_absolute_ms"] = startup_complete_absolute_ms
+
+    shared_file_scan_duration_ms = get_highlight_metric(summary, "Construct CSharedFileList (share cache/scan)", "duration_ms")
+    if shared_file_scan_duration_ms is not None:
+        metrics["shared_file_scan_duration_ms"] = shared_file_scan_duration_ms
+        if shared_directory_count > 0:
+            metrics["shared_file_scan_ms_per_shared_directory"] = round(shared_file_scan_duration_ms / shared_directory_count, 2)
+        if directory_count > 0:
+            metrics["shared_file_scan_ms_per_tree_directory"] = round(shared_file_scan_duration_ms / directory_count, 2)
+        if file_count > 0:
+            metrics["shared_file_scan_ms_per_file"] = round(shared_file_scan_duration_ms / file_count, 2)
+
+    shared_tree_build_duration_ms = get_highlight_metric(summary, "BuildSharedDirectoryTree done", "duration_ms")
+    if shared_tree_build_duration_ms is not None:
+        metrics["shared_tree_build_duration_ms"] = shared_tree_build_duration_ms
+        if shared_directory_count > 0:
+            metrics["shared_tree_build_ms_per_shared_directory"] = round(shared_tree_build_duration_ms / shared_directory_count, 2)
+        if directory_count > 0:
+            metrics["shared_tree_build_ms_per_tree_directory"] = round(shared_tree_build_duration_ms / directory_count, 2)
+
+    return metrics
+
+
 def build_comparison(left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
-    """Builds a compact duration comparison between two scenario summaries."""
+    """Builds a compact comparison between two scenario summaries."""
 
     result = {
         "left": left["name"],
         "right": right["name"],
     }
-    for phase_name, token in (
-        ("Construct CSharedFileList (share cache/scan)", "shared_file_scan_duration_delta_ms"),
-        ("BuildSharedDirectoryTree done", "shared_tree_build_duration_delta_ms"),
-        ("StartupTimer complete", "startup_timer_duration_delta_ms"),
+    for metric_name, token in (
+        ("shared_file_scan_duration_ms", "shared_file_scan_duration_delta_ms"),
+        ("shared_tree_build_duration_ms", "shared_tree_build_duration_delta_ms"),
+        ("startup_complete_absolute_ms", "startup_complete_absolute_delta_ms"),
+        ("shared_file_scan_ms_per_shared_directory", "shared_file_scan_per_shared_directory_delta_ms"),
+        ("shared_file_scan_ms_per_file", "shared_file_scan_per_file_delta_ms"),
     ):
-        left_value = get_highlight_duration(left, phase_name)
-        right_value = get_highlight_duration(right, phase_name)
+        left_value = get_derived_metric(left, metric_name)
+        right_value = get_derived_metric(right, metric_name)
         if left_value is None or right_value is None:
             continue
+        delta = left_value - right_value
+        result[token] = round(delta, 2) if isinstance(delta, float) else delta
+
+    for left_key, right_key, token in (
+        ("shared_directory_count", "shared_directory_count", "shared_directory_count_delta"),
+        ("file_count", "file_count", "tree_file_count_delta"),
+        ("directory_count_including_root", "directory_count_including_root", "tree_directory_count_delta"),
+        ("max_directory_path_length", "max_directory_path_length", "max_directory_path_length_delta"),
+        ("max_file_path_length", "max_file_path_length", "max_file_path_length_delta"),
+    ):
+        if left_key == "shared_directory_count":
+            left_value = int(left.get(left_key, 0) or 0)
+            right_value = int(right.get(right_key, 0) or 0)
+        else:
+            left_tree = left.get("tree_summary")
+            right_tree = right.get("tree_summary")
+            if not isinstance(left_tree, dict) or not isinstance(right_tree, dict):
+                continue
+            left_value = int(left_tree.get(left_key, 0) or 0)
+            right_value = int(right_tree.get(right_key, 0) or 0)
         result[token] = left_value - right_value
     return result
 
@@ -170,6 +259,7 @@ def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, share
             [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
         ),
         "shared_directory_count": len(list(scenario["shared_dirs"])),
+        "shared_directory_metrics": live_common.summarize_shared_directories(list(scenario["shared_dirs"])),
         "shared_directories_preview": list(scenario["shared_dirs"])[:3],
         "shared_directories_tail": list(scenario["shared_dirs"])[-3:],
         "tree_summary": scenario["tree_summary"],
@@ -197,6 +287,7 @@ def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, share
             HIGHLIGHTED_PHASES,
         )
         summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
+        summary["startup_profile_derived_metrics"] = build_derived_metrics(summary)
         summary["status"] = "passed"
         summary["error"] = None
         live_common.write_json(scenario_dir / "result.json", summary)
@@ -244,7 +335,9 @@ def main(argv: list[str]) -> int:
             "fixture-three-files",
             "long-paths-root-only",
             "long-paths-recursive",
+            "long-path-output-root-only",
             "long-path-output-recursive",
+            "long-path-emule-fixture-root-only",
             "long-path-emule-fixture-recursive",
         ],
     )
@@ -258,11 +351,13 @@ def main(argv: list[str]) -> int:
         "fixture-three-files",
         "long-paths-root-only",
         "long-paths-recursive",
+        "long-path-output-root-only",
         "long-path-output-recursive",
+        "long-path-emule-fixture-root-only",
         "long-path-emule-fixture-recursive",
     ]
     shared_root = Path(args.shared_root).resolve()
-    if any(name.startswith("long-paths-") for name in scenario_names) and not shared_root.exists():
+    if any(name.startswith("long-path") for name in scenario_names) and not shared_root.exists():
         raise RuntimeError(f"Shared root was not found at '{shared_root}'.")
 
     combined = {
@@ -294,6 +389,8 @@ def main(argv: list[str]) -> int:
     comparisons = []
     for left_name, right_name in (
         ("long-paths-recursive", "long-paths-root-only"),
+        ("long-path-output-recursive", "long-path-output-root-only"),
+        ("long-path-emule-fixture-recursive", "long-path-emule-fixture-root-only"),
         ("long-path-output-recursive", "long-path-emule-fixture-recursive"),
         ("long-paths-recursive", "baseline-no-shares"),
     ):

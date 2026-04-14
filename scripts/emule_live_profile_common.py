@@ -19,6 +19,9 @@ PREFERENCES_DAT_VERSION = 0x14
 WINDOW_PLACEMENT_LENGTH = 44
 WINDOW_SHOW_MAXIMIZED = 3
 DEFAULT_WINDOW_RECT = (10, 10, 700, 500)
+WINDOWS_DIRECTORY_PATH_LIMIT = 248
+WINDOWS_PATH_LIMIT = 260
+PATH_SAMPLE_LIMIT = 5
 
 REQUIRED_SEED_KEYS = (
     "AppVersion",
@@ -182,19 +185,100 @@ def enumerate_recursive_directories(root: Path) -> list[str]:
     return directories
 
 
+def summarize_shared_directories(shared_dirs: list[str]) -> dict[str, object]:
+    """Summarizes the shareddir.dat payload written for one live-profile run."""
+
+    if not shared_dirs:
+        return {
+            "count": 0,
+            "max_path_length": 0,
+            "min_path_length": 0,
+            "average_path_length": 0.0,
+            "entries_over_248_chars": 0,
+            "entries_over_260_chars": 0,
+            "longest_entries": [],
+        }
+
+    lengths = [len(entry) for entry in shared_dirs]
+    ranked = sorted(shared_dirs, key=lambda entry: (-len(entry), entry.lower()))
+    return {
+        "count": len(shared_dirs),
+        "max_path_length": max(lengths),
+        "min_path_length": min(lengths),
+        "average_path_length": round(sum(lengths) / len(lengths), 2),
+        "entries_over_248_chars": sum(1 for length in lengths if length > WINDOWS_DIRECTORY_PATH_LIMIT),
+        "entries_over_260_chars": sum(1 for length in lengths if length > WINDOWS_PATH_LIMIT),
+        "longest_entries": [
+            {
+                "path": entry,
+                "length": len(entry),
+            }
+            for entry in ranked[:PATH_SAMPLE_LIMIT]
+        ],
+    }
+
+
 def summarize_existing_tree(root: Path) -> dict[str, object]:
     """Summarizes an existing filesystem tree for startup-profile reporting."""
 
     resolved_root = root.resolve()
-    directory_count = 0
-    file_count = 0
-    for _, dir_names, file_names in os.walk(resolved_root):
-        directory_count += len(dir_names)
-        file_count += len(file_names)
+    directories = [resolved_root]
+    files: list[Path] = []
+    for current_root, dir_names, file_names in os.walk(resolved_root):
+        dir_names.sort(key=str.lower)
+        current_path = Path(current_root)
+        directories.extend(current_path / dir_name for dir_name in dir_names)
+        files.extend(current_path / file_name for file_name in file_names)
+
+    directory_rows = [
+        {
+            "path": win_path(path),
+            "depth": len(path.relative_to(resolved_root).parts),
+        }
+        for path in directories
+    ]
+    file_rows = [{"path": win_path(path)} for path in files]
+    directory_lengths = [len(row["path"]) for row in directory_rows]
+    file_lengths = [len(row["path"]) for row in file_rows]
+    longest_directories = sorted(directory_rows, key=lambda row: (-len(str(row["path"])), str(row["path"]).lower()))
+    deepest_directories = sorted(
+        directory_rows,
+        key=lambda row: (-int(row["depth"]), -len(str(row["path"])), str(row["path"]).lower()),
+    )
+    longest_files = sorted(file_rows, key=lambda row: (-len(str(row["path"])), str(row["path"]).lower()))
     return {
         "root": win_path(resolved_root, trailing_slash=True),
-        "directory_count_including_root": directory_count + 1,
-        "file_count": file_count,
+        "directory_count_including_root": len(directories),
+        "file_count": len(files),
+        "max_directory_depth": max((int(row["depth"]) for row in directory_rows), default=0),
+        "max_directory_path_length": max(directory_lengths, default=0),
+        "max_file_path_length": max(file_lengths, default=0),
+        "directories_over_248_chars": sum(1 for length in directory_lengths if length > WINDOWS_DIRECTORY_PATH_LIMIT),
+        "directories_over_260_chars": sum(1 for length in directory_lengths if length > WINDOWS_PATH_LIMIT),
+        "files_over_260_chars": sum(1 for length in file_lengths if length > WINDOWS_PATH_LIMIT),
+        "longest_directories": [
+            {
+                "path": str(row["path"]),
+                "length": len(str(row["path"])),
+                "depth": int(row["depth"]),
+            }
+            for row in longest_directories[:PATH_SAMPLE_LIMIT]
+        ],
+        "deepest_directories": [
+            {
+                "path": str(row["path"]),
+                "length": len(str(row["path"])),
+                "depth": int(row["depth"]),
+            }
+            for row in deepest_directories[:PATH_SAMPLE_LIMIT]
+        ],
+        "longest_files": [
+            {
+                "path": str(row["path"]),
+                "length": len(str(row["path"])),
+            }
+            for row in longest_files[:PATH_SAMPLE_LIMIT]
+        ],
     }
 
 

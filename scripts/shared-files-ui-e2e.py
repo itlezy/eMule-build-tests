@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -16,6 +17,8 @@ import win32con
 import win32gui
 import win32process
 from pywinauto import Application, findwindows, mouse
+
+import emule_live_profile_common as live_common
 
 WM_COMMAND = 0x0111
 BM_CLICK = 0x00F5
@@ -63,6 +66,26 @@ kernel32.ReadProcessMemory.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.
 kernel32.ReadProcessMemory.restype = ctypes.c_int
 kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
 kernel32.CloseHandle.restype = ctypes.c_int
+
+REQUIRED_SEED_KEYS = (
+    "AppVersion",
+    "Nick",
+    "Port",
+    "UDPPort",
+    "ServerUDPPort",
+    "Language",
+    "StartupMinimized",
+    "BringToFront",
+    "ConfirmExit",
+    "RestoreLastMainWndDlg",
+    "Splashscreen",
+    "Autoconnect",
+    "Reconnect",
+    "NetworkED2K",
+    "NetworkKademlia",
+    "ShowSharedFilesDetails",
+    "IgnoreInstances",
+)
 
 
 class LVITEMW(ctypes.Structure):
@@ -161,6 +184,33 @@ def patch_ini_value(text: str, key: str, value: str) -> str:
     return f"{text}{suffix}{replacement}\r\n"
 
 
+def parse_ini_values(text: str) -> dict[str, str]:
+    """Parses one simple INI text blob into key/value pairs for seed validation."""
+
+    values: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("[") or line.startswith(";"):
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def ensure_seed_profile_initialized(text: str) -> None:
+    """Fails fast when the checked-in test seed stops being a fully initialized profile."""
+
+    values = parse_ini_values(text)
+    missing_keys = [key for key in REQUIRED_SEED_KEYS if not values.get(key, "").strip()]
+    if missing_keys:
+        raise RuntimeError(
+            "Seed preferences.ini is missing required initialized keys: "
+            + ", ".join(missing_keys)
+        )
+
+
 def win_path(path: Path, trailing_slash: bool = False) -> str:
     """Formats a path as an absolute Windows string, optionally with a trailing separator."""
 
@@ -171,71 +221,45 @@ def win_path(path: Path, trailing_slash: bool = False) -> str:
 def prepare_fixture(seed_config_dir: Path, artifacts_dir: Path) -> dict:
     """Creates an isolated profile base plus deterministic shared roots for the UI harness."""
 
-    profile_base = artifacts_dir / "profile-base"
-    config_dir = profile_base / "config"
-    log_dir = profile_base / "logs"
     incoming_dir = artifacts_dir / "incoming"
     temp_dir = artifacts_dir / "temp"
     shared_a_dir = artifacts_dir / "shared-a"
     shared_b_dir = artifacts_dir / "shared-b"
 
-    shutil.copytree(seed_config_dir, config_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
     incoming_dir.mkdir(parents=True, exist_ok=True)
     temp_dir.mkdir(parents=True, exist_ok=True)
     shared_a_dir.mkdir(parents=True, exist_ok=True)
     shared_b_dir.mkdir(parents=True, exist_ok=True)
 
     files = [
-        (shared_a_dir / "zeta_small.txt", b"small\n"),
-        (shared_a_dir / "middle_medium.txt", b"m" * 600),
-        (shared_b_dir / "alpha_large.bin", b"a" * 4096),
+        (shared_a_dir / "middle_small.txt", b"small\n"),
+        (shared_a_dir / "zeta_large.bin", b"z" * 4096),
+        (shared_b_dir / "alpha_medium.txt", b"a" * 600),
     ]
     for file_path, content in files:
         file_path.write_bytes(content)
 
-    preferences_path = config_dir / "preferences.ini"
-    preferences_text = preferences_path.read_text(encoding="utf-8", errors="ignore")
-    for key, value in (
-        ("AppVersion", "0.72a x64"),
-        ("Language", "1033"),
-        ("StartupMinimized", "0"),
-        ("BringToFront", "1"),
-        ("ConfirmExit", "0"),
-        ("RestoreLastMainWndDlg", "0"),
-        ("Splashscreen", "0"),
-        ("Autoconnect", "0"),
-        ("Reconnect", "0"),
-        ("NetworkED2K", "0"),
-        ("NetworkKademlia", "0"),
-        ("ShowSharedFilesDetails", "0"),
-        ("IncomingDir", win_path(incoming_dir, trailing_slash=True)),
-        ("TempDir", win_path(temp_dir, trailing_slash=True)),
-        ("TempDirs", win_path(temp_dir, trailing_slash=True)),
-    ):
-        preferences_text = patch_ini_value(preferences_text, key, value)
-    preferences_path.write_text(preferences_text, encoding="utf-8", newline="\r\n")
-
-    shareddir_path = config_dir / "shareddir.dat"
-    shareddir_contents = (
-        win_path(shared_a_dir, trailing_slash=True)
-        + "\r\n"
-        + win_path(shared_b_dir, trailing_slash=True)
-        + "\r\n"
+    fixture = live_common.prepare_profile_base(
+        seed_config_dir=seed_config_dir,
+        artifacts_dir=artifacts_dir,
+        shared_dirs=[
+            live_common.win_path(shared_a_dir, trailing_slash=True),
+            live_common.win_path(shared_b_dir, trailing_slash=True),
+        ],
+        incoming_dir=incoming_dir,
+        temp_dir=temp_dir,
     )
-    shareddir_path.write_text(shareddir_contents, encoding="utf-16")
 
-    return {
-        "profile_base": profile_base,
-        "config_dir": config_dir,
-        "log_dir": log_dir,
-        "incoming_dir": incoming_dir,
-        "temp_dir": temp_dir,
-        "shared_a_dir": shared_a_dir,
-        "shared_b_dir": shared_b_dir,
-        "expected_name_order_by_name": ["alpha_large.bin", "middle_medium.txt", "zeta_small.txt"],
-        "expected_name_order_by_size": ["zeta_small.txt", "middle_medium.txt", "alpha_large.bin"],
-    }
+    fixture.update(
+        {
+            "shared_a_dir": shared_a_dir,
+            "shared_b_dir": shared_b_dir,
+            "expected_name_order_by_name": ["alpha_medium.txt", "middle_small.txt", "zeta_large.bin"],
+            "expected_name_order_by_size_ascending": ["middle_small.txt", "alpha_medium.txt", "zeta_large.bin"],
+            "expected_name_order_by_size_descending": ["zeta_large.bin", "alpha_medium.txt", "middle_small.txt"],
+        }
+    )
+    return fixture
 
 
 def open_process(process_id: int) -> int:
@@ -298,6 +322,12 @@ def get_list_item_text(process_handle: int, list_hwnd: int, row_index: int, sub_
         win32gui.SendMessage(list_hwnd, LVM_GETITEMTEXTW, row_index, remote.address)
         raw_text = read_remote(process_handle, remote_text_address, text_bytes)
         return raw_text.decode("utf-16-le", errors="ignore").split("\x00", 1)[0]
+
+
+def get_list_names(process_handle: int, list_hwnd: int, count: int) -> list[str]:
+    """Reads the first N Shared Files row names from the owner-data list."""
+
+    return [get_list_item_text(process_handle, list_hwnd, i, 0) for i in range(count)]
 
 
 def get_remote_rect(process_handle: int, hwnd: int, message: int, index: int, left_seed: int = 0) -> RECT:
@@ -399,7 +429,9 @@ def launch_app(app_exe: Path, profile_base: Path) -> Application:
     """Starts the real app with the isolated `-c` override."""
 
     os.environ["EMULE_STARTUP_PROFILE"] = "1"
-    command_line = f'"{app_exe}" -c "{profile_base}"'
+    command_line = subprocess.list2cmdline(
+        [str(app_exe), "-ignoreinstances", "-c", str(profile_base)]
+    )
     return Application(backend="win32").start(command_line, wait_for_idle=False)
 
 
@@ -434,7 +466,11 @@ def wait_for_main_window(app: Application):
         if is_main_emule_window(window.handle):
             return window
         if win32gui.GetClassName(window.handle) == "#32770":
-            raise RuntimeError(f"Unexpected startup dialog: {describe_startup_dialog(window.handle)!r}")
+            raise RuntimeError(
+                "Unexpected startup dialog "
+                f"{win32gui.GetWindowText(window.handle)!r}: "
+                f"{describe_startup_dialog(window.handle)!r}"
+            )
         return window
 
     return wait_for(resolve, timeout=90.0, interval=0.5, description="eMule main window")
@@ -460,21 +496,28 @@ def wait_for_static_text(static_hwnd: int, expected_text: str) -> None:
     actual = wait_for(resolve, timeout=10.0, interval=0.2, description=f"details text '{expected_text}'")
 
 
-def sort_by_size_column(process_handle: int, list_hwnd: int, before_first_row: str) -> str:
-    """Clicks the Size header until row order differs from the default name sort."""
+def click_size_column(process_handle: int, list_hwnd: int) -> None:
+    """Clicks the Size header once on the Shared Files list."""
 
     header_hwnd = win32gui.SendMessage(list_hwnd, LVM_GETHEADER, 0, 0)
     if not header_hwnd:
         raise RuntimeError("Shared Files list header was not found.")
+    rect = get_remote_rect(process_handle, header_hwnd, HDM_GETITEMRECT, 1)
+    click_client_rect(header_hwnd, rect)
+    time.sleep(0.5)
 
-    for _ in range(2):
-        rect = get_remote_rect(process_handle, header_hwnd, HDM_GETITEMRECT, 1)
-        click_client_rect(header_hwnd, rect)
-        time.sleep(0.5)
-        first_row = get_list_item_text(process_handle, list_hwnd, 0, 0)
-        if first_row != before_first_row:
-            return first_row
-    raise RuntimeError("Sorting by the Size column did not change the Shared Files row order.")
+
+def wait_for_list_names(process_handle: int, list_hwnd: int, expected_names: list[str], description: str) -> list[str]:
+    """Waits until the visible Shared Files rows match the expected ordered names."""
+
+    def resolve():
+        count = win32gui.SendMessage(list_hwnd, LVM_GETITEMCOUNT, 0, 0)
+        if count < len(expected_names):
+            return None
+        names = get_list_names(process_handle, list_hwnd, len(expected_names))
+        return names if names == expected_names else None
+
+    return wait_for(resolve, timeout=30.0, interval=0.5, description=description)
 
 
 def click_reload_button(main_hwnd: int) -> None:
@@ -513,18 +556,39 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
     summary = {
         "app_exe": str(app_exe),
         "profile_base": str(fixture["profile_base"]),
+        "command_line": subprocess.list2cmdline(
+            [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
+        ),
         "expected_name_order_by_name": fixture["expected_name_order_by_name"],
-        "expected_name_order_by_size": fixture["expected_name_order_by_size"],
+        "expected_name_order_by_size_ascending": fixture["expected_name_order_by_size_ascending"],
+        "expected_name_order_by_size_descending": fixture["expected_name_order_by_size_descending"],
     }
 
     app = None
     process_handle = 0
     try:
-        app = launch_app(app_exe, fixture["profile_base"])
-        main_window = wait_for_main_window(app)
+        app = live_common.launch_app(app_exe, fixture["profile_base"])
+        main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
         main_window.set_focus()
         process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
+        summary["process_id"] = process_id
+        summary["main_window_show_cmd"] = live_common.get_window_show_cmd(main_hwnd)
+        summary["main_window_is_maximized"] = summary["main_window_show_cmd"] == win32con.SW_SHOWMAXIMIZED
+        if not summary["main_window_is_maximized"]:
+            raise RuntimeError(f"Expected the seeded profile to start maximized, got showCmd={summary['main_window_show_cmd']}.")
+
+        startup_profile_text = live_common.wait_for_startup_profile_complete(fixture["startup_profile_path"])
+        startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
+        summary["startup_profile_path"] = str(fixture["startup_profile_path"])
+        summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
+            startup_profile_phases,
+            [
+                "Construct CSharedFileList (share cache/scan)",
+                "CSharedFilesWnd::OnInitDialog total",
+                "StartupTimer complete",
+            ],
+        )
         process_handle = open_process(process_id)
 
         dump_window_tree(main_hwnd, artifacts_dir / "window-tree-initial.json")
@@ -534,28 +598,53 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         static_hwnd = get_control_handle(main_hwnd, IDC_SF_FNAME, "Static")
 
         count = wait_for_list_count(list_hwnd, minimum_count=3)
-        names_before = [get_list_item_text(process_handle, list_hwnd, i, 0) for i in range(min(count, 3))]
+        summary["initial_row_count"] = count
+        if count != 3:
+            raise RuntimeError(f"Expected exactly 3 Shared Files rows, got {count}.")
+        names_before = get_list_names(process_handle, list_hwnd, 3)
         summary["names_before_sort"] = names_before
         if names_before != fixture["expected_name_order_by_name"]:
             raise RuntimeError(f"Unexpected default Shared Files order: {names_before!r}")
 
         set_list_row_selected(process_handle, list_hwnd, 1)
         wait_for_static_text(static_hwnd, fixture["expected_name_order_by_name"][1])
+        summary["details_after_initial_selection"] = fixture["expected_name_order_by_name"][1]
 
-        first_row_after_sort = sort_by_size_column(process_handle, list_hwnd, names_before[0])
-        summary["first_row_after_sort"] = first_row_after_sort
-        if first_row_after_sort != fixture["expected_name_order_by_size"][0]:
-            raise RuntimeError(
-                f"Unexpected first row after sorting by size: {first_row_after_sort!r} "
-                f"(expected {fixture['expected_name_order_by_size'][0]!r})."
-            )
+        click_size_column(process_handle, list_hwnd)
+        names_by_size_ascending = wait_for_list_names(
+            process_handle,
+            list_hwnd,
+            fixture["expected_name_order_by_size_ascending"],
+            "Shared Files size sort ascending order",
+        )
+        summary["names_by_size_ascending"] = names_by_size_ascending
+
+        set_list_row_selected(process_handle, list_hwnd, 0)
+        wait_for_static_text(static_hwnd, fixture["expected_name_order_by_size_ascending"][0])
+        summary["details_after_ascending_sort_selection"] = fixture["expected_name_order_by_size_ascending"][0]
+
+        click_size_column(process_handle, list_hwnd)
+        names_by_size_descending = wait_for_list_names(
+            process_handle,
+            list_hwnd,
+            fixture["expected_name_order_by_size_descending"],
+            "Shared Files size sort descending order",
+        )
+        summary["names_by_size_descending"] = names_by_size_descending
 
         click_reload_button(main_hwnd)
         count_after_reload = wait_for_list_count(list_hwnd, minimum_count=3)
-        names_after_reload = [get_list_item_text(process_handle, list_hwnd, i, 0) for i in range(min(count_after_reload, 3))]
+        summary["row_count_after_reload"] = count_after_reload
+        names_after_reload = get_list_names(process_handle, list_hwnd, 3)
         summary["names_after_reload"] = names_after_reload
-        if set(fixture["expected_name_order_by_name"]) - set(names_after_reload):
+        if count_after_reload != 3:
+            raise RuntimeError(f"Reload changed the Shared Files row count unexpectedly: {count_after_reload}.")
+        if set(fixture["expected_name_order_by_name"]) != set(names_after_reload):
             raise RuntimeError(f"Reload dropped expected Shared Files rows: {names_after_reload!r}")
+
+        set_list_row_selected(process_handle, list_hwnd, 2)
+        wait_for_static_text(static_hwnd, names_after_reload[2])
+        summary["details_after_reload_selection"] = names_after_reload[2]
 
         write_json(artifacts_dir / "result.json", summary)
     except Exception:
@@ -576,7 +665,7 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
             close_process(process_handle)
         if app is not None:
             try:
-                close_app_cleanly(app)
+                live_common.close_app_cleanly(app)
             except Exception:
                 try:
                     app.kill()

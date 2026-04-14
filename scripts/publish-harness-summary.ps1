@@ -11,7 +11,11 @@ param(
 
     [string]$LiveDiffSummaryPath = '',
 
-    [string]$LiveSessionManifestPath = ''
+    [string]$LiveSessionManifestPath = '',
+
+    [string]$LiveUiSummaryPath = '',
+
+    [string]$StartupProfileSummaryPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -34,12 +38,18 @@ $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $reportRoot = Join-Path $testRepoRootPath 'reports'
 $defaultCoverageSummaryPath = Join-Path $reportRoot 'native-coverage-latest\coverage-summary.json'
 $defaultLiveDiffSummaryPath = Join-Path $reportRoot 'live-diff-summary.json'
+$defaultLiveUiSummaryPath = Join-Path $reportRoot 'shared-files-ui-e2e-latest\ui-summary.json'
+$defaultStartupProfileSummaryPath = Join-Path $reportRoot 'startup-profile-scenarios-latest\startup-profiles-wrapper-summary.json'
 $resolvedCoverageSummaryPath = if ([string]::IsNullOrWhiteSpace($CoverageSummaryPath)) { $defaultCoverageSummaryPath } else { $CoverageSummaryPath }
 $resolvedLiveDiffSummaryPath = if ([string]::IsNullOrWhiteSpace($LiveDiffSummaryPath)) { $defaultLiveDiffSummaryPath } else { $LiveDiffSummaryPath }
+$resolvedLiveUiSummaryPath = if ([string]::IsNullOrWhiteSpace($LiveUiSummaryPath)) { $defaultLiveUiSummaryPath } else { $LiveUiSummaryPath }
+$resolvedStartupProfileSummaryPath = if ([string]::IsNullOrWhiteSpace($StartupProfileSummaryPath)) { $defaultStartupProfileSummaryPath } else { $StartupProfileSummaryPath }
 
 $coverageSummary = Read-JsonFile -Path $resolvedCoverageSummaryPath
 $liveDiffSummary = Read-JsonFile -Path $resolvedLiveDiffSummaryPath
 $liveSessionManifest = Read-JsonFile -Path $LiveSessionManifestPath
+$liveUiSummary = Read-JsonFile -Path $resolvedLiveUiSummaryPath
+$startupProfileSummary = Read-JsonFile -Path $resolvedStartupProfileSummaryPath
 
 $combinedSummary = [ordered]@{
     generated_at = (Get-Date).ToString('o')
@@ -75,6 +85,32 @@ $combinedSummary = [ordered]@{
     } else {
         $null
     }
+    live_ui = if ($null -ne $liveUiSummary) {
+        [ordered]@{
+            status = $liveUiSummary.status
+            artifact_dir = $liveUiSummary.artifact_dir
+            latest_report_dir = $liveUiSummary.latest_report_dir
+            app_exe = $liveUiSummary.app_exe
+            configuration = $liveUiSummary.configuration
+            error = $liveUiSummary.error
+        }
+    } else {
+        $null
+    }
+    startup_profiles = if ($null -ne $startupProfileSummary) {
+        [ordered]@{
+            status = $startupProfileSummary.status
+            artifact_dir = $startupProfileSummary.artifact_dir
+            latest_report_dir = $startupProfileSummary.latest_report_dir
+            app_exe = $startupProfileSummary.app_exe
+            configuration = $startupProfileSummary.configuration
+            shared_root = $startupProfileSummary.shared_root
+            scenario_count = if ($null -ne $startupProfileSummary.result -and $null -ne $startupProfileSummary.result.scenarios) { @($startupProfileSummary.result.scenarios).Count } else { 0 }
+            error = $startupProfileSummary.error
+        }
+    } else {
+        $null
+    }
 }
 
 $jsonPath = Join-Path $reportRoot 'harness-summary.json'
@@ -85,9 +121,13 @@ $combinedSummary | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $jsonPath
     ("coverage_available: {0}" -f ($null -ne $coverageSummary))
     ("parity_available: {0}" -f ($null -ne $liveDiffSummary))
     ("live_harness_available: {0}" -f ($null -ne $liveSessionManifest))
+    ("live_ui_available: {0}" -f ($null -ne $liveUiSummary))
+    ("startup_profiles_available: {0}" -f ($null -ne $startupProfileSummary))
     ("coverage_line_rate_percent: {0}" -f $(if ($null -ne $coverageSummary) { $coverageSummary.line_rate_percent } else { '' }))
     ("parity_failed: {0}" -f $(if ($null -ne $liveDiffSummary) { [bool]$liveDiffSummary.failed } else { '' }))
     ("live_cleanup_success: {0}" -f $(if ($null -ne $liveSessionManifest) { $liveSessionManifest.cleanup_success } else { '' }))
+    ("live_ui_status: {0}" -f $(if ($null -ne $liveUiSummary) { $liveUiSummary.status } else { '' }))
+    ("startup_profiles_status: {0}" -f $(if ($null -ne $startupProfileSummary) { $startupProfileSummary.status } else { '' }))
 ) | Set-Content -LiteralPath $textPath -Encoding utf8
 
 Write-Output "Harness summary JSON: $jsonPath"

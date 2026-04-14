@@ -6,6 +6,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$ArtifactsRoot,
+    [string]$SharedRoot = 'C:\tmp\00_long_paths',
     [switch]$KeepArtifacts
 )
 
@@ -77,7 +78,7 @@ function Get-AppVariantLabel {
     return Split-Path -Leaf $appRoot
 }
 
-function Write-LiveUiSummary {
+function Write-StartupProfilesSummary {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -93,6 +94,9 @@ function Write-LiveUiSummary {
         [string]$Configuration,
 
         [Parameter(Mandatory = $true)]
+        [string]$SharedRoot,
+
+        [Parameter(Mandatory = $true)]
         [string]$ArtifactDirectory,
 
         [Parameter(Mandatory = $true)]
@@ -103,12 +107,13 @@ function Write-LiveUiSummary {
         [string]$SourceArtifactDirectory = ''
     )
 
-    $resultPath = Join-Path $ArtifactDirectory 'result.json'
+    $resultPath = Join-Path $ArtifactDirectory 'startup-profiles-summary.json'
     $summary = [ordered]@{
         generated_at = (Get-Date).ToString('o')
         status = $Status
         app_exe = $AppExecutablePath
         configuration = $Configuration
+        shared_root = $SharedRoot
         artifact_dir = $ArtifactDirectory
         latest_report_dir = $LatestReportDirectory
         source_artifact_dir = $SourceArtifactDirectory
@@ -258,20 +263,20 @@ if (-not (Test-PythonImport -PythonInvocation $pythonInvocation -ModuleName 'pyw
 }
 
 $reportRoot = Join-Path $script:RepoRoot 'reports'
-$uiReportRoot = Join-Path $reportRoot 'shared-files-ui-e2e'
+$profilesReportRoot = Join-Path $reportRoot 'startup-profile-scenarios'
 $reportStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $reportLabel = "{0}-{1}-{2}" -f $reportStamp, (Get-ReportToken -Value (Get-AppVariantLabel -AppExecutablePath $appExePath)), $Configuration.ToLowerInvariant()
-$runReportDir = Join-Path $uiReportRoot $reportLabel
-$latestReportDir = Join-Path $reportRoot 'shared-files-ui-e2e-latest'
+$runReportDir = Join-Path $profilesReportRoot $reportLabel
+$latestReportDir = Join-Path $reportRoot 'startup-profile-scenarios-latest'
 $sourceArtifactsRoot = if ([string]::IsNullOrWhiteSpace($ArtifactsRoot)) {
-    Join-Path ([System.IO.Path]::GetTempPath()) ('emule-shared-files-ui-e2e-' + [Guid]::NewGuid().ToString('N'))
+    Join-Path ([System.IO.Path]::GetTempPath()) ('emule-startup-profile-scenarios-' + [Guid]::NewGuid().ToString('N'))
 } else {
     [System.IO.Path]::GetFullPath($ArtifactsRoot)
 }
 $retainSourceArtifacts = $KeepArtifacts -or -not [string]::IsNullOrWhiteSpace($ArtifactsRoot)
 
 $null = New-Item -ItemType Directory -Force -Path $sourceArtifactsRoot
-$pythonScriptPath = Join-Path $PSScriptRoot 'shared-files-ui-e2e.py'
+$pythonScriptPath = Join-Path $PSScriptRoot 'startup-profile-scenarios.py'
 $runStatus = 'failed'
 $errorMessage = ''
 
@@ -280,7 +285,8 @@ try {
         $pythonScriptPath,
         '--app-exe', $appExePath,
         '--seed-config-dir', $seedConfigDir,
-        '--artifacts-dir', $sourceArtifactsRoot
+        '--artifacts-dir', $sourceArtifactsRoot,
+        '--shared-root', $SharedRoot
     )
     $runStatus = 'passed'
 }
@@ -288,20 +294,16 @@ catch {
     $errorMessage = $_.Exception.Message
 }
 finally {
-    $null = New-Item -ItemType Directory -Force -Path $uiReportRoot
+    $null = New-Item -ItemType Directory -Force -Path $profilesReportRoot
     Publish-DirectorySnapshot -SourceDirectory $sourceArtifactsRoot -DestinationDirectory $runReportDir
 
-    $errorPath = Join-Path $runReportDir 'error.txt'
-    if ([string]::IsNullOrWhiteSpace($errorMessage) -and (Test-Path -LiteralPath $errorPath -PathType Leaf)) {
-        $errorMessage = (Get-Content -Raw -LiteralPath $errorPath).Trim()
-    }
-
-    $summaryPath = Join-Path $runReportDir 'ui-summary.json'
-    Write-LiveUiSummary `
+    $summaryPath = Join-Path $runReportDir 'startup-profiles-wrapper-summary.json'
+    Write-StartupProfilesSummary `
         -SummaryPath $summaryPath `
         -Status $runStatus `
         -AppExecutablePath $appExePath `
         -Configuration $Configuration `
+        -SharedRoot $SharedRoot `
         -ArtifactDirectory $runReportDir `
         -LatestReportDirectory $latestReportDir `
         -ErrorMessage $errorMessage `
@@ -310,7 +312,7 @@ finally {
     Publish-DirectorySnapshot -SourceDirectory $runReportDir -DestinationDirectory $latestReportDir
 
     $publishHarnessSummaryPath = Join-Path $script:RepoRoot 'scripts\publish-harness-summary.ps1'
-    & $publishHarnessSummaryPath -TestRepoRoot $script:RepoRoot -LiveUiSummaryPath $summaryPath | Out-Null
+    & $publishHarnessSummaryPath -TestRepoRoot $script:RepoRoot -StartupProfileSummaryPath $summaryPath | Out-Null
 
     if (-not $retainSourceArtifacts -and (Test-Path -LiteralPath $sourceArtifactsRoot -PathType Container)) {
         Remove-Item -LiteralPath $sourceArtifactsRoot -Recurse -Force
@@ -318,9 +320,9 @@ finally {
 }
 
 if ($runStatus -eq 'passed') {
-    Write-Host "Shared Files UI E2E passed. Report directory: $runReportDir"
+    Write-Host "Startup-profile scenarios passed. Report directory: $runReportDir"
     return
 }
 
-Write-Host "Shared Files UI E2E failed. Report directory: $runReportDir" -ForegroundColor Red
-throw $(if ([string]::IsNullOrWhiteSpace($errorMessage)) { 'Shared Files UI E2E failed.' } else { $errorMessage })
+Write-Host "Startup-profile scenarios failed. Report directory: $runReportDir" -ForegroundColor Red
+throw $(if ([string]::IsNullOrWhiteSpace($errorMessage)) { 'Startup-profile scenarios failed.' } else { $errorMessage })

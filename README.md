@@ -21,7 +21,7 @@ It owns:
 - parity and divergence suites for live workspace-to-workspace comparison
 - workspace-level build and live-diff scripts
 - fixture, manifest, and report directories for future protocol coverage
-- the deterministic live-profile seed used by the named-pipe live harness
+- the deterministic live-profile seed used by the named-pipe live harness and live UI regressions
 
 The project is built against the canonical app checkout resolved from the invoking workspace manifest. It is intentionally not a runtime dependency like the `eMule-*` third-party dependencies, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
@@ -81,8 +81,10 @@ Standalone probe mode:
 Deterministic live-profile seed:
 
 - `manifests\live-profile-seed\config` stores the canonical test-only profile inputs for live named-pipe runs
-- the seed is intentionally minimal and currently vendors only `preferences.ini`, `nodes.dat`, and `server.met`
-- `preferences.ini` intentionally contains only the minimal non-default seed values required by the live harness; the helper injects runtime-specific transport, logging, bind, and working-folder settings per run
+- the seed is intentionally minimal and vendors only the config files the live harness truly depends on: `preferences.ini`, `preferences.dat`, `nodes.dat`, and `server.met`
+- `preferences.ini` is an initialized profile seed; it must already carry the startup-silencing keys needed to avoid first-run UI such as the language prompt and runtime wizard
+- `preferences.dat` carries the deterministic maximized main-window placement used by the live UI and startup-profile harnesses
+- the helper injects only runtime-specific transport, logging, bind, temp, working-folder, and shared-directory settings per run
 - runtime working folders are copied from that seed and then expanded with per-run logs, temp files, and other mutable state
 
 Canonical live harness:
@@ -91,6 +93,23 @@ Canonical live harness:
 - the harness stages a renamed binary copy, `eMule_v072_harness.exe`, beside the debug build output and launches that copy so processes, dumps, and cleanup are easier to identify
 - the machine-readable session manifest can be requested through the shared wrapper with `-SessionManifestPath`
 - normal runs retry targeted teardown and fail if any harness-launched process remains afterward; `-KeepRunning` is the only supported opt-out
+
+Shared Files live UI regression:
+
+- `scripts\run-shared-files-ui-e2e.ps1` is the operator-facing entrypoint for the real Win32 Shared Files regression
+- it launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` so the run stays isolated from local user sessions
+- the checked-in seed profile must stay initialized; the Python harness validates the seed keys, writes deterministic maximized window placement, and patches only per-run incoming, temp, and shared-directory paths
+- the regression now also asserts that the main window starts maximized and exercises exact default-name ordering, size ascending and descending sorts, selection-detail updates, and reload row preservation
+- each run publishes artifacts and `ui-summary.json` under `reports\shared-files-ui-e2e\...` and refreshes `reports\shared-files-ui-e2e-latest`
+- the shared `reports\harness-summary.json` now includes a `live_ui` section when that regression is run
+
+Startup-profile scenarios:
+
+- `scripts\run-startup-profile-scenarios.ps1` builds deterministic `startup-profile.txt` artifacts for multiple live-profile scenarios without changing app behavior
+- the default run covers `baseline-no-shares`, `fixture-three-files`, `long-paths-root-only`, and `long-paths-recursive`
+- the long-path scenarios target `C:\tmp\00_long_paths` by default and expand `shareddir.dat` deterministically in the recursive case
+- each run publishes scenario artifacts plus `startup-profiles-summary.json` and `startup-profiles-wrapper-summary.json` under `reports\startup-profile-scenarios\...` and refreshes `reports\startup-profile-scenarios-latest`
+- the shared `reports\harness-summary.json` now includes a `startup_profiles` section when that runner is used
 
 Tracked-file privacy guard:
 
@@ -104,4 +123,4 @@ Native seam coverage and shared reports:
 - `scripts\run-bugfix-core-coverage.ps1` chains the canonical `main` and `bugfix` native-coverage runs with the workspace live-diff pass and writes a combined summary under `reports\bugfix-core-coverage`
 - `helpers\helper-opencppcoverage-bootstrap.ps1` uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run-live-diff.ps1` now writes both text and JSON parity/divergence summaries under `reports`
-- `scripts\publish-harness-summary.ps1` combines native coverage, parity, and optional live-harness manifest data into one shared summary under `reports`
+- `scripts\publish-harness-summary.ps1` combines native coverage, parity, optional live-harness manifest data, optional live UI status, and optional startup-profile scenario status into one shared summary under `reports`

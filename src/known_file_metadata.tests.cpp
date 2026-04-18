@@ -64,4 +64,14 @@ TEST_CASE("Known-file metadata seam opens overlong files for reader-side metadat
 	CHECK(LongPathTestSupport::ComputeFnv1a64(bytes) == fixture.PayloadFnv1a64());
 }
 
+TEST_CASE("Known-file metadata seam keeps MPEG audio fallback extensions explicit")
+{
+	CHECK(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track.mp3")));
+	CHECK(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track.MP2")));
+	CHECK(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track.mp1")));
+	CHECK(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track.mpa")));
+	CHECK_FALSE(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track.flac")));
+	CHECK_FALSE(KnownFileMetadataSeams::IsMpegAudioMetadataExtension(_T("track")));
+}
+
 TEST_SUITE_END;

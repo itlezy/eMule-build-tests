@@ -725,6 +725,16 @@ TEST_CASE("Shell/UI seam splits initial picker selections and restores trailing 
 	CHECK(ShellUiHelpers::FinalizeFolderSelection(selection.strInitialFolder).Right(1) == CString(_T("\\")));
 }
 
+TEST_CASE("Shell/UI seam falls back to the nearest shell-safe ancestor for namespace-only initial folders")
+{
+	const CString strNamespaceOnlyFolder(_T("\\\\?\\C:\\skins\\exact-name. \\"));
+	const CString strNamespaceOnlyFile(_T("\\\\?\\C:\\skins\\exact-name. \\theme.ini"));
+
+	CHECK(ShellUiHelpers::ResolveInitialFolderForShellDialog(strNamespaceOnlyFolder) == CString(_T("C:\\skins")));
+	CHECK(ShellUiHelpers::ResolveInitialFolderForShellDialog(PathHelpers::GetDirectoryPath(strNamespaceOnlyFile)) == CString(_T("C:\\skins")));
+	CHECK(ShellUiHelpers::ResolveInitialFolderForShellDialog(CString(_T("C:\\skins\\normal\\"))) == CString(_T("C:\\skins\\normal")));
+}
+
 TEST_CASE("Shell/UI seam resolves skin resources after environment expansion without MAX_PATH truncation")
 {
 	const CString strSkinProfile = CString(_T("C:\\profiles\\")) + RepeatPathFragment(_T("segment\\"), 45) + CString(_T("skin.ini"));

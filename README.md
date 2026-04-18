@@ -70,12 +70,14 @@ Script inventory:
 | `scripts\run-bugfix-core-coverage.ps1` | operator-facing comparison wrapper | maintained | canonical `main` vs `bugfix` pass |
 | `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
 | `scripts\run-shared-files-ui-e2e.ps1` | operator-facing UI wrapper | maintained | real Win32 Shared Files regression |
+| `scripts\run-config-stability-ui-e2e.ps1` | operator-facing UI wrapper | maintained | long `-c` config path, settings save, relaunch, and stability regression |
 | `scripts\run-startup-profile-scenarios.ps1` | operator-facing startup wrapper | maintained | Chrome Trace startup-profile scenarios |
 | `scripts\publish-harness-summary.ps1` | shared report publisher | maintained | combines coverage, parity, and optional live status |
 | `helpers\helper-opencppcoverage-bootstrap.ps1` | internal helper | maintained | resolves OpenCppCoverage install |
 | `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
 | `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
 | `scripts\emule_live_profile_common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
+| `scripts\config-stability-ui-e2e.py` | Python runner | maintained | backing logic for the long-config stability UI wrapper |
 | `scripts\shared-files-ui-e2e.py` | Python runner | maintained | backing logic for the Shared Files UI wrapper |
 | `scripts\startup-profile-scenarios.py` | Python runner | maintained | backing logic for the startup-profile wrapper |
 | `scripts\test_create_long_paths_tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
@@ -132,6 +134,15 @@ Shared Files live UI regression:
 - `-Scenario` can be repeated on the PowerShell wrapper to run only `fixture-three-files` or only `generated-robustness-recursive`
 - each run publishes artifacts and `ui-summary.json` under `reports\shared-files-ui-e2e\...` and refreshes `reports\shared-files-ui-e2e-latest`
 - the shared `reports\harness-summary.json` now includes a `live_ui` section when that regression is run
+
+Config-stability live UI regression:
+
+- `scripts\run-config-stability-ui-e2e.ps1` is the operator-facing entrypoint for long `-c` config-path startup, settings-save, and relaunch-stability coverage
+- it launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` under a deliberately deep profile root so `profile-base\config\preferences.ini` exceeds normal Win32 path limits
+- the default run covers `long-config-settings-roundtrip` and `long-config-shared-stress`
+- the roundtrip scenario edits the real Preferences dialog, saves `OnlineSignature`, verifies `preferences.ini`, relaunches the same long-path profile, and confirms persisted UI state
+- the stress scenario repeats launch, Preferences save, Shared Files activation, and clean shutdown across multiple cycles while recursively sharing the generated robustness tree under `C:\tmp\00_long_paths`
+- each run publishes artifacts and `ui-summary.json` under `reports\config-stability-ui-e2e\...` and refreshes `reports\config-stability-ui-e2e-latest`
 
 Startup-profile scenarios:
 

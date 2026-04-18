@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 
 import win32con
+import win32api
+import win32event
 import win32gui
 from pywinauto import Application
 
@@ -335,6 +337,16 @@ def describe_startup_dialog(hwnd: int) -> str:
     return "\n".join(filter(None, dialog_texts)).strip()
 
 
+def is_expected_shutdown_progress_dialog(hwnd: int) -> bool:
+    """Reports whether one top-level dialog is the normal eMule shutdown progress window."""
+
+    if win32gui.GetClassName(hwnd) != "#32770":
+        return False
+    title = win32gui.GetWindowText(hwnd)
+    body = describe_startup_dialog(hwnd)
+    return title == "Shutting down eMule" or "eMule is shutting down" in body
+
+
 def wait_for_main_window(app: Application):
     """Waits until the started eMule process exposes a visible top-level window."""
 
@@ -396,11 +408,12 @@ def dump_window_tree(main_hwnd: int, output_path: Path) -> None:
     write_json(output_path, nodes)
 
 
-def close_app_cleanly(app: Application) -> None:
-    """Closes the app and fails if an exit-confirmation modal blocks shutdown."""
+def close_app_cleanly(app: Application, window_timeout: float = 30.0, process_timeout: float = 30.0) -> None:
+    """Closes the app, rejects blocking shutdown dialogs, and waits for process exit."""
 
+    process_id = getattr(app, "process", None)
     main_window = app.top_window()
-    main_window.close()
+    win32gui.PostMessage(main_window.handle, win32con.WM_CLOSE, 0, 0)
 
     def resolve() -> bool:
         try:
@@ -411,11 +424,27 @@ def close_app_cleanly(app: Application) -> None:
             return True
         if is_main_emule_window(window.handle):
             return False
+        if is_expected_shutdown_progress_dialog(window.handle):
+            return False
         if win32gui.GetClassName(window.handle) == "#32770":
             raise RuntimeError(f"Unexpected shutdown dialog: {describe_startup_dialog(window.handle)!r}")
         return False
 
-    wait_for(resolve, timeout=10.0, interval=0.2, description="clean app shutdown")
+    wait_for(resolve, timeout=window_timeout, interval=0.2, description="clean app shutdown")
+
+    if not process_id:
+        return
+
+    try:
+        process_handle = win32api.OpenProcess(win32con.SYNCHRONIZE, False, int(process_id))
+    except Exception:
+        return
+    try:
+        wait_result = win32event.WaitForSingleObject(process_handle, int(process_timeout * 1000))
+        if wait_result != win32event.WAIT_OBJECT_0:
+            raise RuntimeError(f"Timed out waiting for process {process_id} to exit after window shutdown.")
+    finally:
+        win32api.CloseHandle(process_handle)
 
 
 def load_startup_profile_trace_events(text: str) -> list[dict[str, object]]:

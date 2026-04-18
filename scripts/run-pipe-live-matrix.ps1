@@ -17,12 +17,21 @@ Optional deterministic seed root that is copied into each fresh working profile.
 .PARAMETER SessionManifestPath
 Optional machine-readable manifest output path for launch-only or full-run automation.
 
+.PARAMETER HelperPath
+Optional explicit path to `helper-runtime-pipe-live-session.ps1`.
+
 .PARAMETER LaunchOnly
 Starts the live harness session and exits after the sidecar is healthy without running the matrix or soak workload.
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false)]
+    [string]$EmuleWorkspaceRoot = '',
+
+    [Parameter(Mandatory = $false)]
+    [string]$AppRoot = '',
+
     [Parameter(Mandatory = $false)]
     [string]$ProfileRoot = '',
 
@@ -45,6 +54,12 @@ param(
     [Parameter(Mandatory = $false)]
     [int]$MatrixRepeatCount = 1,
 
+    [Parameter(Mandatory = $false)]
+    [string]$BindInterfaceName = 'hide.me',
+
+    [Parameter(Mandatory = $false)]
+    [string]$HelperPath = '',
+
     [switch]$LaunchOnly,
     [switch]$StrictMatrix,
     [switch]$SkipBuild,
@@ -58,15 +73,27 @@ if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
     $ProfileRoot = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'reports') 'live-profiles'
 }
 
-$helperPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\eMule-build\eMule\helpers\helper-runtime-pipe-live-session.ps1'))
-if (-not (Test-Path -LiteralPath $helperPath -PathType Leaf)) {
-    throw "Pipe live helper '$helperPath' was not found."
+if ([string]::IsNullOrWhiteSpace($HelperPath)) {
+    $helperCandidates = @(
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\eMule-tooling\helpers\helper-runtime-pipe-live-session.ps1')),
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\eMule-build\eMule\helpers\helper-runtime-pipe-live-session.ps1'))
+    )
+    $HelperPath = $helperCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+} else {
+    $HelperPath = [System.IO.Path]::GetFullPath($HelperPath)
 }
 
-& $helperPath `
+if (-not (Test-Path -LiteralPath $HelperPath -PathType Leaf)) {
+    throw "Pipe live helper '$HelperPath' was not found."
+}
+
+& $HelperPath `
+    -EmuleWorkspaceRoot $EmuleWorkspaceRoot `
+    -AppRoot $AppRoot `
     -ProfileRoot $ProfileRoot `
     -SeedRoot $SeedRoot `
     -SessionManifestPath $SessionManifestPath `
+    -BindInterfaceName $BindInterfaceName `
     -SearchQuery $SearchQuery `
     -StressQueries $StressQueries `
     -ScenarioProfile $ScenarioProfile `

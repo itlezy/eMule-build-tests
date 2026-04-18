@@ -56,6 +56,33 @@ Current critical comparison slices:
 - long-path and part/met persistence IO: `src\long_path_fs_parity.tests.cpp`, `src\part_file_persistence.tests.cpp`
 - core socket IO guards: `src\socket_io.tests.cpp`, `src\emsocket_send.tests.cpp`, `src\async_socket_ex.tests.cpp`
 
+Script inventory:
+
+- all `*.ps1` entrypoints and helpers in this repo require `pwsh 7.6+`
+- operator-facing wrappers are documented below; internal helpers and targeted diagnostics are listed here so maintenance scope stays explicit
+
+| Path | Role | Status | Notes |
+| --- | --- | --- | --- |
+| `scripts\build-emule-tests.ps1` | operator-facing build wrapper | maintained | builds `emule-tests.exe`, optional run |
+| `scripts\guard-tracked-files.ps1` | operator-facing guard | maintained | privacy/path leak gate before builds |
+| `scripts\run-native-coverage.ps1` | operator-facing coverage wrapper | maintained | OpenCppCoverage orchestration |
+| `scripts\run-live-diff.ps1` | operator-facing parity wrapper | maintained | live app-vs-app comparison |
+| `scripts\run-bugfix-core-coverage.ps1` | operator-facing comparison wrapper | maintained | canonical `main` vs `bugfix` pass |
+| `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
+| `scripts\run-shared-files-ui-e2e.ps1` | operator-facing UI wrapper | maintained | real Win32 Shared Files regression |
+| `scripts\run-startup-profile-scenarios.ps1` | operator-facing startup wrapper | maintained | Chrome Trace startup-profile scenarios |
+| `scripts\publish-harness-summary.ps1` | shared report publisher | maintained | combines coverage, parity, and optional live status |
+| `helpers\helper-opencppcoverage-bootstrap.ps1` | internal helper | maintained | resolves OpenCppCoverage install |
+| `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
+| `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
+| `scripts\emule_live_profile_common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
+| `scripts\shared-files-ui-e2e.py` | Python runner | maintained | backing logic for the Shared Files UI wrapper |
+| `scripts\startup-profile-scenarios.py` | Python runner | maintained | backing logic for the startup-profile wrapper |
+| `scripts\test_create_long_paths_tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
+| `scripts\diag-hash-launch.ps1` | targeted diagnostic | maintained | seeded profile + procdump launcher for hash stall investigations |
+| `scripts\parse-dump.py` | targeted diagnostic | maintained | parses `diag-hash` dumps, defaults to `diag-hash-latest` |
+| `scripts\resolve-rva.py` | targeted diagnostic | maintained | resolves caller-provided RVAs against a selected debug build |
+
 Workspace quick reference:
 
 - default canonical workspace: `EMULE_WORKSPACE_ROOT\workspaces\v0.72a`
@@ -90,6 +117,7 @@ Deterministic live-profile seed:
 Canonical live harness:
 
 - `scripts\run-pipe-live-matrix.ps1` is the operator-facing entrypoint for launch-only and full live named-pipe harness runs
+- the wrapper resolves `helper-runtime-pipe-live-session.ps1` from `repos\eMule-tooling\helpers` first and falls back to the legacy app-side helper path only when needed
 - the harness stages a renamed binary copy, `eMule_v072_harness.exe`, beside the debug build output and launches that copy so processes, dumps, and cleanup are easier to identify
 - the machine-readable session manifest can be requested through the shared wrapper with `-SessionManifestPath`
 - normal runs retry targeted teardown and fail if any harness-launched process remains afterward; `-KeepRunning` is the only supported opt-out

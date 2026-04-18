@@ -1,63 +1,83 @@
-"""Parse minidump to extract thread instruction pointers and resolve to modules."""
-import struct
-import sys
-import os
+"""Parse one minidump and print thread RIPs resolved to loaded modules."""
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-TEST_REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
-emule_workspace_root = os.environ.get(
-    "EMULE_WORKSPACE_ROOT",
-    os.path.normpath(os.path.join(TEST_REPO_ROOT, "..", "..")),
-)
-DUMP_PATH = os.path.join(
-    emule_workspace_root,
-    "repos",
-    "eMule-build-tests",
-    "reports",
-    "diag-hash-latest",
-    "emule-stuck.dmp",
-)
+from __future__ import annotations
+
+import argparse
+import os
+import struct
+from pathlib import Path
 
 from minidump.minidumpfile import MinidumpFile
 
-mf = MinidumpFile.parse(DUMP_PATH)
 
-# Collect modules
-modules = []
-if mf.modules:
-    for m in mf.modules.modules:
-        modules.append((m.baseaddress, m.size, m.name))
+def default_workspace_root() -> Path:
+    script_dir = Path(__file__).resolve().parent
+    test_repo_root = script_dir.parent
+    return Path(os.environ.get("EMULE_WORKSPACE_ROOT", test_repo_root.parent.parent)).resolve()
 
-def resolve(addr):
+
+def default_dump_path(workspace_root: Path) -> Path:
+    return workspace_root / "repos" / "eMule-build-tests" / "reports" / "diag-hash-latest" / "emule-cpu.dmp"
+
+
+def parse_args() -> argparse.Namespace:
+    workspace_root = default_workspace_root()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "dump_path",
+        nargs="?",
+        default=str(default_dump_path(workspace_root)),
+        help="Minidump path to inspect. Defaults to reports/diag-hash-latest/emule-cpu.dmp.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    dump_path = Path(args.dump_path).resolve()
+    if not dump_path.is_file():
+        raise SystemExit(f"Dump file was not found: {dump_path}")
+
+    dump_file = MinidumpFile.parse(str(dump_path))
+    modules: list[tuple[int, int, str]] = []
+    if dump_file.modules:
+        for module in dump_file.modules.modules:
+            modules.append((module.baseaddress, module.size, module.name))
+
+    def resolve_module(address: int) -> str:
+        for base, size, name in modules:
+            if base <= address < base + size:
+                return f"{name.rsplit(chr(92), 1)[-1]}+{address - base:#x}"
+        return f"{address:#018x}"
+
+    raw = dump_path.read_bytes()
+
+    print(f"Dump: {dump_path}")
+    print("=== THREADS ===")
+    if dump_file.threads:
+        for thread in dump_file.threads.threads:
+            ctx_rva = thread.ThreadContext.Rva
+            ctx_size = thread.ThreadContext.DataSize
+
+            if ctx_size >= 0x100:
+                rip = struct.unpack_from("<Q", raw, ctx_rva + 0xF8)[0]
+                rsp = struct.unpack_from("<Q", raw, ctx_rva + 0x98)[0]
+                print(
+                    f"  TID={thread.ThreadId:#06x}  RIP={rip:#018x}  "
+                    f"RSP={rsp:#018x}  => {resolve_module(rip)}"
+                )
+            else:
+                print(f"  TID={thread.ThreadId:#06x}  (context too small: {ctx_size})")
+
+    print()
+    print("=== KEY MODULES ===")
     for base, size, name in modules:
-        if base <= addr < base + size:
-            offset = addr - base
-            short = name.rsplit("\\", 1)[-1]
-            return f"{short}+{offset:#x}"
-    return f"{addr:#018x}"
+        short_name = name.rsplit("\\", 1)[-1].lower()
+        if any(token in short_name for token in ("emule", "ntdll", "kernel", "mfc", "msvc")):
+            print(f"  {base:#018x}  size={size:#010x}  {name.rsplit(chr(92), 1)[-1]}")
 
-# Read the raw dump file to extract CONTEXT structures
-with open(DUMP_PATH, "rb") as f:
-    raw = f.read()
+    return 0
 
-print("=== THREADS ===")
-if mf.threads:
-    for t in mf.threads.threads:
-        ctx_rva = t.ThreadContext.Rva
-        ctx_size = t.ThreadContext.DataSize
 
-        # x64 CONTEXT: RIP at offset 0xF8, RSP at offset 0x98
-        if ctx_size >= 0x100:
-            rip = struct.unpack_from("<Q", raw, ctx_rva + 0xF8)[0]
-            rsp = struct.unpack_from("<Q", raw, ctx_rva + 0x98)[0]
-            loc = resolve(rip)
-            print(f"  TID={t.ThreadId:#06x}  RIP={rip:#018x}  RSP={rsp:#018x}  => {loc}")
-        else:
-            print(f"  TID={t.ThreadId:#06x}  (context too small: {ctx_size})")
-
-print()
-print("=== KEY MODULES ===")
-for base, size, name in modules:
-    short = name.rsplit("\\", 1)[-1].lower()
-    if any(k in short for k in ("emule", "ntdll", "kernel", "mfc", "msvc")):
-        print(f"  {base:#018x}  size={size:#010x}  {name.rsplit(chr(92), 1)[-1]}")
+if __name__ == "__main__":
+    raise SystemExit(main())

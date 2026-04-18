@@ -1,111 +1,173 @@
 #Requires -Version 7.6
 <#
 .SYNOPSIS
-    Launches eMule under diagnostic monitoring to investigate hashing hangs.
+Launches eMule under diagnostic monitoring to investigate hash-heavy stalls.
+
 .DESCRIPTION
-    Starts eMule with the testing profile, attaches procdump for automatic
-    dump capture on sustained high CPU, and tails the verbose log for
-    hashing progress.
-.NOTES
-    Designed for the videodupez hashing investigation (2026-04-01).
+Starts one debug `emule.exe` against an explicit isolated `-c` profile, attaches
+`procdump` for automatic dump capture on sustained high CPU, tails the standard
+logs for hashing progress, and publishes one stable `reports\diag-hash-latest`
+pointer for the companion dump-analysis utilities.
 #>
 [CmdletBinding()]
 param(
+    [string]$WorkspaceRoot,
+    [string]$AppRoot,
     [string]$EmuleExe = '',
-    [string]$ConfigDir = '',
-    [string]$ReportDir = '',
+    [string]$SeedConfigDir = '',
+    [string]$ProfileRoot = '',
+    [string]$ReportRoot = '',
     [int]$TimeoutSeconds = 180,
     [int]$CpuThresholdPercent = 90,
     [int]$CpuDurationSeconds = 30
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'resolve-app-root.ps1')
 . (Join-Path $PSScriptRoot 'resolve-workspace-layout.ps1')
 
-$testRepoRootPath = Split-Path -Parent $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($ReportDir)) {
-    $ReportDir = Join-Path $testRepoRootPath 'reports'
+function Publish-LatestDirectoryPointer {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$LatestDirectory
+    )
+
+    $latestParentDirectory = Split-Path -Parent $LatestDirectory
+    if (-not [string]::IsNullOrWhiteSpace($latestParentDirectory)) {
+        $null = New-Item -ItemType Directory -Force -Path $latestParentDirectory
+    }
+
+    if (Test-Path -LiteralPath $LatestDirectory) {
+        Remove-Item -LiteralPath $LatestDirectory -Recurse -Force
+    }
+
+    $null = New-Item -ItemType Junction -Path $LatestDirectory -Target $TargetDirectory -Force
 }
-if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
-    $ConfigDir = Join-Path $ReportDir 'diag-hash-profile'
+
+function Copy-SeedProfile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SeedConfigDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProfileBasePath
+    )
+
+    if (-not (Test-Path -LiteralPath $SeedConfigDirectory -PathType Container)) {
+        throw "Seed config directory '$SeedConfigDirectory' does not exist."
+    }
+
+    $configDirectory = Join-Path $ProfileBasePath 'config'
+    $logsDirectory = Join-Path $ProfileBasePath 'logs'
+    $null = New-Item -ItemType Directory -Force -Path $configDirectory
+    $null = New-Item -ItemType Directory -Force -Path $logsDirectory
+
+    foreach ($seedEntry in @(Get-ChildItem -LiteralPath $SeedConfigDirectory -Force -ErrorAction SilentlyContinue)) {
+        Copy-Item -LiteralPath $seedEntry.FullName -Destination $configDirectory -Recurse -Force
+    }
+}
+
+$testRepoRootPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$workspaceRootPath = if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
+} else {
+    (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+}
+$appRootPath = if ([string]::IsNullOrWhiteSpace($AppRoot)) {
+    Resolve-WorkspaceAppRoot -WorkspaceRoot $workspaceRootPath -PreferredVariantNames @('main', 'build', 'bugfix')
+} else {
+    (Resolve-Path -LiteralPath $AppRoot).Path
 }
 if ([string]::IsNullOrWhiteSpace($EmuleExe)) {
-    $workspaceRoot = Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
-    $EmuleExe = Join-Path $workspaceRoot 'app\eMule-v0.72a-bugfix\srchybrid\x64\Debug\emule.exe'
+    $EmuleExe = Join-Path $appRootPath 'srchybrid\x64\Debug\emule.exe'
 }
+$EmuleExe = [System.IO.Path]::GetFullPath($EmuleExe)
 
-# --- Prepare report directory ---
+if ([string]::IsNullOrWhiteSpace($ReportRoot)) {
+    $ReportRoot = Join-Path $testRepoRootPath 'reports\diag-hash'
+}
+$ReportRoot = [System.IO.Path]::GetFullPath($ReportRoot)
+$latestReportDir = Join-Path (Split-Path -Parent $ReportRoot) 'diag-hash-latest'
+
+if ([string]::IsNullOrWhiteSpace($SeedConfigDir)) {
+    $SeedConfigDir = Join-Path $testRepoRootPath 'manifests\live-profile-seed\config'
+}
+$SeedConfigDir = [System.IO.Path]::GetFullPath($SeedConfigDir)
+
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$runDir = Join-Path $ReportDir "diag-hash-$timestamp"
-New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+$runDir = Join-Path $ReportRoot $timestamp
+$null = New-Item -ItemType Directory -Path $runDir -Force
+
+$profileRootPath = if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    Join-Path $runDir 'profile-base'
+} else {
+    [System.IO.Path]::GetFullPath($ProfileRoot)
+}
+
 Write-Host "[diag] Report directory: $runDir"
+Write-Host "[diag] App root: $appRootPath"
+Write-Host "[diag] Profile root: $profileRootPath"
 
-# --- Verify eMule executable ---
-if (-not (Test-Path $EmuleExe)) {
-    Write-Error "eMule executable not found: $EmuleExe"
-    return
+if (-not (Test-Path -LiteralPath $EmuleExe -PathType Leaf)) {
+    throw "eMule executable not found: $EmuleExe"
 }
 
-# --- Clear logs for clean capture ---
-$logDir = Join-Path $ConfigDir 'logs'
-if (Test-Path $logDir) {
-    Get-ChildItem -Path $logDir -Filter '*.log' | Remove-Item -Force
+Copy-SeedProfile -SeedConfigDirectory $SeedConfigDir -ProfileBasePath $profileRootPath
+
+$logDir = Join-Path $profileRootPath 'logs'
+foreach ($logFile in @(Get-ChildItem -LiteralPath $logDir -Filter '*.log' -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $logFile.FullName -Force
 }
 
-# --- Launch eMule with explicit config root and VPN binding ---
 Write-Host "[diag] Launching eMule..."
-$emuleArgs = @('-c', $ConfigDir)
+$emuleArgs = @('-ignoreinstances', '-c', $profileRootPath)
 $emuleProc = Start-Process -FilePath $EmuleExe -ArgumentList $emuleArgs -PassThru
 Write-Host "[diag] eMule PID: $($emuleProc.Id)"
 
-# --- Give eMule a moment to initialize ---
 Start-Sleep -Seconds 3
 
-# --- Launch procdump to capture dump on sustained high CPU ---
 $dumpPath = Join-Path $runDir 'emule-cpu.dmp'
 $procdumpArgs = @(
     '-accepteula',
-    '-ma',                          # full memory dump
-    '-c', $CpuThresholdPercent,     # CPU threshold
-    '-s', $CpuDurationSeconds,      # sustained duration
-    '-n', '1',                      # capture 1 dump
+    '-ma',
+    '-c', $CpuThresholdPercent,
+    '-s', $CpuDurationSeconds,
+    '-n', '1',
     $emuleProc.Id,
     $dumpPath
 )
 
-Write-Host "[diag] Starting procdump (CPU > $CpuThresholdPercent% for $($CpuDurationSeconds)s triggers dump)..."
+Write-Host "[diag] Starting procdump (CPU > $CpuThresholdPercent% for $CpuDurationSeconds s triggers dump)..."
 $procdumpProc = Start-Process -FilePath 'procdump' -ArgumentList $procdumpArgs -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $runDir 'procdump-stdout.txt') -RedirectStandardError (Join-Path $runDir 'procdump-stderr.txt')
 
-# --- Monitor hashing progress via verbose log ---
-$verboseLog = Join-Path $logDir 'eMule_Verbose.log'
 $mainLog = Join-Path $logDir 'eMule.log'
+$verboseLog = Join-Path $logDir 'eMule_Verbose.log'
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-$lastLogSize = 0
+$lastVerboseLogSize = 0
 $hashingStarted = $false
-$hashingCompleted = $false
 
-Write-Host "[diag] Monitoring for ${TimeoutSeconds}s (deadline: $($deadline.ToString('HH:mm:ss')))..."
-Write-Host ""
+Write-Host "[diag] Monitoring for $TimeoutSeconds s (deadline: $($deadline.ToString('HH:mm:ss')))..."
+Write-Host ''
 
 while ((Get-Date) -lt $deadline) {
-    # Check if eMule is still running
     if ($emuleProc.HasExited) {
         Write-Host "[diag] eMule exited with code $($emuleProc.ExitCode)"
         break
     }
 
-    # Read main log for hashing events
-    if (Test-Path $mainLog) {
+    if (Test-Path -LiteralPath $mainLog -PathType Leaf) {
         try {
             $logContent = [System.IO.File]::ReadAllText($mainLog)
-            $logLines = $logContent -split [Environment]::NewLine
-
-            foreach ($line in $logLines) {
+            foreach ($line in ($logContent -split [Environment]::NewLine)) {
                 if ($line -match 'Hashing file:') {
                     if (-not $hashingStarted) {
                         $hashingStarted = $true
-                        Write-Host "[diag] HASHING STARTED"
+                        Write-Host '[diag] HASHING STARTED'
                     }
                     Write-Host "  LOG: $line"
                 }
@@ -114,79 +176,66 @@ while ((Get-Date) -lt $deadline) {
                 }
             }
         } catch {
-            # Log may be locked
         }
     }
 
-    # Read verbose log for checkpoints
-    if (Test-Path $verboseLog) {
+    if (Test-Path -LiteralPath $verboseLog -PathType Leaf) {
         try {
             $verboseContent = [System.IO.File]::ReadAllText($verboseLog)
-            $currentSize = $verboseContent.Length
-            if ($currentSize -gt $lastLogSize) {
-                $newContent = $verboseContent.Substring($lastLogSize)
-                $newLines = $newContent -split [Environment]::NewLine
-                foreach ($line in $newLines) {
+            if ($verboseContent.Length -gt $lastVerboseLogSize) {
+                $newContent = $verboseContent.Substring($lastVerboseLogSize)
+                foreach ($line in ($newContent -split [Environment]::NewLine)) {
                     if ($line -match 'CreateFromFile checkpoint|Successfully saved AICH|raw-hash-complete|Hashing file') {
                         Write-Host "  VERBOSE: $line"
                     }
                 }
-                $lastLogSize = $currentSize
+                $lastVerboseLogSize = $verboseContent.Length
             }
         } catch {
-            # Log may be locked
         }
-    }
-
-    # Sample CPU usage
-    try {
-        $cpuSample = Get-Process -Id $emuleProc.Id -ErrorAction SilentlyContinue
-        if ($cpuSample) {
-            $ws = [math]::Round($cpuSample.WorkingSet64 / 1MB, 1)
-            $cpu = [math]::Round($cpuSample.CPU, 1)
-            # Only print periodic status
-        }
-    } catch {
-        # Process may have exited
     }
 
     Start-Sleep -Seconds 2
 }
 
-# --- Collect results ---
-Write-Host ""
-Write-Host "[diag] Timeout reached or eMule exited. Collecting results..."
+Write-Host ''
+Write-Host '[diag] Collecting results...'
 
-# Copy logs
-if (Test-Path $logDir) {
-    Copy-Item -Path (Join-Path $logDir '*') -Destination $runDir -Force -ErrorAction SilentlyContinue
-}
-
-# Check if procdump captured anything
 if (-not $procdumpProc.HasExited) {
-    Write-Host "[diag] Stopping procdump..."
+    Write-Host '[diag] Stopping procdump...'
     Stop-Process -Id $procdumpProc.Id -Force -ErrorAction SilentlyContinue
 }
 
-$dumpCaptured = Test-Path $dumpPath
+$dumpCaptured = Test-Path -LiteralPath $dumpPath -PathType Leaf
 Write-Host "[diag] Dump captured: $dumpCaptured"
 
-# Build summary
-$summary = @{
-    timestamp       = $timestamp
-    emulePid        = $emuleProc.Id
-    emuleExited     = $emuleProc.HasExited
-    emuleExitCode   = if ($emuleProc.HasExited) { $emuleProc.ExitCode } else { $null }
-    hashingStarted  = $hashingStarted
-    dumpCaptured    = $dumpCaptured
-    dumpPath        = if ($dumpCaptured) { $dumpPath } else { $null }
-    reportDir       = $runDir
+try {
+    Publish-LatestDirectoryPointer -TargetDirectory $runDir -LatestDirectory $latestReportDir
+} catch {
+    Write-Warning "Failed to refresh latest report pointer '$latestReportDir': $($_.Exception.Message)"
 }
 
-$summary | ConvertTo-Json -Depth 3 | Set-Content -Path (Join-Path $runDir 'summary.json') -Encoding UTF8
-Write-Host "[diag] Summary written to: $(Join-Path $runDir 'summary.json')"
+$summaryPath = Join-Path $runDir 'summary.json'
+$summary = [ordered]@{
+    generated_at = (Get-Date).ToString('o')
+    app_exe = $EmuleExe
+    app_root = $appRootPath
+    workspace_root = $workspaceRootPath
+    profile_root = $profileRootPath
+    seed_config_dir = $SeedConfigDir
+    report_dir = $runDir
+    latest_report_dir = $latestReportDir
+    emule_pid = $emuleProc.Id
+    emule_exited = $emuleProc.HasExited
+    emule_exit_code = if ($emuleProc.HasExited) { $emuleProc.ExitCode } else { $null }
+    hashing_started = $hashingStarted
+    dump_captured = $dumpCaptured
+    dump_path = if ($dumpCaptured) { $dumpPath } else { $null }
+}
+$summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding utf8
+Write-Host "[diag] Summary written to: $summaryPath"
 
 if (-not $emuleProc.HasExited) {
-    Write-Host "[diag] eMule is still running (PID $($emuleProc.Id)). Check the dump or attach a debugger."
-    Write-Host "[diag] To take a manual dump: procdump -accepteula -ma $($emuleProc.Id) $runDir\manual.dmp"
+    Write-Host "[diag] eMule is still running (PID $($emuleProc.Id))."
+    Write-Host "[diag] To take a manual dump: procdump -accepteula -ma $($emuleProc.Id) $(Join-Path $runDir 'manual.dmp')"
 }

@@ -102,6 +102,23 @@ TEST_CASE("Path-helper seam normalizes trailing separators across drive UNC and 
 	CHECK(PathHelpers::TrimTrailingSeparatorForLeaf(CString(_T("\\\\server\\share\\folder\\"))) == CString(_T("\\\\server\\share\\folder")));
 }
 
+TEST_CASE("Path-helper seam restores the current directory through long-path-aware buffers")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x43555244u));
+
+	const CString strOriginalCurrentDirectory = PathHelpers::GetCurrentDirectoryPath();
+	const CString strDeepDirectory(fixture.MakeDirectoryChildPath(L"cwd-target").c_str());
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::EnsureDirectoryTree(fixture.DirectoryPath(), std::wstring(strDeepDirectory.GetString())));
+
+	REQUIRE(PathHelpers::SetCurrentDirectoryPath(strDeepDirectory));
+	CHECK(PathHelpers::ArePathsEquivalent(PathHelpers::GetCurrentDirectoryPath(), strDeepDirectory));
+
+	if (!strOriginalCurrentDirectory.IsEmpty())
+		REQUIRE(PathHelpers::SetCurrentDirectoryPath(strOriginalCurrentDirectory));
+}
+
 TEST_CASE("Shell/UI seam preserves folder roots when preparing shell selection paths")
 {
 	CHECK(ShellUiHelpers::PrepareFolderSelectionPathForShell(CString(_T("C:\\"))) == CString(_T("C:\\")));

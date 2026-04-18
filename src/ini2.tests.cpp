@@ -138,4 +138,28 @@ TEST_CASE("Ini2 seam grows UTF-8 profile-string buffers past the old 256 charact
 	CHECK(strActual.GetLength() > 256);
 }
 
+TEST_CASE("Ini2 seam falls back to file-backed profile IO for long ini paths")
+{
+	LongPathTestSupport::ScopedLongPathFixture fixture;
+	INFO(fixture.LastError());
+	REQUIRE(fixture.Initialize(true, 0u, 0x32494E4Cu));
+
+	const CString strLongIniPath(fixture.MakeDirectoryChildPath(L"config\\prefs.ini").c_str());
+	const std::wstring iniDirectory = fixture.MakeDirectoryChildPath(L"config");
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::EnsureDirectoryTree(fixture.DirectoryPath(), iniDirectory));
+
+	CHECK(Ini2Helpers::RequiresFileBackedProfileIo(strLongIniPath));
+	REQUIRE(Ini2Helpers::WriteProfileStringLongPath(_T("eMule"), _T("Nick"), _T("LongPathTester"), strLongIniPath));
+	CHECK(Ini2Helpers::ReadProfileStringLongPath(_T("eMule"), _T("Nick"), _T("missing"), strLongIniPath) == CString(_T("LongPathTester")));
+
+	REQUIRE(Ini2Helpers::WriteProfileUtf8StringLongPath(_T("eMule"), _T("Comment"), _T("zażółć gęślą jaźń"), strLongIniPath));
+	CHECK(Ini2Helpers::ReadProfileUtf8StringLongPath(_T("eMule"), _T("Comment"), _T("missing"), strLongIniPath) == CString(_T("zażółć gęślą jaźń")));
+
+	REQUIRE(Ini2Helpers::DeleteProfileKeyLongPath(_T("eMule"), _T("Nick"), strLongIniPath));
+	CHECK(Ini2Helpers::ReadProfileStringLongPath(_T("eMule"), _T("Nick"), _T("missing"), strLongIniPath) == CString(_T("missing")));
+
+	REQUIRE(LongPathTestSupport::ScopedLongPathFixture::DeleteFilePath(std::wstring(strLongIniPath.GetString())));
+	REQUIRE(::RemoveDirectoryW(LongPathTestSupport::PreparePathForLongPath(iniDirectory).c_str()) != FALSE);
+}
+
 TEST_SUITE_END;

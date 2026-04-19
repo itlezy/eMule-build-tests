@@ -80,6 +80,29 @@ function Publish-DirectorySnapshot {
     }
 }
 
+function Get-PythonInvocation {
+    [CmdletBinding()]
+    param()
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        return @{
+            FilePath = $python.Source
+            Prefix = @()
+        }
+    }
+
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) {
+        return @{
+            FilePath = $py.Source
+            Prefix = @('-3')
+        }
+    }
+
+    throw 'Python 3 was not found on PATH.'
+}
+
 function Get-ResolvedReportMetric {
     param(
         [Parameter(Mandatory = $true)]
@@ -299,8 +322,12 @@ $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $coverageSummaryPa
 
 Publish-DirectorySnapshot -SourceDirectory $runReportDir -DestinationDirectory $latestReportDir
 
-$publishHarnessSummaryPath = Join-Path $testRepoRootPath 'scripts\publish-harness-summary.ps1'
-& $publishHarnessSummaryPath -TestRepoRoot $testRepoRootPath -CoverageSummaryPath $coverageSummaryPath
+ $pythonInvocation = Get-PythonInvocation
+& $pythonInvocation.FilePath @($pythonInvocation.Prefix + @(
+    (Join-Path $testRepoRootPath 'scripts\publish-harness-summary.py'),
+    '--test-repo-root', $testRepoRootPath,
+    '--coverage-summary-path', $coverageSummaryPath
+))
 if ($LASTEXITCODE -ne 0) {
     throw 'Failed to publish the combined harness summary after the native coverage run.'
 }

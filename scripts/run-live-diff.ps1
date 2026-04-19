@@ -38,6 +38,29 @@ $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'resolve-workspace-layout.ps1')
 
+function Get-PythonInvocation {
+    [CmdletBinding()]
+    param()
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        return @{
+            FilePath = $python.Source
+            Prefix = @()
+        }
+    }
+
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) {
+        return @{
+            FilePath = $py.Source
+            Prefix = @('-3')
+        }
+    }
+
+    throw 'Python 3 was not found on PATH.'
+}
+
 function Get-BuildTag {
     param(
         [Parameter(Mandatory = $true)]
@@ -307,9 +330,13 @@ $summaryJsonPath = Join-Path $reportRoot 'live-diff-summary.json'
     failed = $failed
     text_summary_path = $summaryPath
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryJsonPath -Encoding utf8
-$publishHarnessSummaryPath = Join-Path $testRepoRootPath 'scripts\publish-harness-summary.ps1'
+$pythonInvocation = Get-PythonInvocation
 try {
-    & $publishHarnessSummaryPath -TestRepoRoot $testRepoRootPath -LiveDiffSummaryPath $summaryJsonPath
+    & $pythonInvocation.FilePath @($pythonInvocation.Prefix + @(
+        (Join-Path $testRepoRootPath 'scripts\publish-harness-summary.py'),
+        '--test-repo-root', $testRepoRootPath,
+        '--live-diff-summary-path', $summaryJsonPath
+    ))
 } catch {
     throw 'Failed to publish the combined harness summary after the live diff run.'
 }

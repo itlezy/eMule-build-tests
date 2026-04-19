@@ -70,7 +70,7 @@ Script inventory:
 | `scripts\run-live-diff.ps1` | operator-facing parity wrapper | maintained | live app-vs-app comparison |
 | `scripts\run-bugfix-core-coverage.ps1` | operator-facing comparison wrapper | maintained | canonical `main` vs `bugfix` pass |
 | `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
-| `scripts\publish-harness-summary.ps1` | shared report publisher | maintained | combines coverage, parity, and optional live status |
+| `scripts\publish-harness-summary.py` | shared report publisher | maintained | combines coverage, parity, and optional live status |
 | `helpers\helper-opencppcoverage-bootstrap.ps1` | internal helper | maintained | resolves OpenCppCoverage install |
 | `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
 | `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
@@ -179,4 +179,4 @@ Native seam coverage and shared reports:
 - `scripts\run-bugfix-core-coverage.ps1` chains the canonical `main` and `bugfix` native-coverage runs with the workspace live-diff pass and writes a combined summary under `reports\bugfix-core-coverage`
 - `helpers\helper-opencppcoverage-bootstrap.ps1` uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run-live-diff.ps1` now writes both text and JSON parity/divergence summaries under `reports`
-- `scripts\publish-harness-summary.ps1` combines native coverage, parity, optional live-harness manifest data, optional live UI status, and optional startup-profile scenario status into one shared summary under `reports`
+- `scripts\publish-harness-summary.py` combines native coverage, parity, optional live-harness manifest data, optional live UI status, and optional startup-profile scenario status into one shared summary under `reports`

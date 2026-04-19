@@ -239,7 +239,7 @@ def build_live_ui_summary(
     result_filename: str = "result.json",
     error_message: str = "",
 ) -> dict[str, object]:
-    """Builds the UI-harness summary shape consumed by `publish-harness-summary.ps1`."""
+    """Builds the UI-harness summary shape consumed by the shared summary publisher."""
 
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -278,14 +278,14 @@ def build_startup_profiles_summary(
     }
 
 
-def find_powershell_executable() -> str:
-    """Returns the preferred PowerShell executable for retained utility scripts."""
+def find_python_executable() -> str:
+    """Returns the preferred Python 3 executable for the harness repo."""
 
-    for candidate in ("pwsh", "powershell.exe"):
+    for candidate in ("python", "py"):
         resolved = shutil.which(candidate)
         if resolved:
             return resolved
-    raise RuntimeError("PowerShell was not found on PATH.")
+    raise RuntimeError("Python 3 was not found on PATH.")
 
 
 def update_harness_summary(
@@ -294,20 +294,21 @@ def update_harness_summary(
     live_ui_summary_path: Path | None = None,
     startup_profile_summary_path: Path | None = None,
 ) -> None:
-    """Refreshes the shared harness summary using the retained PowerShell utility."""
+    """Refreshes the shared harness summary using the canonical Python publisher."""
 
-    command = [
-        find_powershell_executable(),
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str((repo_root / "scripts" / "publish-harness-summary.ps1").resolve()),
-        "-TestRepoRoot",
-        str(repo_root.resolve()),
-    ]
+    python_executable = find_python_executable()
+    command = [python_executable]
+    if Path(python_executable).name.lower().startswith("py"):
+        command.append("-3")
+    command.extend(
+        [
+            str((repo_root / "scripts" / "publish-harness-summary.py").resolve()),
+            "--test-repo-root",
+            str(repo_root.resolve()),
+        ]
+    )
     if live_ui_summary_path is not None:
-        command.extend(["-LiveUiSummaryPath", str(live_ui_summary_path.resolve())])
+        command.extend(["--live-ui-summary-path", str(live_ui_summary_path.resolve())])
     if startup_profile_summary_path is not None:
-        command.extend(["-StartupProfileSummaryPath", str(startup_profile_summary_path.resolve())])
+        command.extend(["--startup-profile-summary-path", str(startup_profile_summary_path.resolve())])
     subprocess.run(command, check=True)

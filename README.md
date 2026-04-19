@@ -122,6 +122,8 @@ Canonical live REST E2E lane:
 - `scripts\rest-api-smoke.py` is the backing Python runner and is intentionally strict pass/fail
 - the lane launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` and enables WebServer REST against one per-run localhost port
 - the lane requires real server-connect activity, Kad running state, network readiness, and one real live search lifecycle through the first usable network path
+- `-ServerSearchCount <N>` and `-KadSearchCount <N>` upgrade the run into one stricter mixed-network scenario with exact per-network live search counts
+- `-KeepRunning` leaves the launched isolated eMule instance alive after a passing run and forces artifact retention so the profile can be inspected afterward
 - failure artifacts include the failing phase plus the last observed server/Kad state so live-network regressions are diagnosable
 
 Canonical live harness:

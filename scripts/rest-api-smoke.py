@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -20,6 +21,9 @@ from emule_live_profile_common import (
     wait_for_main_window,
     write_json,
 )
+
+DEFAULT_SERVER_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
+DEFAULT_KAD_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
 
 
 def choose_listen_port() -> int:
@@ -70,19 +74,33 @@ def upsert_ini_section_value(text: str, section: str, key: str, value: str) -> s
     return "\r\n".join(output) + "\r\n"
 
 
-def configure_webserver_profile(config_dir: Path, app_exe: Path, api_key: str, port: int) -> None:
+def configure_webserver_profile(
+    config_dir: Path,
+    app_exe: Path,
+    api_key: str,
+    port: int,
+    bind_addr: str,
+    enable_upnp: bool,
+) -> None:
     """Enables the WebServer listener and REST API key inside the temp profile."""
 
     preferences_path = config_dir / "preferences.ini"
     text = preferences_path.read_text(encoding="utf-8", errors="ignore")
     text = patch_ini_value(text, "ConfirmExit", "0")
+    for key, value in (
+        ("Autoconnect", "1"),
+        ("Reconnect", "1"),
+        ("NetworkED2K", "1"),
+        ("NetworkKademlia", "1"),
+    ):
+        text = patch_ini_value(text, key, value)
     template_path = app_exe.parent.parent.parent / "webinterface" / "eMule.tmpl"
     text = patch_ini_value(text, "WebTemplateFile", str(template_path))
     for key, value in (
         ("Password", ""),
         ("PasswordLow", ""),
         ("ApiKey", api_key),
-        ("BindAddr", "127.0.0.1"),
+        ("BindAddr", bind_addr),
         ("Port", str(port)),
         ("WebUseUPnP", "0"),
         ("Enabled", "1"),
@@ -96,10 +114,53 @@ def configure_webserver_profile(config_dir: Path, app_exe: Path, api_key: str, p
         ("HTTPSKey", ""),
     ):
         text = upsert_ini_section_value(text, "WebServer", key, value)
+    text = upsert_ini_section_value(text, "UPnP", "EnableUPnP", "1" if enable_upnp else "0")
     preferences_path.write_text(text, encoding="utf-8", newline="\r\n")
 
 
-def http_request(base_url: str, path: str, *, method: str = "GET", api_key: str | None = None, json_body=None) -> dict[str, object]:
+def apply_p2p_bindaddr_override(
+    config_dir: Path,
+    interface_name: str,
+    bind_updater_script: Path,
+) -> None:
+    """Runs the canonical bind-address updater against the isolated profile."""
+
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(bind_updater_script),
+        "-InterfaceName",
+        interface_name,
+        "-ConfigDirectory",
+        str(config_dir),
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "P2P bind updater failed with exit code "
+            f"{completed.returncode}: {completed.stdout}{completed.stderr}"
+        )
+
+
+def http_request(
+    base_url: str,
+    path: str,
+    *,
+    method: str = "GET",
+    api_key: str | None = None,
+    json_body=None,
+    request_timeout_seconds: float = 5.0,
+) -> dict[str, object]:
     """Performs one HTTP request and returns a compact structured result."""
 
     data = None
@@ -112,7 +173,7 @@ def http_request(base_url: str, path: str, *, method: str = "GET", api_key: str 
 
     request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=5.0) as response:
+        with urllib.request.urlopen(request, timeout=request_timeout_seconds) as response:
             body_bytes = response.read()
             body_text = body_bytes.decode("utf-8", errors="replace")
             content_type = response.headers.get("Content-Type", "")
@@ -145,6 +206,20 @@ def require_json_object(result: dict[str, object], expected_status: int) -> dict
     assert int(result["status"]) == expected_status
     assert isinstance(result["json"], dict)
     return result["json"]
+
+
+def get_app_process_id(app: object) -> int | None:
+    """Returns the launched process id when pywinauto exposes it."""
+
+    process_id = getattr(app, "process", None)
+    if callable(process_id):
+        try:
+            process_id = process_id()
+        except TypeError:
+            process_id = None
+    if isinstance(process_id, int):
+        return process_id
+    return None
 
 
 def compact_server_status(payload: dict[str, Any]) -> dict[str, Any]:
@@ -221,6 +296,117 @@ def wait_for_server_activity(base_url: str, api_key: str, timeout_seconds: float
     return wait_for(resolve, timeout=timeout_seconds, interval=1.0, description="server activity")
 
 
+def wait_for_server_connected(
+    base_url: str,
+    api_key: str,
+    timeout_seconds: float,
+    *,
+    expected_server: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Waits until eD2K reaches a connected state, optionally for one target server."""
+
+    observations: list[dict[str, Any]] = []
+    expected_address = None if expected_server is None else str(expected_server.get("address") or "")
+    expected_port = None if expected_server is None else int(expected_server.get("port") or 0)
+
+    def resolve():
+        result = http_request(base_url, "/api/v1/servers/status", api_key=api_key)
+        if int(result["status"]) != 200 or not isinstance(result["json"], dict):
+            return None
+        payload = require_json_object(result, 200)
+        snapshot = compact_server_status(payload)
+        snapshot["observed_at"] = round(time.time(), 3)
+        observations.append(snapshot)
+
+        current_server = payload.get("currentServer")
+        matches_expected = expected_server is None
+        if isinstance(current_server, dict) and expected_server is not None:
+            matches_expected = (
+                str(current_server.get("address") or "") == expected_address
+                and int(current_server.get("port") or 0) == expected_port
+            )
+
+        if payload.get("connected") and matches_expected:
+            return {
+                "status": result,
+                "observations": observations,
+            }
+        return None
+
+    return wait_for(resolve, timeout=timeout_seconds, interval=1.0, description="server connected state")
+
+
+def observe_server_connect_attempt(
+    base_url: str,
+    api_key: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Watches one accepted server-connect attempt until it connects or clearly aborts."""
+
+    observations: list[dict[str, Any]] = []
+    last_result: dict[str, object] | None = None
+    saw_progress = False
+    deadline = time.time() + timeout_seconds
+
+    while time.time() < deadline:
+        try:
+            result = http_request(base_url, "/api/v1/servers/status", api_key=api_key)
+        except Exception as exc:
+            observations.append(
+                {
+                    "observed_at": round(time.time(), 3),
+                    "transport_error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                }
+            )
+            time.sleep(2.0)
+            continue
+
+        if int(result["status"]) != 200 or not isinstance(result["json"], dict):
+            observations.append(
+                {
+                    "observed_at": round(time.time(), 3),
+                    "unexpected_status": compact_http_result(result),
+                }
+            )
+            time.sleep(2.0)
+            continue
+
+        payload = require_json_object(result, 200)
+        last_result = result
+        snapshot = compact_server_status(payload)
+        snapshot["observed_at"] = round(time.time(), 3)
+        observations.append(snapshot)
+
+        if bool(payload.get("connected")):
+            return {
+                "connected": True,
+                "status": result,
+                "observations": observations,
+            }
+
+        if bool(payload.get("connecting")) or payload.get("currentServer") is not None:
+            saw_progress = True
+        elif saw_progress:
+            return {
+                "connected": False,
+                "aborted": True,
+                "status": result,
+                "observations": observations,
+            }
+
+        time.sleep(2.0)
+
+    return {
+        "connected": False,
+        "aborted": False,
+        "status": last_result,
+        "observations": observations,
+    }
+
+
 def wait_for_kad_running(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Waits until Kad reports a running state after the connect request."""
 
@@ -245,7 +431,26 @@ def wait_for_kad_running(base_url: str, api_key: str, timeout_seconds: float) ->
 
 
 def wait_for_network_ready(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
-    """Waits until either eD2K or Kad becomes usable for one real search."""
+    """Waits until the requested live network modes become usable for searches."""
+
+    return wait_for_requested_networks(
+        base_url,
+        api_key,
+        timeout_seconds,
+        require_server_connected=False,
+        require_kad_connected=False,
+    )
+
+
+def wait_for_requested_networks(
+    base_url: str,
+    api_key: str,
+    timeout_seconds: float,
+    *,
+    require_server_connected: bool,
+    require_kad_connected: bool,
+) -> dict[str, object]:
+    """Waits until the requested live server/Kad connectivity requirements are met."""
 
     observations: list[dict[str, Any]] = []
     last_server_result = None
@@ -273,18 +478,41 @@ def wait_for_network_ready(base_url: str, api_key: str, timeout_seconds: float) 
         }
         observations.append(snapshot)
 
-        if server_payload.get("connected"):
+        server_connected = bool(server_payload.get("connected"))
+        kad_connected = bool(kad_payload.get("connected"))
+
+        if require_server_connected or require_kad_connected:
+            if (not require_server_connected or server_connected) and (
+                not require_kad_connected or kad_connected
+            ):
+                mode = "both" if server_connected and kad_connected else (
+                    "server" if server_connected else "kad"
+                )
+                return {
+                    "ready": True,
+                    "mode": mode,
+                    "server_ready": server_connected,
+                    "kad_ready": kad_connected,
+                    "server_status": server_result,
+                    "kad_status": kad_result,
+                    "observations": observations,
+                }
+        elif server_connected:
             return {
                 "ready": True,
                 "mode": "server",
+                "server_ready": True,
+                "kad_ready": kad_connected,
                 "server_status": server_result,
                 "kad_status": kad_result,
                 "observations": observations,
             }
-        if kad_payload.get("connected"):
+        elif kad_connected:
             return {
                 "ready": True,
                 "mode": "kad",
+                "server_ready": server_connected,
+                "kad_ready": True,
                 "server_status": server_result,
                 "kad_status": kad_result,
                 "observations": observations,
@@ -308,10 +536,34 @@ def build_search_method_candidates(mode: str) -> list[str]:
     return ["automatic", "server", "kad"]
 
 
+def build_search_plan(server_search_count: int, kad_search_count: int) -> list[dict[str, object]]:
+    """Builds one deterministic multi-search plan for the requested network counts."""
+
+    plan: list[dict[str, object]] = []
+    for index in range(server_search_count):
+        plan.append(
+            {
+                "network": "server",
+                "query": DEFAULT_SERVER_SEARCH_QUERIES[index % len(DEFAULT_SERVER_SEARCH_QUERIES)],
+                "ordinal": index + 1,
+            }
+        )
+    for index in range(kad_search_count):
+        plan.append(
+            {
+                "network": "kad",
+                "query": DEFAULT_KAD_SEARCH_QUERIES[index % len(DEFAULT_KAD_SEARCH_QUERIES)],
+                "ordinal": index + 1,
+            }
+        )
+    return plan
+
+
 def start_live_search(
     base_url: str,
     api_key: str,
     mode: str,
+    query: str,
     forced_method: str | None = None,
 ) -> dict[str, object]:
     """Starts one real live search, retrying through sensible transport methods."""
@@ -325,7 +577,7 @@ def start_live_search(
             method="POST",
             api_key=api_key,
             json_body={
-                "query": "ubuntu",
+                "query": query,
                 "method": method_name,
                 "type": "program",
             },
@@ -350,6 +602,80 @@ def start_live_search(
         "method_candidates": method_candidates,
         "response": attempts[-1]["response"] if attempts else None,
     }
+
+
+def connect_to_live_server(
+    base_url: str,
+    api_key: str,
+    server_rows: list[dict[str, object]],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Attempts real server connections until one seeded candidate reaches connected state."""
+
+    candidates = [
+        {
+            "name": row.get("name"),
+            "address": row.get("address"),
+            "port": row.get("port"),
+            "description": row.get("description"),
+        }
+        for row in server_rows
+        if isinstance(row, dict) and row.get("address") and row.get("port")
+    ]
+    if not candidates:
+        raise AssertionError("No server candidates were available for live connect attempts.")
+
+    deadline = time.time() + timeout_seconds
+    attempts: list[dict[str, object]] = []
+
+    for index, candidate in enumerate(candidates, start=1):
+        remaining_seconds = deadline - time.time()
+        if remaining_seconds <= 0:
+            break
+
+        attempt: dict[str, object] = {
+            "ordinal": index,
+            "candidate": candidate,
+        }
+        try:
+            connect_response = http_request(
+                base_url,
+                "/api/v1/servers/connect",
+                method="POST",
+                api_key=api_key,
+                json_body={"addr": candidate["address"], "port": candidate["port"]},
+                request_timeout_seconds=15.0,
+            )
+            attempt["connect_response"] = compact_http_result(connect_response)
+        except Exception as exc:
+            attempt["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+            attempts.append(attempt)
+            continue
+
+        if int(connect_response["status"]) != 200 or not isinstance(connect_response["json"], dict):
+            attempts.append(attempt)
+            continue
+
+        settle = observe_server_connect_attempt(
+            base_url,
+            api_key,
+            min(remaining_seconds, 120.0),
+        )
+        attempt["settle"] = settle
+        attempts.append(attempt)
+        if bool(settle.get("connected")):
+            return {
+                "selected_server": candidate,
+                "attempts": attempts,
+                "final_status": settle["status"],
+            }
+        if not bool(settle.get("aborted")):
+            break
+
+    raise AssertionError(f"Failed to connect to any seeded server candidate. Attempts: {attempts!r}")
 
 
 def wait_for_search_observation(
@@ -410,6 +736,72 @@ def stop_live_search(base_url: str, api_key: str, search_id: str) -> dict[str, o
     )
 
 
+def execute_search_plan(
+    base_url: str,
+    api_key: str,
+    search_plan: list[dict[str, object]],
+    observation_timeout_seconds: float,
+    *,
+    search_method_override: str | None,
+) -> tuple[list[dict[str, object]], str | None]:
+    """Runs one deterministic search plan and returns completed cycle artifacts."""
+
+    completed_cycles: list[dict[str, object]] = []
+    active_search_id: str | None = None
+
+    for cycle_index, cycle_plan in enumerate(search_plan, start=1):
+        network = str(cycle_plan["network"])
+        query = str(cycle_plan["query"])
+        cycle_report: dict[str, object] = {
+            "cycle_index": cycle_index,
+            "network": network,
+            "query": query,
+            "ordinal": int(cycle_plan["ordinal"]),
+        }
+        try:
+            live_search = start_live_search(
+                base_url,
+                api_key,
+                network,
+                query,
+                forced_method=search_method_override or network,
+            )
+            cycle_report["start"] = live_search
+            if not bool(live_search["ok"]):
+                raise AssertionError(
+                    "Failed to start a live search via methods "
+                    f"{live_search['method_candidates']!r} for network {network!r}."
+                )
+
+            assert isinstance(live_search["response"], dict)
+            search_payload = require_json_object(live_search["response"], 200)
+            active_search_id = str(search_payload["search_id"])
+            cycle_report["search_id"] = active_search_id
+            cycle_report["selected_method"] = live_search["selected_method"]
+
+            try:
+                cycle_report["activity"] = wait_for_search_observation(
+                    base_url,
+                    api_key,
+                    active_search_id,
+                    observation_timeout_seconds,
+                )
+            finally:
+                if active_search_id is not None:
+                    stop_result = stop_live_search(base_url, api_key, active_search_id)
+                    cycle_report["stop"] = compact_http_result(stop_result)
+                    assert int(stop_result["status"]) == 200
+                    assert isinstance(stop_result["json"], dict)
+                    active_search_id = None
+        except Exception:
+            completed_cycles.append(cycle_report)
+            raise
+
+        completed_cycles.append(cycle_report)
+
+    return completed_cycles, active_search_id
+
+
 def wait_for_rest_ready(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Polls until the live REST listener answers the version route."""
 
@@ -446,13 +838,22 @@ def main() -> None:
     parser.add_argument("--seed-config-dir", required=True)
     parser.add_argument("--artifacts-dir", required=True)
     parser.add_argument("--api-key", default="rest-smoke-test-key")
+    parser.add_argument("--bind-addr", default="127.0.0.1")
+    parser.add_argument("--enable-upnp", action="store_true")
+    parser.add_argument("--p2p-bind-interface-name")
+    parser.add_argument("--bind-updater-script")
     parser.add_argument("--rest-ready-timeout-seconds", type=float, default=45.0)
     parser.add_argument("--server-activity-timeout-seconds", type=float, default=45.0)
     parser.add_argument("--kad-running-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--network-ready-timeout-seconds", type=float, default=120.0)
     parser.add_argument("--search-observation-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--server-search-count", type=int, default=0)
+    parser.add_argument("--kad-search-count", type=int, default=0)
     parser.add_argument("--search-method-override", choices=["automatic", "server", "global", "kad"])
+    parser.add_argument("--keep-running", action="store_true")
     args = parser.parse_args()
+    if args.server_search_count < 0 or args.kad_search_count < 0:
+        raise ValueError("Search counts must be zero or greater.")
 
     app_exe = Path(args.app_exe).resolve()
     seed_config_dir = Path(args.seed_config_dir).resolve()
@@ -462,7 +863,22 @@ def main() -> None:
     port = choose_listen_port()
     base_url = f"http://127.0.0.1:{port}"
     profile = prepare_profile_base(seed_config_dir, artifacts_dir, shared_dirs=[])
-    configure_webserver_profile(Path(profile["config_dir"]), app_exe, args.api_key, port)
+    configure_webserver_profile(
+        Path(profile["config_dir"]),
+        app_exe,
+        args.api_key,
+        port,
+        args.bind_addr,
+        args.enable_upnp,
+    )
+    if args.p2p_bind_interface_name:
+        if not args.bind_updater_script:
+            raise ValueError("bind updater script path is required when a P2P bind interface name is supplied.")
+        apply_p2p_bindaddr_override(
+            Path(profile["config_dir"]),
+            args.p2p_bind_interface_name,
+            Path(args.bind_updater_script).resolve(),
+        )
 
     app = None
     search_id = None
@@ -477,6 +893,13 @@ def main() -> None:
             "profile_base": str(profile["profile_base"]),
             "config_dir": str(profile["config_dir"]),
             "api_key_length": len(args.api_key),
+            "bind_addr": args.bind_addr,
+            "enable_upnp": bool(args.enable_upnp),
+            "p2p_bind_interface_name": args.p2p_bind_interface_name,
+            "bind_updater_script": args.bind_updater_script,
+            "keep_running": bool(args.keep_running),
+            "server_search_count": args.server_search_count,
+            "kad_search_count": args.kad_search_count,
             "search_method_override": args.search_method_override,
             "timeouts": {
                 "rest_ready_seconds": args.rest_ready_timeout_seconds,
@@ -495,6 +918,7 @@ def main() -> None:
 
     try:
         app = launch_app(app_exe, Path(profile["profile_base"]))
+        report["launched_process_id"] = get_app_process_id(app)
         main_window = wait_for_main_window(app)
         report["main_window_title"] = main_window.window_text()
 
@@ -547,7 +971,6 @@ def main() -> None:
                 "description": first_server.get("description"),
             },
         }
-        report["selected_server_target"] = dict(report["checks"]["servers_list"]["first_server"])
 
         current_phase = set_phase(report, "servers_status_initial")
         initial_server_status = http_request(base_url, "/api/v1/servers/status", api_key=args.api_key)
@@ -556,20 +979,14 @@ def main() -> None:
         report["checks"]["servers_status_initial"] = compact_http_result(initial_server_status)
 
         current_phase = set_phase(report, "servers_connect")
-        server_connect = http_request(
+        server_connect = connect_to_live_server(
             base_url,
-            "/api/v1/servers/connect",
-            method="POST",
             api_key=args.api_key,
-            json_body={"addr": first_server["address"], "port": first_server["port"]},
+            server_rows=list(servers["json"]),
+            timeout_seconds=args.network_ready_timeout_seconds,
         )
-        assert server_connect["status"] == 200
-        assert isinstance(server_connect["json"], dict)
-        report["checks"]["servers_connect"] = compact_http_result(server_connect)
-
-        current_phase = set_phase(report, "server_activity")
-        server_activity = wait_for_server_activity(base_url, args.api_key, args.server_activity_timeout_seconds)
-        report["checks"]["servers_activity"] = server_activity
+        report["checks"]["servers_connect"] = server_connect
+        report["selected_server_target"] = dict(server_connect["selected_server"])
 
         current_phase = set_phase(report, "kad_status_initial")
         initial_kad_status = http_request(base_url, "/api/v1/kad/status", api_key=args.api_key)
@@ -588,48 +1005,36 @@ def main() -> None:
         report["checks"]["kad_running"] = kad_running
 
         current_phase = set_phase(report, "network_ready")
-        live_network = wait_for_network_ready(base_url, args.api_key, args.network_ready_timeout_seconds)
+        live_network = wait_for_requested_networks(
+            base_url,
+            args.api_key,
+            args.network_ready_timeout_seconds,
+            require_server_connected=args.server_search_count > 0,
+            require_kad_connected=args.kad_search_count > 0,
+        )
         report["checks"]["network_ready"] = live_network
         assert bool(live_network.get("ready"))
 
-        current_phase = set_phase(report, "search_start")
-        live_search = start_live_search(
+        search_plan = build_search_plan(args.server_search_count, args.kad_search_count)
+        if not search_plan:
+            search_plan = [
+                {
+                    "network": str(live_network["mode"]),
+                    "query": DEFAULT_SERVER_SEARCH_QUERIES[0],
+                    "ordinal": 1,
+                }
+            ]
+        report["checks"]["search_plan"] = search_plan
+
+        current_phase = set_phase(report, "search_cycles")
+        completed_cycles, search_id = execute_search_plan(
             base_url,
             args.api_key,
-            str(live_network["mode"]),
-            args.search_method_override,
-        )
-        if not bool(live_search["ok"]):
-            report["checks"]["search_start"] = live_search
-            raise AssertionError(
-                "Failed to start a live search via methods "
-                f"{live_search['method_candidates']!r}."
-            )
-
-        assert isinstance(live_search["response"], dict)
-        search_payload = require_json_object(live_search["response"], 200)
-        search_id = str(search_payload["search_id"])
-        report["checks"]["search_start"] = {
-            "search_id": search_id,
-            "selected_method": live_search["selected_method"],
-            "method_candidates": live_search["method_candidates"],
-            "attempts": live_search["attempts"],
-        }
-
-        current_phase = set_phase(report, "search_observation")
-        search_activity = wait_for_search_observation(
-            base_url,
-            args.api_key,
-            search_id,
+            search_plan,
             args.search_observation_timeout_seconds,
+            search_method_override=args.search_method_override,
         )
-        report["checks"]["search_activity"] = search_activity
-
-        current_phase = set_phase(report, "search_stop")
-        search_stop = stop_live_search(base_url, args.api_key, search_id)
-        assert search_stop["status"] == 200
-        assert isinstance(search_stop["json"], dict)
-        report["checks"]["search_stop"] = compact_http_result(search_stop)
+        report["checks"]["search_cycles"] = completed_cycles
         search_id = None
 
         current_phase = set_phase(report, "log_limit")
@@ -678,20 +1083,26 @@ def main() -> None:
             except Exception as exc:  # pragma: no cover - best-effort live cleanup
                 cleanup["search_stop_error"] = repr(exc)
         if app is not None:
-            try:
-                close_app_cleanly(app)
-                cleanup["app_closed"] = True
-            except Exception as exc:
+            cleanup["process_id"] = get_app_process_id(app)
+            cleanup["profile_base"] = str(profile["profile_base"])
+            if args.keep_running and str(report.get("status")) == "passed":
                 cleanup["app_closed"] = False
-                cleanup["app_close_error"] = repr(exc)
-                if pending_error is None:
-                    pending_error = exc
-                    report["status"] = "failed"
-                    report["failed_phase"] = "cleanup"
-                    report["error"] = {
-                        "type": type(exc).__name__,
-                        "message": str(exc),
-                    }
+                cleanup["app_left_running"] = True
+            else:
+                try:
+                    close_app_cleanly(app)
+                    cleanup["app_closed"] = True
+                except Exception as exc:
+                    cleanup["app_closed"] = False
+                    cleanup["app_close_error"] = repr(exc)
+                    if pending_error is None:
+                        pending_error = exc
+                        report["status"] = "failed"
+                        report["failed_phase"] = "cleanup"
+                        report["error"] = {
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                        }
         write_json(artifacts_dir / "result.json", report)
         if pending_error is not None:
             raise pending_error

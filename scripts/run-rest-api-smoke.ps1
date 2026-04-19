@@ -7,14 +7,24 @@ param(
     [string]$Configuration = 'Debug',
     [string]$ArtifactsRoot,
     [string]$ApiKey = 'rest-smoke-test-key',
+    [AllowEmptyString()]
+    [string]$BindAddr = '127.0.0.1',
+    [switch]$EnableUPnP,
+    [string]$P2PBindInterfaceName,
+    [string]$BindUpdaterScript = 'C:\prj\p2p\eMule\eMulebb-workspace\repos\eMule-tooling\scripts\config-bindaddr-updater.ps1',
     [double]$RestReadyTimeoutSeconds = 45.0,
     [double]$ServerActivityTimeoutSeconds = 45.0,
     [double]$KadRunningTimeoutSeconds = 30.0,
     [double]$NetworkReadyTimeoutSeconds = 120.0,
     [double]$SearchObservationTimeoutSeconds = 30.0,
+    [ValidateRange(0, 100)]
+    [int]$ServerSearchCount = 0,
+    [ValidateRange(0, 100)]
+    [int]$KadSearchCount = 0,
     [ValidateSet('automatic', 'server', 'global', 'kad')]
     [string]$SearchMethodOverride,
-    [switch]$KeepArtifacts
+    [switch]$KeepArtifacts,
+    [switch]$KeepRunning
 )
 
 Set-StrictMode -Version Latest
@@ -220,7 +230,7 @@ $sourceArtifactsRoot = if ([string]::IsNullOrWhiteSpace($ArtifactsRoot)) {
 } else {
     [System.IO.Path]::GetFullPath($ArtifactsRoot)
 }
-$retainSourceArtifacts = $KeepArtifacts -or -not [string]::IsNullOrWhiteSpace($ArtifactsRoot)
+$retainSourceArtifacts = $KeepArtifacts -or $KeepRunning -or -not [string]::IsNullOrWhiteSpace($ArtifactsRoot)
 
 $null = New-Item -ItemType Directory -Force -Path $sourceArtifactsRoot
 $pythonScriptPath = Join-Path $PSScriptRoot 'rest-api-smoke.py'
@@ -238,10 +248,27 @@ try {
         '--server-activity-timeout-seconds', [string]$ServerActivityTimeoutSeconds,
         '--kad-running-timeout-seconds', [string]$KadRunningTimeoutSeconds,
         '--network-ready-timeout-seconds', [string]$NetworkReadyTimeoutSeconds,
-        '--search-observation-timeout-seconds', [string]$SearchObservationTimeoutSeconds
+        '--search-observation-timeout-seconds', [string]$SearchObservationTimeoutSeconds,
+        '--server-search-count', [string]$ServerSearchCount,
+        '--kad-search-count', [string]$KadSearchCount
     )
+    if ([string]::IsNullOrEmpty($BindAddr)) {
+        $pythonArguments += '--bind-addr='
+    } else {
+        $pythonArguments += @('--bind-addr', $BindAddr)
+    }
+    if ($EnableUPnP) {
+        $pythonArguments += '--enable-upnp'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($P2PBindInterfaceName)) {
+        $pythonArguments += @('--p2p-bind-interface-name', $P2PBindInterfaceName)
+        $pythonArguments += @('--bind-updater-script', $BindUpdaterScript)
+    }
     if (-not [string]::IsNullOrWhiteSpace($SearchMethodOverride)) {
         $pythonArguments += @('--search-method-override', $SearchMethodOverride)
+    }
+    if ($KeepRunning) {
+        $pythonArguments += '--keep-running'
     }
     Invoke-PythonChecked -PythonInvocation $pythonInvocation -Environment $pythonEnvironment -Arguments $pythonArguments
     $runStatus = 'passed'
@@ -261,6 +288,15 @@ finally {
 
 if ($runStatus -eq 'passed') {
     Write-Host "REST API live E2E passed. Report directory: $runReportDir"
+    if ($KeepRunning) {
+        $resultPath = Join-Path $runReportDir 'result.json'
+        if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+            $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+            $processId = $result.cleanup.process_id
+            $profileBase = $result.cleanup.profile_base
+            Write-Host "eMule left running. PID: $processId Profile: $profileBase"
+        }
+    }
     return
 }
 

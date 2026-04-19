@@ -2,4 +2,5 @@ build/
 reports/
 tools/
 .pydeps/
+__pycache__/
 .tracked-file-privacy-identifiers.local.json

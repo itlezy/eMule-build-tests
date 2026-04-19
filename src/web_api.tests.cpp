@@ -321,6 +321,56 @@ TEST_CASE("Web API carries path identifiers and JSON bodies into mutation routes
 	CHECK_EQ(route.params["search_id"].get<std::string>(), "123");
 }
 
+TEST_CASE("Web API carries server and search payloads into live-capable routes")
+{
+	WebServerJsonSeams::SApiRoute route;
+	std::string errorCode;
+	std::string errorMessage;
+
+	CHECK(WebServerJsonSeams::TryBuildRoute(
+		"POST",
+		"/api/v1/servers/connect",
+		R"({"addr":"1.2.3.4","port":4661})",
+		route,
+		errorCode,
+		errorMessage));
+	CHECK_EQ(route.strCommand, "servers/connect");
+	CHECK_EQ(route.params["addr"].get<std::string>(), "1.2.3.4");
+	CHECK_EQ(route.params["port"].get<uint64_t>(), 4661u);
+
+	CHECK(WebServerJsonSeams::TryBuildRoute(
+		"POST",
+		"/api/v1/kad/connect",
+		R"({})",
+		route,
+		errorCode,
+		errorMessage));
+	CHECK_EQ(route.strCommand, "kad/connect");
+	CHECK(route.params.is_object());
+
+	CHECK(WebServerJsonSeams::TryBuildRoute(
+		"POST",
+		"/api/v1/search/start",
+		R"({"query":"ubuntu","method":"automatic","type":"program"})",
+		route,
+		errorCode,
+		errorMessage));
+	CHECK_EQ(route.strCommand, "search/start");
+	CHECK_EQ(route.params["query"].get<std::string>(), "ubuntu");
+	CHECK_EQ(route.params["method"].get<std::string>(), "automatic");
+	CHECK_EQ(route.params["type"].get<std::string>(), "program");
+
+	CHECK(WebServerJsonSeams::TryBuildRoute(
+		"POST",
+		"/api/v1/search/stop",
+		R"({"search_id":"123"})",
+		route,
+		errorCode,
+		errorMessage));
+	CHECK_EQ(route.strCommand, "search/stop");
+	CHECK_EQ(route.params["search_id"].get<std::string>(), "123");
+}
+
 TEST_CASE("Web API rejects malformed JSON and non-object request bodies")
 {
 	WebServerJsonSeams::SApiRoute route;

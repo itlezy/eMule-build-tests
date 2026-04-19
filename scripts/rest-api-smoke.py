@@ -1,9 +1,8 @@
-"""Runs a lightweight live smoke suite against the in-process eMule REST API."""
+"""Runs the canonical isolated live E2E suite against the in-process eMule REST API."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import socket
 import time
@@ -21,12 +20,6 @@ from emule_live_profile_common import (
     wait_for_main_window,
     write_json,
 )
-
-
-def compute_emule_md5(text: str) -> str:
-    """Matches eMule's CString-based MD5 hashing for Web API keys."""
-
-    return hashlib.md5(text.encode("utf-16le")).hexdigest().upper()
 
 
 def choose_listen_port() -> int:
@@ -88,7 +81,7 @@ def configure_webserver_profile(config_dir: Path, app_exe: Path, api_key: str, p
     for key, value in (
         ("Password", ""),
         ("PasswordLow", ""),
-        ("ApiKey", compute_emule_md5(api_key)),
+        ("ApiKey", api_key),
         ("BindAddr", "127.0.0.1"),
         ("Port", str(port)),
         ("WebUseUPnP", "0"),
@@ -191,7 +184,21 @@ def compact_kad_status(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def wait_for_server_activity(base_url: str, api_key: str) -> dict[str, object]:
+def compact_http_result(result: dict[str, object]) -> dict[str, object]:
+    """Strips one HTTP result down to stable artifact fields."""
+
+    compact: dict[str, object] = {
+        "status": int(result["status"]),
+        "content_type": result["content_type"],
+    }
+    if isinstance(result.get("json"), dict | list):
+        compact["json"] = result["json"]
+    elif isinstance(result.get("body_text"), str):
+        compact["body_text"] = result["body_text"]
+    return compact
+
+
+def wait_for_server_activity(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Waits until the live server flow shows observable progress."""
 
     observations: list[dict[str, Any]] = []
@@ -211,10 +218,10 @@ def wait_for_server_activity(base_url: str, api_key: str) -> dict[str, object]:
             }
         return None
 
-    return wait_for(resolve, timeout=45.0, interval=1.0, description="server activity")
+    return wait_for(resolve, timeout=timeout_seconds, interval=1.0, description="server activity")
 
 
-def wait_for_kad_running(base_url: str, api_key: str) -> dict[str, object]:
+def wait_for_kad_running(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Waits until Kad reports a running state after the connect request."""
 
     observations: list[dict[str, Any]] = []
@@ -234,16 +241,16 @@ def wait_for_kad_running(base_url: str, api_key: str) -> dict[str, object]:
             }
         return None
 
-    return wait_for(resolve, timeout=30.0, interval=1.0, description="Kad running state")
+    return wait_for(resolve, timeout=timeout_seconds, interval=1.0, description="Kad running state")
 
 
-def wait_for_network_ready(base_url: str, api_key: str) -> dict[str, object]:
+def wait_for_network_ready(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Waits until either eD2K or Kad becomes usable for one real search."""
 
     observations: list[dict[str, Any]] = []
     last_server_result = None
     last_kad_result = None
-    deadline = time.time() + 120.0
+    deadline = time.time() + timeout_seconds
 
     while time.time() < deadline:
         server_result = http_request(base_url, "/api/v1/servers/status", api_key=api_key)
@@ -284,22 +291,11 @@ def wait_for_network_ready(base_url: str, api_key: str) -> dict[str, object]:
             }
         time.sleep(2.0)
 
-    if observations:
-        last_snapshot = observations[-1]
-        if (
-            last_snapshot["server"].get("connecting")
-            or last_snapshot["server"].get("currentServer") is not None
-            or last_snapshot["kad"].get("running")
-        ):
-            return {
-                "ready": False,
-                "mode": "automatic",
-                "server_status": last_server_result,
-                "kad_status": last_kad_result,
-                "observations": observations,
-            }
-
-    raise RuntimeError("Timed out waiting for live network readiness.")
+    raise RuntimeError(
+        "Timed out waiting for live network readiness. "
+        f"Last server status: {compact_http_result(last_server_result) if isinstance(last_server_result, dict) else None!r}; "
+        f"last Kad status: {compact_http_result(last_kad_result) if isinstance(last_kad_result, dict) else None!r}"
+    )
 
 
 def build_search_method_candidates(mode: str) -> list[str]:
@@ -312,11 +308,17 @@ def build_search_method_candidates(mode: str) -> list[str]:
     return ["automatic", "server", "kad"]
 
 
-def start_live_search(base_url: str, api_key: str, mode: str) -> dict[str, object]:
+def start_live_search(
+    base_url: str,
+    api_key: str,
+    mode: str,
+    forced_method: str | None = None,
+) -> dict[str, object]:
     """Starts one real live search, retrying through sensible transport methods."""
 
     attempts: list[dict[str, Any]] = []
-    for method_name in build_search_method_candidates(mode):
+    method_candidates = [forced_method] if forced_method else build_search_method_candidates(mode)
+    for method_name in method_candidates:
         response = http_request(
             base_url,
             "/api/v1/search/start",
@@ -338,17 +340,24 @@ def start_live_search(base_url: str, api_key: str, mode: str) -> dict[str, objec
                 "ok": True,
                 "attempts": attempts,
                 "selected_method": method_name,
+                "method_candidates": method_candidates,
                 "response": response,
             }
     return {
         "ok": False,
         "attempts": attempts,
         "selected_method": None,
+        "method_candidates": method_candidates,
         "response": attempts[-1]["response"] if attempts else None,
     }
 
 
-def wait_for_search_observation(base_url: str, api_key: str, search_id: str) -> dict[str, object]:
+def wait_for_search_observation(
+    base_url: str,
+    api_key: str,
+    search_id: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
     """Polls one live search until results are observable or the search completes."""
 
     observations: list[dict[str, Any]] = []
@@ -386,7 +395,7 @@ def wait_for_search_observation(base_url: str, api_key: str, search_id: str) -> 
             }
         return None
 
-    return wait_for(resolve, timeout=30.0, interval=2.0, description="live search activity")
+    return wait_for(resolve, timeout=timeout_seconds, interval=2.0, description="live search activity")
 
 
 def stop_live_search(base_url: str, api_key: str, search_id: str) -> dict[str, object]:
@@ -401,7 +410,7 @@ def stop_live_search(base_url: str, api_key: str, search_id: str) -> dict[str, o
     )
 
 
-def wait_for_rest_ready(base_url: str, api_key: str) -> dict[str, object]:
+def wait_for_rest_ready(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
     """Polls until the live REST listener answers the version route."""
 
     def resolve():
@@ -413,7 +422,22 @@ def wait_for_rest_ready(base_url: str, api_key: str) -> dict[str, object]:
             return None
         return result
 
-    return wait_for(resolve, timeout=45.0, interval=0.5, description="REST API readiness")
+    return wait_for(resolve, timeout=timeout_seconds, interval=0.5, description="REST API readiness")
+
+
+def set_phase(report: dict[str, object], phase: str) -> str:
+    """Records the current execution phase in the report and returns it."""
+
+    report["current_phase"] = phase
+    phase_history = report.setdefault("phase_history", [])
+    assert isinstance(phase_history, list)
+    phase_history.append(
+        {
+            "phase": phase,
+            "entered_at": round(time.time(), 3),
+        }
+    )
+    return phase
 
 
 def main() -> None:
@@ -422,6 +446,12 @@ def main() -> None:
     parser.add_argument("--seed-config-dir", required=True)
     parser.add_argument("--artifacts-dir", required=True)
     parser.add_argument("--api-key", default="rest-smoke-test-key")
+    parser.add_argument("--rest-ready-timeout-seconds", type=float, default=45.0)
+    parser.add_argument("--server-activity-timeout-seconds", type=float, default=45.0)
+    parser.add_argument("--kad-running-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--network-ready-timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--search-observation-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--search-method-override", choices=["automatic", "server", "global", "kad"])
     args = parser.parse_args()
 
     app_exe = Path(args.app_exe).resolve()
@@ -436,46 +466,71 @@ def main() -> None:
 
     app = None
     search_id = None
-    report = {
+    report: dict[str, object] = {
         "base_url": base_url,
         "port": port,
+        "suite": "rest-api-live-e2e",
+        "launch_inputs": {
+            "app_exe": str(app_exe),
+            "seed_config_dir": str(seed_config_dir),
+            "artifacts_dir": str(artifacts_dir),
+            "profile_base": str(profile["profile_base"]),
+            "config_dir": str(profile["config_dir"]),
+            "api_key_length": len(args.api_key),
+            "search_method_override": args.search_method_override,
+            "timeouts": {
+                "rest_ready_seconds": args.rest_ready_timeout_seconds,
+                "server_activity_seconds": args.server_activity_timeout_seconds,
+                "kad_running_seconds": args.kad_running_timeout_seconds,
+                "network_ready_seconds": args.network_ready_timeout_seconds,
+                "search_observation_seconds": args.search_observation_timeout_seconds,
+            },
+        },
         "checks": {},
+        "cleanup": {},
         "status": "failed",
     }
+    current_phase = set_phase(report, "launch")
+    pending_error: Exception | None = None
 
     try:
         app = launch_app(app_exe, Path(profile["profile_base"]))
         main_window = wait_for_main_window(app)
         report["main_window_title"] = main_window.window_text()
 
-        ready = wait_for_rest_ready(base_url, args.api_key)
-        report["checks"]["ready"] = ready
+        current_phase = set_phase(report, "rest_ready")
+        ready = wait_for_rest_ready(base_url, args.api_key, args.rest_ready_timeout_seconds)
+        report["checks"]["ready"] = compact_http_result(ready)
 
+        current_phase = set_phase(report, "auth_checks")
         no_key = http_request(base_url, "/api/v1/app/version")
         assert no_key["status"] == 401
         assert isinstance(no_key["json"], dict)
         assert no_key["json"]["error"] == "UNAUTHORIZED"
-        report["checks"]["missing_key"] = no_key
+        report["checks"]["missing_key"] = compact_http_result(no_key)
 
         wrong_key = http_request(base_url, "/api/v1/app/version", api_key="wrong-key")
         assert wrong_key["status"] == 401
         assert isinstance(wrong_key["json"], dict)
         assert wrong_key["json"]["error"] == "UNAUTHORIZED"
-        report["checks"]["wrong_key"] = wrong_key
+        report["checks"]["wrong_key"] = compact_http_result(wrong_key)
 
+        current_phase = set_phase(report, "app_version")
         version = http_request(base_url, "/api/v1/app/version", api_key=args.api_key)
         assert version["status"] == 200
         assert isinstance(version["json"], dict)
         assert version["json"]["appName"] == "eMule"
         assert "version" in version["json"]
-        report["checks"]["app_version"] = version
+        report["checks"]["app_version"] = compact_http_result(version)
 
+        current_phase = set_phase(report, "stats_global")
         stats = http_request(base_url, "/api/v1/stats/global", api_key=args.api_key)
         assert stats["status"] == 200
         assert isinstance(stats["json"], dict)
         assert "connected" in stats["json"]
-        report["checks"]["stats_global"] = stats
+        report["checks"]["stats_global"] = compact_http_result(stats)
 
+        current_phase = set_phase(report, "servers_list")
         servers = http_request(base_url, "/api/v1/servers/list", api_key=args.api_key)
         assert servers["status"] == 200
         assert isinstance(servers["json"], list)
@@ -489,14 +544,18 @@ def main() -> None:
                 "name": first_server.get("name"),
                 "address": first_server.get("address"),
                 "port": first_server.get("port"),
+                "description": first_server.get("description"),
             },
         }
+        report["selected_server_target"] = dict(report["checks"]["servers_list"]["first_server"])
 
+        current_phase = set_phase(report, "servers_status_initial")
         initial_server_status = http_request(base_url, "/api/v1/servers/status", api_key=args.api_key)
         assert initial_server_status["status"] == 200
         assert isinstance(initial_server_status["json"], dict)
-        report["checks"]["servers_status_initial"] = initial_server_status
+        report["checks"]["servers_status_initial"] = compact_http_result(initial_server_status)
 
+        current_phase = set_phase(report, "servers_connect")
         server_connect = http_request(
             base_url,
             "/api/v1/servers/connect",
@@ -506,68 +565,88 @@ def main() -> None:
         )
         assert server_connect["status"] == 200
         assert isinstance(server_connect["json"], dict)
-        report["checks"]["servers_connect"] = server_connect
+        report["checks"]["servers_connect"] = compact_http_result(server_connect)
 
-        server_activity = wait_for_server_activity(base_url, args.api_key)
+        current_phase = set_phase(report, "server_activity")
+        server_activity = wait_for_server_activity(base_url, args.api_key, args.server_activity_timeout_seconds)
         report["checks"]["servers_activity"] = server_activity
 
+        current_phase = set_phase(report, "kad_status_initial")
         initial_kad_status = http_request(base_url, "/api/v1/kad/status", api_key=args.api_key)
         assert initial_kad_status["status"] == 200
         assert isinstance(initial_kad_status["json"], dict)
-        report["checks"]["kad_status_initial"] = initial_kad_status
+        report["checks"]["kad_status_initial"] = compact_http_result(initial_kad_status)
 
+        current_phase = set_phase(report, "kad_connect")
         kad_connect = http_request(base_url, "/api/v1/kad/connect", method="POST", api_key=args.api_key, json_body={})
         assert kad_connect["status"] == 200
         assert isinstance(kad_connect["json"], dict)
-        report["checks"]["kad_connect"] = kad_connect
+        report["checks"]["kad_connect"] = compact_http_result(kad_connect)
 
-        kad_running = wait_for_kad_running(base_url, args.api_key)
+        current_phase = set_phase(report, "kad_running")
+        kad_running = wait_for_kad_running(base_url, args.api_key, args.kad_running_timeout_seconds)
         report["checks"]["kad_running"] = kad_running
 
-        live_network = wait_for_network_ready(base_url, args.api_key)
+        current_phase = set_phase(report, "network_ready")
+        live_network = wait_for_network_ready(base_url, args.api_key, args.network_ready_timeout_seconds)
         report["checks"]["network_ready"] = live_network
+        assert bool(live_network.get("ready"))
 
-        live_search = start_live_search(base_url, args.api_key, str(live_network["mode"]))
+        current_phase = set_phase(report, "search_start")
+        live_search = start_live_search(
+            base_url,
+            args.api_key,
+            str(live_network["mode"]),
+            args.search_method_override,
+        )
         if not bool(live_search["ok"]):
-            report["checks"]["search_start"] = {
-                "skipped": not bool(live_network.get("ready")),
-                "selected_method": live_search["selected_method"],
-                "attempts": live_search["attempts"],
-            }
-            if bool(live_network.get("ready")):
-                raise AssertionError(
-                    f"Failed to start a live search via methods {build_search_method_candidates(str(live_network['mode']))!r}"
-                )
-        else:
-            assert isinstance(live_search["response"], dict)
-            search_payload = require_json_object(live_search["response"], 200)
-            search_id = str(search_payload["search_id"])
-            report["checks"]["search_start"] = {
-                "search_id": search_id,
-                "selected_method": live_search["selected_method"],
-                "attempts": live_search["attempts"],
-            }
+            report["checks"]["search_start"] = live_search
+            raise AssertionError(
+                "Failed to start a live search via methods "
+                f"{live_search['method_candidates']!r}."
+            )
 
-            search_activity = wait_for_search_observation(base_url, args.api_key, search_id)
-            report["checks"]["search_activity"] = search_activity
+        assert isinstance(live_search["response"], dict)
+        search_payload = require_json_object(live_search["response"], 200)
+        search_id = str(search_payload["search_id"])
+        report["checks"]["search_start"] = {
+            "search_id": search_id,
+            "selected_method": live_search["selected_method"],
+            "method_candidates": live_search["method_candidates"],
+            "attempts": live_search["attempts"],
+        }
 
-            search_stop = stop_live_search(base_url, args.api_key, search_id)
-            assert search_stop["status"] == 200
-            assert isinstance(search_stop["json"], dict)
-            report["checks"]["search_stop"] = search_stop
+        current_phase = set_phase(report, "search_observation")
+        search_activity = wait_for_search_observation(
+            base_url,
+            args.api_key,
+            search_id,
+            args.search_observation_timeout_seconds,
+        )
+        report["checks"]["search_activity"] = search_activity
 
+        current_phase = set_phase(report, "search_stop")
+        search_stop = stop_live_search(base_url, args.api_key, search_id)
+        assert search_stop["status"] == 200
+        assert isinstance(search_stop["json"], dict)
+        report["checks"]["search_stop"] = compact_http_result(search_stop)
+        search_id = None
+
+        current_phase = set_phase(report, "log_limit")
         log_entries = http_request(base_url, "/api/v1/log?limit=1", api_key=args.api_key)
         assert log_entries["status"] == 200
         assert isinstance(log_entries["json"], list)
         assert len(log_entries["json"]) <= 1
-        report["checks"]["log_limit"] = log_entries
+        report["checks"]["log_limit"] = compact_http_result(log_entries)
 
+        current_phase = set_phase(report, "kad_disconnect")
         kad_disconnect = http_request(base_url, "/api/v1/kad/disconnect", method="POST", api_key=args.api_key, json_body={})
         assert kad_disconnect["status"] == 200
         assert isinstance(kad_disconnect["json"], dict)
         assert "running" in kad_disconnect["json"]
-        report["checks"]["kad_disconnect"] = kad_disconnect
+        report["checks"]["kad_disconnect"] = compact_http_result(kad_disconnect)
 
+        current_phase = set_phase(report, "html_root")
         html_root = http_request(base_url, "/")
         assert html_root["status"] == 200
         assert "text/html" in str(html_root["content_type"]).lower()
@@ -578,17 +657,44 @@ def main() -> None:
             "body_preview": str(html_root["body_text"])[:200],
         }
 
+        current_phase = set_phase(report, "completed")
         report["status"] = "passed"
+    except Exception as exc:
+        pending_error = exc
+        report["status"] = "failed"
+        report["failed_phase"] = current_phase
+        report["error"] = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
     finally:
+        cleanup = report["cleanup"]
+        assert isinstance(cleanup, dict)
         if app is not None and search_id is not None:
+            cleanup["search_stop_attempted"] = True
             try:
                 stop_response = stop_live_search(base_url, args.api_key, search_id)
-                report.setdefault("cleanup", {})["search_stop"] = stop_response
+                cleanup["search_stop"] = compact_http_result(stop_response)
             except Exception as exc:  # pragma: no cover - best-effort live cleanup
-                report.setdefault("cleanup", {})["search_stop_error"] = repr(exc)
-        write_json(artifacts_dir / "result.json", report)
+                cleanup["search_stop_error"] = repr(exc)
         if app is not None:
-            close_app_cleanly(app)
+            try:
+                close_app_cleanly(app)
+                cleanup["app_closed"] = True
+            except Exception as exc:
+                cleanup["app_closed"] = False
+                cleanup["app_close_error"] = repr(exc)
+                if pending_error is None:
+                    pending_error = exc
+                    report["status"] = "failed"
+                    report["failed_phase"] = "cleanup"
+                    report["error"] = {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+        write_json(artifacts_dir / "result.json", report)
+        if pending_error is not None:
+            raise pending_error
 
 
 if __name__ == "__main__":

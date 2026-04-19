@@ -21,7 +21,7 @@ It owns:
 - parity and divergence suites for live workspace-to-workspace comparison
 - workspace-level build and live-diff scripts
 - fixture, manifest, and report directories for future protocol coverage
-- the deterministic live-profile seed used by the named-pipe live harness and live UI regressions
+- the deterministic live-profile seed used by the live REST E2E lane, named-pipe live harness, and live UI regressions
 
 The project is built against the canonical app checkout resolved from the invoking workspace manifest. It is intentionally not a runtime dependency like the `eMule-*` third-party dependencies, and it is no longer embedded as a `tests/` submodule inside each workspace.
 
@@ -109,12 +109,20 @@ Standalone probe mode:
 
 Deterministic live-profile seed:
 
-- `manifests\live-profile-seed\config` stores the canonical test-only profile inputs for live named-pipe runs
+- `manifests\live-profile-seed\config` stores the canonical test-only profile inputs for live REST E2E and live named-pipe runs
 - the seed is intentionally minimal and vendors only the config files the live harness truly depends on: `preferences.ini`, `preferences.dat`, `nodes.dat`, and `server.met`
 - `preferences.ini` is an initialized profile seed; it must already carry the startup-silencing keys needed to avoid first-run UI such as the language prompt and runtime wizard
 - `preferences.dat` carries the deterministic maximized main-window placement used by the live UI and startup-profile harnesses
 - the helper injects only runtime-specific transport, logging, bind, temp, working-folder, and shared-directory settings per run
 - runtime working folders are copied from that seed and then expanded with per-run logs, temp files, and other mutable state
+
+Canonical live REST E2E lane:
+
+- `scripts\run-rest-api-smoke.ps1` is the operator-facing entrypoint for the canonical isolated REST live E2E lane
+- `scripts\rest-api-smoke.py` is the backing Python runner and is intentionally strict pass/fail
+- the lane launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` and enables WebServer REST against one per-run localhost port
+- the lane requires real server-connect activity, Kad running state, network readiness, and one real live search lifecycle through the first usable network path
+- failure artifacts include the failing phase plus the last observed server/Kad state so live-network regressions are diagnosable
 
 Canonical live harness:
 

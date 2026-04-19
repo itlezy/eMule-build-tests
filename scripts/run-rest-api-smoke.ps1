@@ -7,6 +7,13 @@ param(
     [string]$Configuration = 'Debug',
     [string]$ArtifactsRoot,
     [string]$ApiKey = 'rest-smoke-test-key',
+    [double]$RestReadyTimeoutSeconds = 45.0,
+    [double]$ServerActivityTimeoutSeconds = 45.0,
+    [double]$KadRunningTimeoutSeconds = 30.0,
+    [double]$NetworkReadyTimeoutSeconds = 120.0,
+    [double]$SearchObservationTimeoutSeconds = 30.0,
+    [ValidateSet('automatic', 'server', 'global', 'kad')]
+    [string]$SearchMethodOverride,
     [switch]$KeepArtifacts
 )
 
@@ -221,13 +228,22 @@ $runStatus = 'failed'
 $errorMessage = ''
 
 try {
-    Invoke-PythonChecked -PythonInvocation $pythonInvocation -Environment $pythonEnvironment -Arguments @(
+    $pythonArguments = @(
         $pythonScriptPath,
         '--app-exe', $appExePath,
         '--seed-config-dir', $seedConfigDir,
         '--artifacts-dir', $sourceArtifactsRoot,
-        '--api-key', $ApiKey
+        '--api-key', $ApiKey,
+        '--rest-ready-timeout-seconds', [string]$RestReadyTimeoutSeconds,
+        '--server-activity-timeout-seconds', [string]$ServerActivityTimeoutSeconds,
+        '--kad-running-timeout-seconds', [string]$KadRunningTimeoutSeconds,
+        '--network-ready-timeout-seconds', [string]$NetworkReadyTimeoutSeconds,
+        '--search-observation-timeout-seconds', [string]$SearchObservationTimeoutSeconds
     )
+    if (-not [string]::IsNullOrWhiteSpace($SearchMethodOverride)) {
+        $pythonArguments += @('--search-method-override', $SearchMethodOverride)
+    }
+    Invoke-PythonChecked -PythonInvocation $pythonInvocation -Environment $pythonEnvironment -Arguments $pythonArguments
     $runStatus = 'passed'
 }
 catch {
@@ -244,9 +260,9 @@ finally {
 }
 
 if ($runStatus -eq 'passed') {
-    Write-Host "REST API smoke passed. Report directory: $runReportDir"
+    Write-Host "REST API live E2E passed. Report directory: $runReportDir"
     return
 }
 
-Write-Host "REST API smoke failed. Report directory: $runReportDir" -ForegroundColor Red
-throw $(if ([string]::IsNullOrWhiteSpace($errorMessage)) { 'REST API smoke failed.' } else { $errorMessage })
+Write-Host "REST API live E2E failed. Report directory: $runReportDir" -ForegroundColor Red
+throw $(if ([string]::IsNullOrWhiteSpace($errorMessage)) { 'REST API live E2E failed.' } else { $errorMessage })

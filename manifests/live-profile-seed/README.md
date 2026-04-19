@@ -1,6 +1,6 @@
 # Live Profile Seed
 
-This directory stores the deterministic test-only profile baseline for live named-pipe runs.
+This directory stores the deterministic test-only profile baseline for live REST E2E, live named-pipe, and live UI runs.
 
 The `config` subtree is shaped like an eMule profile so the live harness can copy it directly into a fresh working folder.
 

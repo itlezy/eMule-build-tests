@@ -1,4 +1,8 @@
 #Requires -Version 7.6
+<#
+.SYNOPSIS
+Resolves the canonical app worktree path from one workspace manifest.
+#>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

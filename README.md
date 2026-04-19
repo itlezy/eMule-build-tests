@@ -74,13 +74,13 @@ Script inventory:
 | `helpers\helper-opencppcoverage-bootstrap.ps1` | internal helper | maintained | resolves OpenCppCoverage install |
 | `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
 | `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
-| `scripts\harness_cli_common.py` | internal Python helper | maintained | canonical app/report resolution for Python-first live/UI harnesses |
-| `scripts\emule_live_profile_common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
+| `scripts\harness-cli-common.py` | internal Python helper | maintained | canonical app/report resolution for Python-first live/UI harnesses |
+| `scripts\emule-live-profile-common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
 | `scripts\rest-api-smoke.py` | operator-facing Python E2E | maintained | canonical isolated REST live E2E lane |
 | `scripts\config-stability-ui-e2e.py` | operator-facing Python E2E | maintained | long `-c` config path, settings save, relaunch, and stability regression |
 | `scripts\shared-files-ui-e2e.py` | operator-facing Python E2E | maintained | real Win32 Shared Files regression |
 | `scripts\startup-profile-scenarios.py` | operator-facing Python E2E | maintained | Chrome Trace startup-profile scenarios |
-| `scripts\test_create_long_paths_tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
+| `scripts\create-long-paths-tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
 | `scripts\diag-hash-launch.ps1` | targeted diagnostic | maintained | seeded profile + procdump launcher for hash stall investigations |
 | `scripts\parse-dump.py` | targeted diagnostic | maintained | parses `diag-hash` dumps, defaults to `diag-hash-latest` |
 | `scripts\resolve-rva.py` | targeted diagnostic | maintained | resolves caller-provided RVAs against a selected debug build |
@@ -160,7 +160,7 @@ Startup-profile scenarios:
 - the trace includes stable readiness, Shared Files hashing, Statistics dialog, and broadband lifecycle phase ids so Perfetto and the JSON summaries can separate startup, UI setup, queue wait, and worker-thread bring-up costs
 - the default run covers `baseline-no-shares`, `fixture-three-files`, `long-paths-root-only`, `long-paths-recursive`, `long-path-output-root-only`, `long-path-output-recursive`, `long-path-emule-fixture-root-only`, `long-path-emule-fixture-recursive`, `shared-files-robustness-root-only`, and `shared-files-robustness-recursive`
 - `--scenario` can be repeated on the Python entrypoint to run only the scenarios you want
-- `scripts\test_create_long_paths_tree.py` now lives in this repo and materializes the generated long-path fixture trees plus `generated-fixture-manifest.json` under `C:\tmp\00_long_paths`
+- `scripts\create-long-paths-tree.py` now lives in this repo and materializes the generated long-path fixture trees plus `generated-fixture-manifest.json` under `C:\tmp\00_long_paths`
 - the long-path scenarios target `C:\tmp\00_long_paths` by default, regenerate the repo-owned fixture tree as needed, and expand `shareddir.dat` deterministically in the recursive cases
 - each scenario summary now also records shareddir payload metrics plus tree-shape metrics such as depth, longest paths, and counts beyond the Windows path thresholds
 - each scenario summary includes highlighted timings, normalized derived timings, and the top slowest startup phases, and the combined summary adds direct delta comparisons between the main long-path, generated output, and Shared Files robustness root-only vs recursive variants

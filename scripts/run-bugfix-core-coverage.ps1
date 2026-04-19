@@ -1,4 +1,8 @@
 #Requires -Version 7.6
+<#
+.SYNOPSIS
+Runs the canonical main-vs-bugfix native coverage and live-diff comparison slice.
+#>
 [CmdletBinding()]
 param(
     [string]$TestRepoRoot = (Split-Path -Parent $PSScriptRoot),

@@ -1,4 +1,8 @@
 #Requires -Version 7.6
+<#
+.SYNOPSIS
+Resolves canonical workspace, repo, and default path roots for shared harness scripts.
+#>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

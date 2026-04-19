@@ -3,25 +3,40 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
-import harness_cli_common
-from emule_live_profile_common import (
-    close_app_cleanly,
-    launch_app,
-    patch_ini_value,
-    prepare_profile_base,
-    wait_for,
-    wait_for_main_window,
-    write_json,
-)
+
+def load_local_module(module_name: str, filename: str):
+    """Loads one sibling helper module from a hyphenated script filename."""
+
+    module_path = Path(__file__).resolve().with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load helper module from '{module_path}'.")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+harness_cli_common = load_local_module("harness_cli_common", "harness-cli-common.py")
+live_common = load_local_module("emule_live_profile_common", "emule-live-profile-common.py")
+close_app_cleanly = live_common.close_app_cleanly
+launch_app = live_common.launch_app
+patch_ini_value = live_common.patch_ini_value
+prepare_profile_base = live_common.prepare_profile_base
+wait_for = live_common.wait_for
+wait_for_main_window = live_common.wait_for_main_window
+write_json = live_common.write_json
 
 DEFAULT_SERVER_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
 DEFAULT_KAD_SEARCH_QUERIES = ("ubuntu", "linux", "debian")

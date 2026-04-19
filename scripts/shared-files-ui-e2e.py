@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import importlib.util
 import json
 import os
 import re
@@ -26,9 +27,23 @@ except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
     mouse = None  # type: ignore[assignment]
     _PYWINAUTO_IMPORT_ERROR = exc
 
-import emule_live_profile_common as live_common
-import harness_cli_common
-import test_create_long_paths_tree as generated_fixture
+
+def load_local_module(module_name: str, filename: str):
+    """Loads one sibling helper module from a hyphenated script filename."""
+
+    module_path = Path(__file__).resolve().with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load helper module from '{module_path}'.")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+live_common = load_local_module("emule_live_profile_common", "emule-live-profile-common.py")
+harness_cli_common = load_local_module("harness_cli_common", "harness-cli-common.py")
+generated_fixture = load_local_module("create_long_paths_tree", "create-long-paths-tree.py")
 
 WM_COMMAND = 0x0111
 BM_CLICK = 0x00F5

@@ -11,9 +11,16 @@ from pathlib import Path
 import win32con
 import win32gui
 import win32process
-from pywinauto import Application
+
+try:
+    from pywinauto import Application
+    _PYWINAUTO_IMPORT_ERROR = None
+except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+    Application = object  # type: ignore[assignment]
+    _PYWINAUTO_IMPORT_ERROR = exc
 
 import emule_live_profile_common as live_common
+import harness_cli_common
 import test_create_long_paths_tree as generated_fixture
 
 WM_COMMAND = 0x0111
@@ -523,9 +530,13 @@ def main(argv: list[str]) -> int:
     """Runs the requested config-stability UI scenarios."""
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--app-exe", required=True)
-    parser.add_argument("--seed-config-dir", required=True)
-    parser.add_argument("--artifacts-dir", required=True)
+    parser.add_argument("--workspace-root")
+    parser.add_argument("--app-root")
+    parser.add_argument("--app-exe")
+    parser.add_argument("--seed-config-dir")
+    parser.add_argument("--artifacts-dir")
+    parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
     parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
     parser.add_argument(
         "--scenario",
@@ -538,19 +549,32 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    artifacts_dir = Path(args.artifacts_dir).resolve()
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    if _PYWINAUTO_IMPORT_ERROR is not None:
+        live_common.require_pywinauto()
+
+    paths = harness_cli_common.prepare_run_paths(
+        script_file=__file__,
+        suite_name="config-stability-ui-e2e",
+        configuration=args.configuration,
+        workspace_root=args.workspace_root,
+        app_root=args.app_root,
+        app_exe=args.app_exe,
+        artifacts_dir=args.artifacts_dir,
+        keep_artifacts=args.keep_artifacts,
+    )
+    artifacts_dir = paths.source_artifacts_dir
     shared_root = Path(args.shared_root).resolve()
     scenario_names = args.scenarios or [
         "long-config-settings-roundtrip",
         "long-config-shared-stress",
     ]
+    seed_config_dir = Path(args.seed_config_dir).resolve() if args.seed_config_dir else paths.seed_config_dir
 
     combined = {
         "generated_at": None,
         "status": "passed",
-        "app_exe": str(Path(args.app_exe).resolve()),
-        "seed_config_dir": str(Path(args.seed_config_dir).resolve()),
+        "app_exe": str(paths.app_exe),
+        "seed_config_dir": str(seed_config_dir),
         "artifact_dir": str(artifacts_dir),
         "shared_root": live_common.win_path(shared_root, trailing_slash=True),
         "scenarios": [],
@@ -561,8 +585,8 @@ def main(argv: list[str]) -> int:
         scenario_dir = artifacts_dir / name
         scenario_dir.mkdir(parents=True, exist_ok=True)
         result = run_scenario(
-            app_exe=Path(args.app_exe).resolve(),
-            seed_config_dir=Path(args.seed_config_dir).resolve(),
+            app_exe=paths.app_exe,
+            seed_config_dir=seed_config_dir,
             scenario_dir=scenario_dir,
             shared_root=shared_root,
             name=name,
@@ -576,6 +600,17 @@ def main(argv: list[str]) -> int:
         combined["status"] = "failed"
 
     write_json(artifacts_dir / "result.json", combined)
+    harness_cli_common.publish_run_artifacts(paths)
+    summary_payload = harness_cli_common.build_live_ui_summary(
+        status=str(combined["status"]),
+        paths=paths,
+        error_message="" if not failures else "Config-stability UI scenarios failed: " + ", ".join(failures),
+    )
+    summary_path = paths.run_report_dir / "ui-summary.json"
+    harness_cli_common.write_json_file(summary_path, summary_payload)
+    harness_cli_common.publish_latest_report(paths)
+    harness_cli_common.update_harness_summary(paths.repo_root, live_ui_summary_path=summary_path)
+    harness_cli_common.cleanup_source_artifacts(paths)
     if failures:
         raise RuntimeError("Config-stability UI scenarios failed: " + ", ".join(failures))
     return 0

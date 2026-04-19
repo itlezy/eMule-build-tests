@@ -15,7 +15,13 @@ import win32con
 import win32api
 import win32event
 import win32gui
-from pywinauto import Application
+
+try:
+    from pywinauto import Application
+    _PYWINAUTO_IMPORT_ERROR = None
+except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+    Application = None  # type: ignore[assignment]
+    _PYWINAUTO_IMPORT_ERROR = exc
 
 PREFERENCES_DAT_VERSION = 0x14
 WINDOW_PLACEMENT_LENGTH = 44
@@ -53,6 +59,16 @@ REQUIRED_SEED_KEYS = (
     "ShowSharedFilesDetails",
     "IgnoreInstances",
 )
+
+
+def require_pywinauto() -> None:
+    """Raises one actionable error when the live/UI runtime dependency is missing."""
+
+    if _PYWINAUTO_IMPORT_ERROR is not None:
+        raise RuntimeError(
+            "pywinauto is required for the live/UI harness scripts. "
+            "Install it with 'python -m pip install pywinauto'."
+        ) from _PYWINAUTO_IMPORT_ERROR
 
 
 def write_json(path: Path, payload) -> None:
@@ -312,6 +328,7 @@ def wait_for(predicate, timeout: float, interval: float, description: str):
 def launch_app(app_exe: Path, profile_base: Path) -> Application:
     """Starts the real app with the isolated `-c` override and startup profiling enabled."""
 
+    require_pywinauto()
     os.environ["EMULE_STARTUP_PROFILE"] = "1"
     command_line = subprocess.list2cmdline(
         [str(app_exe), "-ignoreinstances", "-c", str(profile_base)]

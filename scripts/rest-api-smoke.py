@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import harness_cli_common
 from emule_live_profile_common import (
     close_app_cleanly,
     launch_app,
@@ -834,9 +835,13 @@ def set_phase(report: dict[str, object], phase: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--app-exe", required=True)
-    parser.add_argument("--seed-config-dir", required=True)
-    parser.add_argument("--artifacts-dir", required=True)
+    parser.add_argument("--workspace-root")
+    parser.add_argument("--app-root")
+    parser.add_argument("--app-exe")
+    parser.add_argument("--seed-config-dir")
+    parser.add_argument("--artifacts-dir")
+    parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--configuration", choices=["Debug", "Release"], default="Debug")
     parser.add_argument("--api-key", default="rest-smoke-test-key")
     parser.add_argument("--bind-addr", default="127.0.0.1")
     parser.add_argument("--enable-upnp", action="store_true")
@@ -855,10 +860,19 @@ def main() -> None:
     if args.server_search_count < 0 or args.kad_search_count < 0:
         raise ValueError("Search counts must be zero or greater.")
 
-    app_exe = Path(args.app_exe).resolve()
-    seed_config_dir = Path(args.seed_config_dir).resolve()
-    artifacts_dir = Path(args.artifacts_dir).resolve()
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    paths = harness_cli_common.prepare_run_paths(
+        script_file=__file__,
+        suite_name="rest-api-smoke",
+        configuration=args.configuration,
+        workspace_root=args.workspace_root,
+        app_root=args.app_root,
+        app_exe=args.app_exe,
+        artifacts_dir=args.artifacts_dir,
+        keep_artifacts=args.keep_artifacts or args.keep_running,
+    )
+    app_exe = paths.app_exe
+    seed_config_dir = Path(args.seed_config_dir).resolve() if args.seed_config_dir else paths.seed_config_dir
+    artifacts_dir = paths.source_artifacts_dir
 
     port = choose_listen_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -1104,8 +1118,20 @@ def main() -> None:
                             "message": str(exc),
                         }
         write_json(artifacts_dir / "result.json", report)
-        if pending_error is not None:
-            raise pending_error
+        harness_cli_common.publish_run_artifacts(paths)
+        harness_cli_common.publish_latest_report(paths)
+        harness_cli_common.cleanup_source_artifacts(paths)
+    if pending_error is not None:
+        raise pending_error
+
+    print(f"REST API live E2E {'passed' if report['status'] == 'passed' else 'failed'}. Report directory: {paths.run_report_dir}")
+    if args.keep_running and str(report.get("status")) == "passed":
+        cleanup = report.get("cleanup")
+        if isinstance(cleanup, dict):
+            print(
+                "eMule left running. PID: "
+                f"{cleanup.get('process_id')} Profile: {cleanup.get('profile_base')}"
+            )
 
 
 if __name__ == "__main__":

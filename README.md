@@ -58,8 +58,9 @@ Current critical comparison slices:
 
 Script inventory:
 
-- all `*.ps1` entrypoints and helpers in this repo require `pwsh 7.6+`
-- operator-facing wrappers are documented below; internal helpers and targeted diagnostics are listed here so maintenance scope stays explicit
+- Python 3 is the canonical runtime for live/UI harnesses in this repo
+- retained `*.ps1` scripts require `pwsh 7.6+` and are kept only for build/report/coverage flows or narrowly Windows-specific utilities
+- canonical Python entrypoints are documented below; retained PowerShell utilities and targeted diagnostics are listed here so maintenance scope stays explicit
 
 | Path | Role | Status | Notes |
 | --- | --- | --- | --- |
@@ -69,17 +70,16 @@ Script inventory:
 | `scripts\run-live-diff.ps1` | operator-facing parity wrapper | maintained | live app-vs-app comparison |
 | `scripts\run-bugfix-core-coverage.ps1` | operator-facing comparison wrapper | maintained | canonical `main` vs `bugfix` pass |
 | `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
-| `scripts\run-shared-files-ui-e2e.ps1` | operator-facing UI wrapper | maintained | real Win32 Shared Files regression |
-| `scripts\run-config-stability-ui-e2e.ps1` | operator-facing UI wrapper | maintained | long `-c` config path, settings save, relaunch, and stability regression |
-| `scripts\run-startup-profile-scenarios.ps1` | operator-facing startup wrapper | maintained | Chrome Trace startup-profile scenarios |
 | `scripts\publish-harness-summary.ps1` | shared report publisher | maintained | combines coverage, parity, and optional live status |
 | `helpers\helper-opencppcoverage-bootstrap.ps1` | internal helper | maintained | resolves OpenCppCoverage install |
 | `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
 | `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
+| `scripts\harness_cli_common.py` | internal Python helper | maintained | canonical app/report resolution for Python-first live/UI harnesses |
 | `scripts\emule_live_profile_common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
-| `scripts\config-stability-ui-e2e.py` | Python runner | maintained | backing logic for the long-config stability UI wrapper |
-| `scripts\shared-files-ui-e2e.py` | Python runner | maintained | backing logic for the Shared Files UI wrapper |
-| `scripts\startup-profile-scenarios.py` | Python runner | maintained | backing logic for the startup-profile wrapper |
+| `scripts\rest-api-smoke.py` | operator-facing Python E2E | maintained | canonical isolated REST live E2E lane |
+| `scripts\config-stability-ui-e2e.py` | operator-facing Python E2E | maintained | long `-c` config path, settings save, relaunch, and stability regression |
+| `scripts\shared-files-ui-e2e.py` | operator-facing Python E2E | maintained | real Win32 Shared Files regression |
+| `scripts\startup-profile-scenarios.py` | operator-facing Python E2E | maintained | Chrome Trace startup-profile scenarios |
 | `scripts\test_create_long_paths_tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
 | `scripts\diag-hash-launch.ps1` | targeted diagnostic | maintained | seeded profile + procdump launcher for hash stall investigations |
 | `scripts\parse-dump.py` | targeted diagnostic | maintained | parses `diag-hash` dumps, defaults to `diag-hash-latest` |
@@ -118,8 +118,8 @@ Deterministic live-profile seed:
 
 Canonical live REST E2E lane:
 
-- `scripts\run-rest-api-smoke.ps1` is the operator-facing entrypoint for the canonical isolated REST live E2E lane
-- `scripts\rest-api-smoke.py` is the backing Python runner and is intentionally strict pass/fail
+- `scripts\rest-api-smoke.py` is the operator-facing entrypoint for the canonical isolated REST live E2E lane
+- the Python runner is intentionally strict pass/fail and owns app resolution, report publication, and latest-report mirroring directly
 - the lane launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` and enables WebServer REST against one per-run localhost port
 - the lane requires real server-connect activity, Kad running state, network readiness, and one real live search lifecycle through the first usable network path
 - `-ServerSearchCount <N>` and `-KadSearchCount <N>` upgrade the run into one stricter mixed-network scenario with exact per-network live search counts
@@ -136,18 +136,18 @@ Canonical live harness:
 
 Shared Files live UI regression:
 
-- `scripts\run-shared-files-ui-e2e.ps1` is the operator-facing entrypoint for the real Win32 Shared Files regression
+- `scripts\shared-files-ui-e2e.py` is the operator-facing entrypoint for the real Win32 Shared Files regression
 - it launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` so the run stays isolated from local user sessions
 - the checked-in seed profile must stay initialized; the Python harness validates the seed keys, writes deterministic maximized window placement, and patches only per-run incoming, temp, and shared-directory paths
 - the default UI run now covers two scenarios: the original three-file deterministic smoke case plus a generated recursive robustness tree under `C:\tmp\00_long_paths\shared_files_robustness`
 - the regression asserts that the main window starts maximized and exercises exact default-name ordering, size ascending and descending sorts, name ascending and descending sorts after reload, selection-detail updates, reload preservation of the active descending size sort, and large-tree row-count/set/prefix checks driven by the generated manifest
-- `-Scenario` can be repeated on the PowerShell wrapper to run only `fixture-three-files` or only `generated-robustness-recursive`
+- `--scenario` can be repeated on the Python entrypoint to run only `fixture-three-files` or only `generated-robustness-recursive`
 - each run publishes artifacts and `ui-summary.json` under `reports\shared-files-ui-e2e\...` and refreshes `reports\shared-files-ui-e2e-latest`
 - the shared `reports\harness-summary.json` now includes a `live_ui` section when that regression is run
 
 Config-stability live UI regression:
 
-- `scripts\run-config-stability-ui-e2e.ps1` is the operator-facing entrypoint for long `-c` config-path startup, settings-save, and relaunch-stability coverage
+- `scripts\config-stability-ui-e2e.py` is the operator-facing entrypoint for long `-c` config-path startup, settings-save, and relaunch-stability coverage
 - it launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` under a deliberately deep profile root so `profile-base\config\preferences.ini` exceeds normal Win32 path limits
 - the default run covers `long-config-settings-roundtrip` and `long-config-shared-stress`
 - the roundtrip scenario edits the real Preferences dialog, saves `OnlineSignature`, verifies `preferences.ini`, relaunches the same long-path profile, and confirms persisted UI state
@@ -156,10 +156,10 @@ Config-stability live UI regression:
 
 Startup-profile scenarios:
 
-- `scripts\run-startup-profile-scenarios.ps1` builds deterministic Chrome Trace `startup-profile.trace.json` artifacts for multiple live-profile scenarios without changing app behavior
+- `scripts\startup-profile-scenarios.py` builds deterministic Chrome Trace `startup-profile.trace.json` artifacts for multiple live-profile scenarios without changing app behavior
 - the trace includes stable readiness, Shared Files hashing, Statistics dialog, and broadband lifecycle phase ids so Perfetto and the JSON summaries can separate startup, UI setup, queue wait, and worker-thread bring-up costs
 - the default run covers `baseline-no-shares`, `fixture-three-files`, `long-paths-root-only`, `long-paths-recursive`, `long-path-output-root-only`, `long-path-output-recursive`, `long-path-emule-fixture-root-only`, `long-path-emule-fixture-recursive`, `shared-files-robustness-root-only`, and `shared-files-robustness-recursive`
-- `-Scenario` can be repeated on the PowerShell wrapper to run only the scenarios you want
+- `--scenario` can be repeated on the Python entrypoint to run only the scenarios you want
 - `scripts\test_create_long_paths_tree.py` now lives in this repo and materializes the generated long-path fixture trees plus `generated-fixture-manifest.json` under `C:\tmp\00_long_paths`
 - the long-path scenarios target `C:\tmp\00_long_paths` by default, regenerate the repo-owned fixture tree as needed, and expand `shareddir.dat` deterministically in the recursive cases
 - each scenario summary now also records shareddir payload metrics plus tree-shape metrics such as depth, longest paths, and counts beyond the Windows path thresholds

@@ -298,7 +298,7 @@ def update_harness_summary(
 
     python_executable = find_python_executable()
     command = [python_executable]
-    if Path(python_executable).name.lower().startswith("py"):
+    if Path(python_executable).stem.lower() == "py":
         command.append("-3")
     command.extend(
         [

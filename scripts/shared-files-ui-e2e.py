@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -111,6 +112,9 @@ REQUIRED_SEED_KEYS = (
     "ShowSharedFilesDetails",
     "IgnoreInstances",
 )
+
+SHARED_DUPLICATE_PATH_CACHE_MAGIC = 0x50554453
+SHARED_DUPLICATE_PATH_CACHE_VERSION = 1
 
 
 class LVITEMW(ctypes.Structure):
@@ -320,6 +324,98 @@ def prepare_generated_robustness_fixture(seed_config_dir: Path, artifacts_dir: P
     return fixture
 
 
+def prepare_duplicate_reuse_fixture(seed_config_dir: Path, artifacts_dir: Path) -> dict:
+    """Creates a deterministic duplicate-content fixture used to prove startup hash skipping on relaunch."""
+
+    incoming_dir = artifacts_dir / "incoming"
+    temp_dir = artifacts_dir / "temp"
+    shared_a_dir = artifacts_dir / "shared-a"
+    shared_b_dir = artifacts_dir / "shared-b"
+
+    incoming_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    shared_a_dir.mkdir(parents=True, exist_ok=True)
+    shared_b_dir.mkdir(parents=True, exist_ok=True)
+
+    duplicate_payload = (b"duplicate-payload-block-" * 256) + b"\r\n"
+    canonical_path = shared_a_dir / "canonical_duplicate_source.bin"
+    duplicate_path = shared_b_dir / "duplicate_payload_copy.bin"
+    canonical_path.write_bytes(duplicate_payload)
+    duplicate_path.write_bytes(duplicate_payload)
+
+    fixture = live_common.prepare_profile_base(
+        seed_config_dir=seed_config_dir,
+        artifacts_dir=artifacts_dir,
+        shared_dirs=[
+            live_common.win_path(shared_a_dir, trailing_slash=True),
+            live_common.win_path(shared_b_dir, trailing_slash=True),
+        ],
+        incoming_dir=incoming_dir,
+        temp_dir=temp_dir,
+    )
+    fixture.update(
+        {
+            "canonical_path": canonical_path,
+            "duplicate_path": duplicate_path,
+            "expected_visible_names": sorted([canonical_path.name, duplicate_path.name], key=str.lower),
+            "duplicate_cache_path": Path(str(fixture["config_dir"])) / "shareddups.dat",
+        }
+    )
+    return fixture
+
+
+def read_duplicate_cache_header(path: Path) -> dict[str, int]:
+    """Reads the duplicate-path sidecar header and returns its magic, version, and record count."""
+
+    payload = path.read_bytes()
+    if len(payload) < 10:
+        raise RuntimeError(f"Duplicate cache '{path}' is too small to contain a valid header.")
+    magic, version, record_count = struct.unpack_from("<IHI", payload, 0)
+    return {
+        "magic": int(magic),
+        "version": int(version),
+        "record_count": int(record_count),
+    }
+
+
+def wait_for_duplicate_cache_records(path: Path, *, minimum_records: int, timeout: float = 30.0) -> dict[str, int]:
+    """Waits until the duplicate-path sidecar exists and exposes at least the requested record count."""
+
+    last_header: dict[str, int] | None = None
+
+    def probe() -> bool:
+        nonlocal last_header
+        if not path.exists():
+            return False
+        try:
+            header = read_duplicate_cache_header(path)
+        except Exception:
+            return False
+        last_header = header
+        return header.get("record_count", 0) >= minimum_records
+
+    wait_for(probe, timeout=timeout, interval=0.25, description="duplicate cache record persistence")
+    if last_header is None:
+        raise RuntimeError(f"Duplicate cache '{path}' never became readable.")
+    return last_header
+
+
+def get_profile_counter_value(summary: dict[str, object], counter_name: str, value_key: str) -> int | None:
+    """Returns one integer startup-profile counter value from the summarized live result."""
+
+    counters = summary.get("startup_profile_counters")
+    if not isinstance(counters, dict):
+        return None
+    counter = counters.get(counter_name)
+    if not isinstance(counter, dict):
+        return None
+    values = counter.get("values")
+    if not isinstance(values, dict):
+        return None
+    value = values.get(value_key)
+    return int(value) if isinstance(value, int) else None
+
+
 def open_process(process_id: int) -> int:
     """Opens the target process for the remote memory operations needed by Win32 list controls."""
 
@@ -491,6 +587,63 @@ def launch_app(app_exe: Path, profile_base: Path) -> Application:
         [str(app_exe), "-ignoreinstances", "-c", str(profile_base)]
     )
     return Application(backend="win32").start(command_line, wait_for_idle=False)
+
+
+def collect_startup_profile_bundle(
+    startup_profile_path: Path,
+    *,
+    require_startup_profile: bool,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    """Collects startup-profile diagnostics or records an expected omission for baseline runs."""
+
+    try:
+        startup_profile_text = live_common.wait_for_startup_profile_complete(startup_profile_path)
+    except Exception as exc:
+        if require_startup_profile:
+            raise
+        return (
+            {
+                "startup_profile_path": str(startup_profile_path),
+                "startup_profile_status": "missing",
+                "startup_profile_error": str(exc),
+                "startup_profile_phase_count": 0,
+                "startup_profile_counter_count": 0,
+                "startup_profile_counters": {},
+            },
+            [],
+            [],
+        )
+
+    startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
+    startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
+    return (
+        {
+            "startup_profile_path": str(startup_profile_path),
+            "startup_profile_status": "present",
+            "startup_profile_phase_count": len(startup_profile_phases),
+            "startup_profile_counter_count": len(startup_profile_counters),
+            "startup_profile_counters": live_common.summarize_startup_profile_counters(startup_profile_counters),
+            "startup_profile_readiness": live_common.summarize_shared_files_readiness(
+                startup_profile_phases,
+                startup_profile_counters,
+            ),
+            "startup_profile_highlights": live_common.summarize_startup_profile(
+                startup_profile_phases,
+                [
+                    "Construct CSharedFileList (share cache/scan)",
+                    "CSharedFilesWnd::OnInitDialog total",
+                    "shared.scan.complete",
+                    "shared.tree.populated",
+                    "shared.model.populated",
+                    "ui.shared_files_ready",
+                    "StartupTimer complete",
+                ],
+            ),
+            "startup_profile_top_slowest_phases": live_common.get_top_slowest_phases(startup_profile_phases, limit=8),
+        },
+        startup_profile_phases,
+        startup_profile_counters,
+    )
 
 
 def is_main_emule_window(hwnd: int) -> bool:
@@ -686,7 +839,13 @@ def close_app_cleanly(app: Application) -> None:
     wait_for(resolve, timeout=10.0, interval=0.2, description="clean app shutdown")
 
 
-def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Path) -> None:
+def run_shared_files_e2e(
+    app_exe: Path,
+    seed_config_dir: Path,
+    artifacts_dir: Path,
+    *,
+    require_startup_profile: bool,
+) -> None:
     """Executes the real Shared Files Win32 regression against an isolated fixture profile."""
 
     fixture = prepare_fixture(seed_config_dir, artifacts_dir)
@@ -718,31 +877,13 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
         if not summary["main_window_is_maximized"]:
             raise RuntimeError(f"Expected the seeded profile to start maximized, got showCmd={summary['main_window_show_cmd']}.")
 
-        startup_profile_text = live_common.wait_for_startup_profile_complete(fixture["startup_profile_path"])
-        startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
-        startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
-        summary["startup_profile_path"] = str(fixture["startup_profile_path"])
-        summary["startup_profile_phase_count"] = len(startup_profile_phases)
-        summary["startup_profile_counter_count"] = len(startup_profile_counters)
-        summary["startup_profile_counters"] = live_common.summarize_startup_profile_counters(startup_profile_counters)
-        summary["startup_profile_readiness"] = live_common.summarize_shared_files_readiness(
-            startup_profile_phases,
-            startup_profile_counters,
+        startup_profile_summary, startup_profile_phases, _startup_profile_counters = collect_startup_profile_bundle(
+            fixture["startup_profile_path"],
+            require_startup_profile=require_startup_profile,
         )
-        summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
-            startup_profile_phases,
-            [
-                "Construct CSharedFileList (share cache/scan)",
-                "CSharedFilesWnd::OnInitDialog total",
-                "shared.scan.complete",
-                "shared.tree.populated",
-                "shared.model.populated",
-                "ui.shared_files_ready",
-                "StartupTimer complete",
-            ],
-        )
-        summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
-        live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, summary["name"])
+        summary.update(startup_profile_summary)
+        if startup_profile_phases:
+            live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, summary["name"])
         process_handle = open_process(process_id)
 
         dump_window_tree(main_hwnd, artifacts_dir / "window-tree-initial.json")
@@ -910,7 +1051,14 @@ def run_shared_files_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Pa
                     pass
 
 
-def run_generated_robustness_e2e(app_exe: Path, seed_config_dir: Path, artifacts_dir: Path, shared_root: Path) -> None:
+def run_generated_robustness_e2e(
+    app_exe: Path,
+    seed_config_dir: Path,
+    artifacts_dir: Path,
+    shared_root: Path,
+    *,
+    require_startup_profile: bool,
+) -> None:
     """Executes a larger Shared Files regression against the generated robustness subtree."""
 
     fixture = prepare_generated_robustness_fixture(seed_config_dir, artifacts_dir, shared_root)
@@ -947,31 +1095,13 @@ def run_generated_robustness_e2e(app_exe: Path, seed_config_dir: Path, artifacts
         if not summary["main_window_is_maximized"]:
             raise RuntimeError(f"Expected the seeded profile to start maximized, got showCmd={summary['main_window_show_cmd']}.")
 
-        startup_profile_text = live_common.wait_for_startup_profile_complete(fixture["startup_profile_path"])
-        startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
-        startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
-        summary["startup_profile_path"] = str(fixture["startup_profile_path"])
-        summary["startup_profile_phase_count"] = len(startup_profile_phases)
-        summary["startup_profile_counter_count"] = len(startup_profile_counters)
-        summary["startup_profile_counters"] = live_common.summarize_startup_profile_counters(startup_profile_counters)
-        summary["startup_profile_readiness"] = live_common.summarize_shared_files_readiness(
-            startup_profile_phases,
-            startup_profile_counters,
+        startup_profile_summary, startup_profile_phases, _startup_profile_counters = collect_startup_profile_bundle(
+            fixture["startup_profile_path"],
+            require_startup_profile=require_startup_profile,
         )
-        summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
-            startup_profile_phases,
-            [
-                "Construct CSharedFileList (share cache/scan)",
-                "CSharedFilesWnd::OnInitDialog total",
-                "shared.scan.complete",
-                "shared.tree.populated",
-                "shared.model.populated",
-                "ui.shared_files_ready",
-                "StartupTimer complete",
-            ],
-        )
-        summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
-        live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, summary["name"])
+        summary.update(startup_profile_summary)
+        if startup_profile_phases:
+            live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, summary["name"])
         process_handle = open_process(process_id)
 
         dump_window_tree(main_hwnd, artifacts_dir / "window-tree-initial.json")
@@ -1087,12 +1217,162 @@ def run_generated_robustness_e2e(app_exe: Path, seed_config_dir: Path, artifacts
                     pass
 
 
+def run_duplicate_startup_reuse_e2e(
+    app_exe: Path,
+    seed_config_dir: Path,
+    artifacts_dir: Path,
+    *,
+    require_startup_profile: bool,
+) -> None:
+    """Executes a duplicate-content relaunch regression and proves the second startup skips rehashing."""
+
+    fixture = prepare_duplicate_reuse_fixture(seed_config_dir, artifacts_dir)
+    summary = {
+        "name": "duplicate-startup-reuse",
+        "status": "failed",
+        "app_exe": str(app_exe),
+        "profile_base": str(fixture["profile_base"]),
+        "duplicate_cache_path": str(fixture["duplicate_cache_path"]),
+        "canonical_path": live_common.win_path(Path(str(fixture["canonical_path"]))),
+        "duplicate_path": live_common.win_path(Path(str(fixture["duplicate_path"]))),
+        "command_line": subprocess.list2cmdline(
+            [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
+        ),
+    }
+
+    app = None
+    process_handle = 0
+    try:
+        app = live_common.launch_app(app_exe, fixture["profile_base"])
+        main_window = live_common.wait_for_main_window(app)
+        main_hwnd = main_window.handle
+        main_window.set_focus()
+        process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
+        summary["first_launch_process_id"] = process_id
+        process_handle = open_process(process_id)
+
+        startup_profile_summary, startup_profile_phases, _startup_profile_counters = collect_startup_profile_bundle(
+            fixture["startup_profile_path"],
+            require_startup_profile=require_startup_profile,
+        )
+        summary["first_launch_startup"] = startup_profile_summary
+        if startup_profile_phases:
+            live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, summary["name"] + ".first_launch")
+
+        list_hwnd, _static_hwnd = open_shared_files_page(main_hwnd)
+        first_launch_row_count = wait_for_exact_list_count(list_hwnd, 1)
+        summary["first_launch_row_count"] = first_launch_row_count
+        first_launch_names = get_list_names(process_handle, list_hwnd, first_launch_row_count)
+        summary["first_launch_names"] = first_launch_names
+        if len(first_launch_names) != 1 or first_launch_names[0] not in fixture["expected_visible_names"]:
+            raise RuntimeError(f"Unexpected duplicate fixture first-launch rows: {first_launch_names!r}")
+
+        close_process(process_handle)
+        process_handle = 0
+        live_common.close_app_cleanly(app)
+        app = None
+
+        duplicate_cache_path = Path(str(fixture["duplicate_cache_path"]))
+        duplicate_cache_header = wait_for_duplicate_cache_records(
+            duplicate_cache_path,
+            minimum_records=1,
+            timeout=30.0,
+        )
+        summary["duplicate_cache_header"] = duplicate_cache_header
+        if duplicate_cache_header["magic"] != SHARED_DUPLICATE_PATH_CACHE_MAGIC:
+            raise RuntimeError(f"Unexpected duplicate cache magic: {duplicate_cache_header['magic']:#x}")
+        if duplicate_cache_header["version"] != SHARED_DUPLICATE_PATH_CACHE_VERSION:
+            raise RuntimeError(f"Unexpected duplicate cache version: {duplicate_cache_header['version']}")
+
+        shared_cache_path = Path(str(fixture["config_dir"])) / "sharedcache.dat"
+        summary["shared_cache_path"] = str(shared_cache_path)
+        if not shared_cache_path.exists():
+            raise RuntimeError("Expected sharedcache.dat to exist after the first launch warm-up.")
+        shared_cache_path.unlink()
+        summary["shared_cache_removed_before_relaunch"] = True
+
+        app = live_common.launch_app(app_exe, fixture["profile_base"])
+        main_window = live_common.wait_for_main_window(app)
+        main_hwnd = main_window.handle
+        main_window.set_focus()
+        process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
+        summary["relaunch_process_id"] = process_id
+        process_handle = open_process(process_id)
+
+        relaunch_profile_summary, relaunch_profile_phases, _relaunch_profile_counters = collect_startup_profile_bundle(
+            fixture["startup_profile_path"],
+            require_startup_profile=require_startup_profile,
+        )
+        summary["relaunch_startup"] = relaunch_profile_summary
+        if relaunch_profile_phases:
+            live_common.enforce_deferred_shared_hashing_boundary(relaunch_profile_phases, summary["name"] + ".relaunch")
+
+        duplicate_paths_reused = get_profile_counter_value(relaunch_profile_summary, "shared.scan.duplicate_paths_reused", "files")
+        files_queued_for_hash = get_profile_counter_value(relaunch_profile_summary, "shared.scan.files_queued_for_hash", "files")
+        pending_hashes = get_profile_counter_value(relaunch_profile_summary, "shared.scan.pending_hashes", "files")
+        shared_files_after_scan = get_profile_counter_value(relaunch_profile_summary, "shared.scan.shared_files_after_scan", "files")
+        summary["relaunch_duplicate_paths_reused"] = duplicate_paths_reused
+        summary["relaunch_files_queued_for_hash"] = files_queued_for_hash
+        summary["relaunch_pending_hashes"] = pending_hashes
+        summary["relaunch_shared_files_after_scan"] = shared_files_after_scan
+
+        if require_startup_profile:
+            if duplicate_paths_reused != 1:
+                raise RuntimeError(f"Expected duplicate_paths_reused=1 on relaunch, got {duplicate_paths_reused!r}.")
+            if files_queued_for_hash != 0:
+                raise RuntimeError(f"Expected files_queued_for_hash=0 on relaunch, got {files_queued_for_hash!r}.")
+            if pending_hashes != 0:
+                raise RuntimeError(f"Expected pending_hashes=0 on relaunch, got {pending_hashes!r}.")
+            if shared_files_after_scan != 1:
+                raise RuntimeError(f"Expected shared_files_after_scan=1 on relaunch, got {shared_files_after_scan!r}.")
+
+        list_hwnd, _static_hwnd = open_shared_files_page(main_hwnd)
+        relaunch_row_count = wait_for_exact_list_count(list_hwnd, 1)
+        summary["relaunch_row_count"] = relaunch_row_count
+        relaunch_names = get_list_names(process_handle, list_hwnd, relaunch_row_count)
+        summary["relaunch_names"] = relaunch_names
+        if len(relaunch_names) != 1 or relaunch_names[0] not in fixture["expected_visible_names"]:
+            raise RuntimeError(f"Unexpected duplicate fixture relaunch rows: {relaunch_names!r}")
+
+        summary["status"] = "passed"
+        summary["error"] = None
+        write_json(artifacts_dir / "result.json", summary)
+    except Exception as exc:
+        summary["error"] = str(exc)
+        if app is not None:
+            try:
+                main_window = app.top_window()
+                dump_window_tree(main_window.handle, artifacts_dir / "window-tree-failure.json")
+                try:
+                    image = main_window.capture_as_image()
+                    image.save(artifacts_dir / "failure.png")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        write_json(artifacts_dir / "result.json", summary)
+        raise
+    finally:
+        if process_handle:
+            close_process(process_handle)
+        if app is not None:
+            try:
+                live_common.close_app_cleanly(app)
+            except Exception:
+                try:
+                    app.kill()
+                except Exception:
+                    pass
+
+
 def run_shared_files_ui_suite(
     app_exe: Path,
     seed_config_dir: Path,
     artifacts_dir: Path,
     shared_root: Path,
     scenario_names: list[str],
+    *,
+    require_startup_profile: bool,
 ) -> None:
     """Runs the requested Shared Files UI scenarios and writes one combined result."""
 
@@ -1112,9 +1392,27 @@ def run_shared_files_ui_suite(
         scenario_dir.mkdir(parents=True, exist_ok=True)
         try:
             if scenario_name == "fixture-three-files":
-                run_shared_files_e2e(app_exe, seed_config_dir, scenario_dir)
+                run_shared_files_e2e(
+                    app_exe,
+                    seed_config_dir,
+                    scenario_dir,
+                    require_startup_profile=require_startup_profile,
+                )
             elif scenario_name == "generated-robustness-recursive":
-                run_generated_robustness_e2e(app_exe, seed_config_dir, scenario_dir, shared_root)
+                run_generated_robustness_e2e(
+                    app_exe,
+                    seed_config_dir,
+                    scenario_dir,
+                    shared_root,
+                    require_startup_profile=require_startup_profile,
+                )
+            elif scenario_name == "duplicate-startup-reuse":
+                run_duplicate_startup_reuse_e2e(
+                    app_exe,
+                    seed_config_dir,
+                    scenario_dir,
+                    require_startup_profile=require_startup_profile,
+                )
             else:
                 raise RuntimeError(f"Unknown Shared Files UI scenario: {scenario_name}")
         except Exception:
@@ -1148,12 +1446,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--artifacts-dir")
     parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
+    parser.add_argument("--startup-profile-mode", choices=["required", "optional"], default="required")
     parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
     parser.add_argument(
         "--scenario",
         dest="scenarios",
         action="append",
-        choices=["fixture-three-files", "generated-robustness-recursive"],
+        choices=["fixture-three-files", "generated-robustness-recursive", "duplicate-startup-reuse"],
     )
     args = parser.parse_args(argv)
 
@@ -1181,6 +1480,7 @@ def main(argv: list[str]) -> int:
             artifacts_dir=artifacts_dir,
             shared_root=Path(args.shared_root).resolve(),
             scenario_names=scenario_names,
+            require_startup_profile=(args.startup_profile_mode == "required"),
         )
         harness_cli_common.publish_run_artifacts(paths)
         summary_payload = harness_cli_common.build_live_ui_summary(status="passed", paths=paths)

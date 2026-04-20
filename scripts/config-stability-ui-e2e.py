@@ -310,22 +310,32 @@ def prepare_stress_fixture(seed_config_dir: Path, scenario_dir: Path, shared_roo
     return fixture
 
 
-def launch_and_capture_startup(app_exe: Path, fixture: dict[str, object]) -> tuple[Application, int, int, dict[str, object]]:
-    """Launches the app, waits for readiness, and returns startup diagnostics."""
+def collect_startup_profile_summary(
+    startup_profile_path: Path,
+    *,
+    require_startup_profile: bool,
+) -> dict[str, object]:
+    """Collects startup-profile diagnostics or records an expected omission for baseline runs."""
 
-    app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
-    main_window = live_common.wait_for_main_window(app)
-    main_hwnd = int(main_window.handle)
     try:
-        main_window.set_focus()
-    except Exception:
-        pass
-    process_id = get_main_process_id(app)
-    startup_profile_text = live_common.wait_for_startup_profile_complete(Path(str(fixture["startup_profile_path"])))
+        startup_profile_text = live_common.wait_for_startup_profile_complete(startup_profile_path)
+    except Exception as exc:
+        if require_startup_profile:
+            raise
+        return {
+            "startup_profile_path": str(startup_profile_path),
+            "startup_profile_status": "missing",
+            "startup_profile_error": str(exc),
+            "startup_profile_phase_count": 0,
+            "startup_profile_counter_count": 0,
+            "startup_profile_counters": {},
+        }
+
     phases = live_common.parse_startup_profile(startup_profile_text)
     counters = live_common.parse_startup_profile_counters(startup_profile_text)
-    startup_summary = {
-        "startup_profile_path": str(fixture["startup_profile_path"]),
+    return {
+        "startup_profile_path": str(startup_profile_path),
+        "startup_profile_status": "present",
         "startup_profile_phase_count": len(phases),
         "startup_profile_counter_count": len(counters),
         "startup_profile_counters": live_common.summarize_startup_profile_counters(counters),
@@ -342,10 +352,38 @@ def launch_and_capture_startup(app_exe: Path, fixture: dict[str, object]) -> tup
         ),
         "startup_profile_top_slowest_phases": live_common.get_top_slowest_phases(phases, limit=8),
     }
+
+
+def launch_and_capture_startup(
+    app_exe: Path,
+    fixture: dict[str, object],
+    *,
+    require_startup_profile: bool,
+) -> tuple[Application, int, int, dict[str, object]]:
+    """Launches the app, waits for readiness, and returns startup diagnostics."""
+
+    app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+    main_window = live_common.wait_for_main_window(app)
+    main_hwnd = int(main_window.handle)
+    try:
+        main_window.set_focus()
+    except Exception:
+        pass
+    process_id = get_main_process_id(app)
+    startup_summary = collect_startup_profile_summary(
+        Path(str(fixture["startup_profile_path"])),
+        require_startup_profile=require_startup_profile,
+    )
     return app, main_hwnd, process_id, startup_summary
 
 
-def run_roundtrip_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path) -> dict[str, object]:
+def run_roundtrip_scenario(
+    app_exe: Path,
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    *,
+    require_startup_profile: bool,
+) -> dict[str, object]:
     """Runs one long-config settings roundtrip and relaunch persistence regression."""
 
     fixture = prepare_roundtrip_fixture(seed_config_dir, scenario_dir)
@@ -364,7 +402,11 @@ def run_roundtrip_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: P
 
     app = None
     try:
-        app, main_hwnd, process_id, startup_summary = launch_and_capture_startup(app_exe, fixture)
+        app, main_hwnd, process_id, startup_summary = launch_and_capture_startup(
+            app_exe,
+            fixture,
+            require_startup_profile=require_startup_profile,
+        )
         summary.update(startup_summary)
         initial_ini_value = get_ini_value(Path(str(fixture["preferences_path"])), "OnlineSignature")
         summary["initial_online_signature_ini"] = initial_ini_value
@@ -380,7 +422,11 @@ def run_roundtrip_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: P
         summary["close_duration_ms"] = round((time.perf_counter() - close_started) * 1000.0, 3)
         app = None
 
-        app, main_hwnd, process_id, relaunch_startup_summary = launch_and_capture_startup(app_exe, fixture)
+        app, main_hwnd, process_id, relaunch_startup_summary = launch_and_capture_startup(
+            app_exe,
+            fixture,
+            require_startup_profile=require_startup_profile,
+        )
         summary["relaunch_startup_profile"] = relaunch_startup_summary
         verify_preferences_value(main_hwnd, process_id, True)
 
@@ -418,7 +464,14 @@ def run_roundtrip_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: P
         write_json(scenario_dir / "result.json", summary)
 
 
-def run_stress_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, shared_root: Path) -> dict[str, object]:
+def run_stress_scenario(
+    app_exe: Path,
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    shared_root: Path,
+    *,
+    require_startup_profile: bool,
+) -> dict[str, object]:
     """Runs repeated long-config startup/save/shutdown cycles against a heavier shared tree."""
 
     fixture = prepare_stress_fixture(seed_config_dir, scenario_dir, shared_root)
@@ -445,7 +498,11 @@ def run_stress_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path
     try:
         for cycle_index in range(1, 4):
             summary["active_cycle_index"] = cycle_index
-            app, main_hwnd, process_id, startup_summary = launch_and_capture_startup(app_exe, fixture)
+            app, main_hwnd, process_id, startup_summary = launch_and_capture_startup(
+                app_exe,
+                fixture,
+                require_startup_profile=require_startup_profile,
+            )
             desired_state = not desired_state
             cycle = {
                 "cycle_index": cycle_index,
@@ -482,7 +539,11 @@ def run_stress_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path
             app = None
 
         summary["active_cycle_index"] = "final_relaunch"
-        app, main_hwnd, process_id, final_startup_summary = launch_and_capture_startup(app_exe, fixture)
+        app, main_hwnd, process_id, final_startup_summary = launch_and_capture_startup(
+            app_exe,
+            fixture,
+            require_startup_profile=require_startup_profile,
+        )
         summary["final_relaunch_startup"] = final_startup_summary
         summary["final_last_step"] = "verify_preferences_value"
         verify_preferences_value(main_hwnd, process_id, desired_state)
@@ -531,13 +592,25 @@ def run_scenario(
     scenario_dir: Path,
     shared_root: Path,
     name: str,
+    require_startup_profile: bool,
 ) -> dict[str, object]:
     """Dispatches one named config-stability scenario."""
 
     if name == "long-config-settings-roundtrip":
-        return run_roundtrip_scenario(app_exe, seed_config_dir, scenario_dir)
+        return run_roundtrip_scenario(
+            app_exe,
+            seed_config_dir,
+            scenario_dir,
+            require_startup_profile=require_startup_profile,
+        )
     if name == "long-config-shared-stress":
-        return run_stress_scenario(app_exe, seed_config_dir, scenario_dir, shared_root)
+        return run_stress_scenario(
+            app_exe,
+            seed_config_dir,
+            scenario_dir,
+            shared_root,
+            require_startup_profile=require_startup_profile,
+        )
     raise RuntimeError(f"Unknown config-stability scenario '{name}'.")
 
 
@@ -552,6 +625,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--artifacts-dir")
     parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
+    parser.add_argument("--startup-profile-mode", choices=["required", "optional"], default="required")
     parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
     parser.add_argument(
         "--scenario",
@@ -592,6 +666,7 @@ def main(argv: list[str]) -> int:
         "seed_config_dir": str(seed_config_dir),
         "artifact_dir": str(artifacts_dir),
         "shared_root": live_common.win_path(shared_root, trailing_slash=True),
+        "startup_profile_mode": args.startup_profile_mode,
         "scenarios": [],
     }
 
@@ -605,6 +680,7 @@ def main(argv: list[str]) -> int:
             scenario_dir=scenario_dir,
             shared_root=shared_root,
             name=name,
+            require_startup_profile=(args.startup_profile_mode == "required"),
         )
         combined["scenarios"].append(result)
         if result["status"] != "passed":

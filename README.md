@@ -77,6 +77,7 @@ Script inventory:
 | `scripts\harness-cli-common.py` | internal Python helper | maintained | canonical app/report resolution for Python-first live/UI harnesses |
 | `scripts\emule-live-profile-common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
 | `scripts\rest-api-smoke.py` | operator-facing Python E2E | maintained | canonical isolated REST live E2E lane |
+| `scripts\auto-browse-live.py` | operator-facing Python E2E | maintained | isolated live auto-browse validation with `hide.me` bind and P2P UPnP |
 | `scripts\config-stability-ui-e2e.py` | operator-facing Python E2E | maintained | long `-c` config path, settings save, relaunch, and stability regression |
 | `scripts\shared-files-ui-e2e.py` | operator-facing Python E2E | maintained | real Win32 Shared Files regression |
 | `scripts\startup-profile-scenarios.py` | operator-facing Python E2E | maintained | Chrome Trace startup-profile scenarios |
@@ -125,6 +126,22 @@ Canonical live REST E2E lane:
 - `-ServerSearchCount <N>` and `-KadSearchCount <N>` upgrade the run into one stricter mixed-network scenario with exact per-network live search counts
 - `-KeepRunning` leaves the launched isolated eMule instance alive after a passing run and forces artifact retention so the profile can be inspected afterward
 - failure artifacts include the failing phase plus the last observed server/Kad state so live-network regressions are diagnosable
+
+Canonical live auto-browse lane:
+
+- `scripts\auto-browse-live.py` is the operator-facing entrypoint for the isolated remote-share auto-browse validation
+- the scenario enables `AutoBrowseRemoteShares=1`, keeps REST on one per-run localhost port, and binds P2P `BindAddr` through `repos\eMule-tooling\scripts\config-bindaddr-updater.ps1`
+- the default P2P bind target is the `hide.me` interface and the scenario always enables the main P2P `UPnP` setting
+- the scenario relies on `Autoconnect=1` in the isolated profile and intentionally does not issue overlapping REST connect requests for eD2K or Kad
+- the scenario first waits for real browse-capable clients to accumulate naturally after server+Kad autoconnect; transfer/source bootstrap is only a fallback if natural auto-browse never starts succeeding
+- the transfer bootstrap path uses the persisted hash `28EAB1A0AB1B9416AAF534E27A234941` first and refuses `.exe` candidates when selecting a downloadable result
+- the lane requires:
+  - real eD2K server connectivity
+  - Kad running state
+  - acquisition of one live transfer with sources
+  - at least one successful automatic remote-share browse that logs success and persists `.browsecache` output
+- `--keep-running` leaves the launched isolated eMule instance alive after a passing run and forces artifact retention so the profile can be inspected afterward
+- artifacts are published under `reports\auto-browse-live\...` with the same latest-report mirroring as the other Python-first live harnesses
 
 Canonical live harness:
 

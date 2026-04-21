@@ -16,7 +16,7 @@ end_of_line = crlf
 indent_style = tab
 tab_width = 4
 
-[*.{md,yml,yaml,json}]
+[*.{md,yml,yaml,json,toml}]
 charset = utf-8
 end_of_line = lf
 indent_style = space

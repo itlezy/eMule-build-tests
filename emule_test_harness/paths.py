@@ -15,7 +15,7 @@ def make_file_token(value: str) -> str:
 
 
 def get_build_tag(workspace_root: Path, app_root: Path | None = None) -> str:
-    """Returns the native-test build tag used by the existing PowerShell wrappers."""
+    """Returns the native-test build tag used by build and report wrappers."""
 
     resolved_workspace_root = workspace_root.resolve()
     workspace_leaf = resolved_workspace_root.name

@@ -47,31 +47,26 @@ def build_emule_tests_command(
     platform: str,
     build_tag: str,
 ) -> tuple[str, ...]:
-    """Builds the command line for the retained PowerShell native-test build wrapper."""
+    """Builds the command line for the Python native-test build wrapper."""
 
     command = [
-        "pwsh",
-        "-NoLogo",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str((test_repo_root / "scripts" / "build-emule-tests.ps1").resolve()),
-        "-TestRepoRoot",
+        sys.executable,
+        str((test_repo_root / "scripts" / "build_emule_tests.py").resolve()),
+        "--test-repo-root",
         str(test_repo_root.resolve()),
-        "-WorkspaceRoot",
+        "--workspace-root",
         str(workspace_root.resolve()),
-        "-Configuration",
+        "--configuration",
         configuration,
-        "-Platform",
+        "--platform",
         platform,
-        "-BuildTag",
+        "--build-tag",
         build_tag,
-        "-BuildOutputMode",
+        "--build-output-mode",
         "Full",
     ]
     if app_root is not None:
-        command.extend(["-AppRoot", str(app_root.resolve())])
+        command.extend(["--app-root", str(app_root.resolve())])
     return tuple(command)
 
 

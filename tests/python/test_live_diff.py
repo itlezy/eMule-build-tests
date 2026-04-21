@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from emule_test_harness.live_diff import (
@@ -17,7 +18,7 @@ def test_get_default_workspace_root_uses_canonical_repo_layout(tmp_path: Path) -
     assert get_default_workspace_root(repo_root) == tmp_path / "workspaces" / "v0.72a"
 
 
-def test_build_emule_tests_command_keeps_powershell_wrapper_parallel() -> None:
+def test_build_emule_tests_command_uses_python_build_wrapper() -> None:
     command = build_emule_tests_command(
         test_repo_root=Path("C:/repo/tests"),
         workspace_root=Path("C:/repo/workspaces/v0.72a"),
@@ -27,9 +28,9 @@ def test_build_emule_tests_command_keeps_powershell_wrapper_parallel() -> None:
         build_tag="tag",
     )
 
-    assert command[:6] == ("pwsh", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File")
-    assert command[6].endswith("scripts\\build-emule-tests.ps1")
-    assert "-AppRoot" in command
+    assert command[0] == sys.executable
+    assert command[1].endswith("scripts\\build_emule_tests.py")
+    assert "--app-root" in command
     assert "tag" in command
 
 

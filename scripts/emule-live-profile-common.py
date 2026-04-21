@@ -496,6 +496,28 @@ def wait_for_startup_profile_complete(startup_profile_path: Path, *, timeout: fl
     return wait_for(resolve, timeout=timeout, interval=0.5, description="startup profile completion")
 
 
+def startup_profile_has_phase(text: str, phase_id: str) -> bool:
+    """Returns whether one startup-profile trace payload contains a stable phase id."""
+
+    for event in load_startup_profile_trace_events(text):
+        args = event.get("args")
+        if isinstance(args, dict) and str(args.get("phase_id") or "") == phase_id:
+            return True
+    return False
+
+
+def wait_for_startup_profile_phase(startup_profile_path: Path, phase_id: str, *, timeout: float = 120.0) -> str:
+    """Waits until the startup profile contains one stable phase id and returns the trace text."""
+
+    def resolve():
+        if not startup_profile_path.exists():
+            return None
+        text = startup_profile_path.read_text(encoding="utf-8", errors="ignore")
+        return text if startup_profile_has_phase(text, phase_id) else None
+
+    return wait_for(resolve, timeout=timeout, interval=0.5, description=f"startup profile phase {phase_id}")
+
+
 def parse_startup_profile(text: str) -> list[dict[str, object]]:
     """Parses one Chrome Trace startup-profile payload into structured phase rows."""
 
@@ -681,11 +703,6 @@ def summarize_shared_files_readiness(
     pending_hashes_at_readiness = get_counter_by_id(counters, "shared.model.pending_hashes")
     pending_hash_count = int(pending_hashes_at_readiness["value"]) if pending_hashes_at_readiness is not None else 0
     shared_files_hashing_done = get_phase_by_id(phases, STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID)
-    if pending_hash_count > 0 and shared_files_hashing_done is None:
-        raise RuntimeError(
-            "Startup profile reported pending shared-file hashes at ui.shared_files_ready "
-            "but never reached ui.shared_files_hashing_done."
-        )
     if shared_files_hashing_done is not None and int(shared_files_hashing_done["absolute_us"]) < int(shared_files_ready["absolute_us"]):
         raise RuntimeError("Startup profile reached ui.shared_files_hashing_done before ui.shared_files_ready.")
 
@@ -714,6 +731,7 @@ def summarize_shared_files_readiness(
             (int(shared_files_ready["absolute_us"]) - int(shared_model_populated["absolute_us"])) / 1000.0,
             3,
         ),
+        "shared_files_hashing_done_observed": 1 if shared_files_hashing_done is not None else 0,
     }
     if visible_rows is not None:
         metrics["shared_visible_rows_at_readiness"] = int(visible_rows["value"])

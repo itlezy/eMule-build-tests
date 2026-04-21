@@ -318,6 +318,7 @@ def collect_startup_profile_metrics(
     summary: dict[str, object],
     *,
     require_startup_profile: bool,
+    wait_for_shared_hashing_done: bool,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Reads startup profile metrics or records a missing trace for non-instrumented baselines."""
 
@@ -342,6 +343,25 @@ def collect_startup_profile_metrics(
 
     startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
     startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
+    if wait_for_shared_hashing_done:
+        pending_hashes_at_readiness = live_common.get_counter_by_id(
+            startup_profile_counters,
+            "shared.model.pending_hashes",
+        )
+        pending_hash_count = int(pending_hashes_at_readiness["value"]) if pending_hashes_at_readiness is not None else 0
+        shared_files_hashing_done = live_common.get_phase_by_id(
+            startup_profile_phases,
+            live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID,
+        )
+        if pending_hash_count > 0 and shared_files_hashing_done is None:
+            startup_profile_text = live_common.wait_for_startup_profile_phase(
+                startup_profile_path,
+                live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID,
+                timeout=120.0,
+            )
+            startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
+            startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
+
     summary["startup_profile_status"] = "present"
     summary["startup_profile_phase_count"] = len(startup_profile_phases)
     summary["startup_profile_counter_count"] = len(startup_profile_counters)
@@ -412,6 +432,7 @@ def run_scenario(
             fixture["startup_profile_path"],
             summary,
             require_startup_profile=require_startup_profile,
+            wait_for_shared_hashing_done=require_startup_profile,
         )
         if startup_profile_phases:
             live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, scenario["name"])

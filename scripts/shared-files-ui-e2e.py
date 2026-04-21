@@ -597,7 +597,10 @@ def collect_startup_profile_bundle(
     """Collects startup-profile diagnostics or records an expected omission for baseline runs."""
 
     try:
-        startup_profile_text = live_common.wait_for_startup_profile_complete(startup_profile_path)
+        startup_profile_text = live_common.wait_for_startup_profile_complete(
+            startup_profile_path,
+            timeout=120.0 if require_startup_profile else 5.0,
+        )
     except Exception as exc:
         if require_startup_profile:
             raise

@@ -476,7 +476,7 @@ def load_startup_profile_trace_events(text: str) -> list[dict[str, object]]:
     return [event for event in trace_events if isinstance(event, dict)]
 
 
-def wait_for_startup_profile_complete(startup_profile_path: Path) -> str:
+def wait_for_startup_profile_complete(startup_profile_path: Path, *, timeout: float = 120.0) -> str:
     """Waits until the finalized Chrome Trace startup profile becomes readable."""
 
     def resolve():
@@ -492,7 +492,7 @@ def wait_for_startup_profile_complete(startup_profile_path: Path) -> str:
                 return text
         return None
 
-    return wait_for(resolve, timeout=120.0, interval=0.5, description="startup profile completion")
+    return wait_for(resolve, timeout=timeout, interval=0.5, description="startup profile completion")
 
 
 def parse_startup_profile(text: str) -> list[dict[str, object]]:

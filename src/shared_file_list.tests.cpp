@@ -71,6 +71,14 @@ TEST_CASE("Shared file list accepts part files outside shared directories")
 	CHECK(SharedFileListSeams::CanAddSharedFile(true, false, false));
 }
 
+TEST_CASE("Shared file hash worker waits for UI completion before starting another job")
+{
+	CHECK(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, false }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ false, true, false }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, false, false }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, true }));
+}
+
 #ifdef EMULE_TESTS_HAS_SHARED_FILES_WND_SEAMS
 TEST_CASE("Shared files splitter range scales with dialog width instead of capping at the legacy maximum")
 {

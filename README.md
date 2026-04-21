@@ -62,24 +62,18 @@ Script inventory:
 - `python -m pip install -e .[dev]` installs the fast pytest harness dependencies
 - `python -m pip install -e .[dev,live]` also installs the Win32 live/UI automation dependencies
 - default pytest collection is intentionally fast and excludes `native` and `live` marked tests
-- retained `*.ps1` scripts require `pwsh 7.6+` and are kept only for build/report/coverage flows or narrowly Windows-specific utilities
-- canonical Python entrypoints are documented below; retained PowerShell utilities and targeted diagnostics are listed here so maintenance scope stays explicit
+- Python 3 is the only tracked script runtime in this repo
+- canonical Python entrypoints are documented below; old PowerShell implementations were removed instead of kept as compatibility shims
 
 | Path | Role | Status | Notes |
 | --- | --- | --- | --- |
-| `scripts\build-emule-tests.ps1` | operator-facing build wrapper | maintained | builds `emule-tests.exe`, optional run |
-| `scripts\guard-tracked-files.ps1` | operator-facing guard | maintained | privacy/path leak gate before builds |
+| `scripts\build_emule_tests.py` | operator-facing build wrapper | maintained | builds `emule-tests.exe`, optional run |
+| `scripts\guard_tracked_files.py` | operator-facing guard | maintained | privacy/path leak gate before builds |
 | `scripts\run_native_coverage.py` | operator-facing Python coverage runner | maintained | OpenCppCoverage orchestration |
 | `scripts\run_live_diff.py` | operator-facing Python parity runner | maintained | Python-first live-diff implementation |
-| `scripts\obsolete\run-live-diff.ps1` | obsolete historical implementation | obsolete | old PowerShell live-diff implementation, kept for audit only |
 | `scripts\run_bugfix_core_coverage.py` | operator-facing Python comparison runner | maintained | canonical `main` vs `bugfix` pass |
-| `scripts\obsolete\run-native-coverage.ps1` | obsolete historical implementation | obsolete | old PowerShell OpenCppCoverage orchestration, kept for audit only |
-| `scripts\obsolete\run-bugfix-core-coverage.ps1` | obsolete historical implementation | obsolete | old PowerShell main-vs-bugfix wrapper, kept for audit only |
-| `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
+| `scripts\run_pipe_live_matrix.py` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
 | `scripts\publish-harness-summary.py` | shared report publisher | maintained | combines coverage, parity, and optional live status |
-| `helpers\obsolete\helper-opencppcoverage-bootstrap.ps1` | obsolete historical implementation | obsolete | old PowerShell OpenCppCoverage bootstrap, kept for audit only |
-| `scripts\resolve-app-root.ps1` | internal helper | maintained | canonical app-root resolution from workspace manifest |
-| `scripts\resolve-workspace-layout.ps1` | internal helper | maintained | canonical workspace/repo root resolution |
 | `scripts\harness-cli-common.py` | internal Python helper | maintained | canonical app/report resolution for Python-first live/UI harnesses |
 | `scripts\emule-live-profile-common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
 | `scripts\rest-api-smoke.py` | operator-facing Python E2E | maintained | canonical isolated REST live E2E lane |
@@ -88,7 +82,7 @@ Script inventory:
 | `scripts\shared-files-ui-e2e.py` | operator-facing Python E2E | maintained | real Win32 Shared Files regression |
 | `scripts\startup-profile-scenarios.py` | operator-facing Python E2E | maintained | Chrome Trace startup-profile scenarios |
 | `scripts\create-long-paths-tree.py` | fixture generator | maintained | deterministic long-path tree materialization |
-| `scripts\diag-hash-launch.ps1` | targeted diagnostic | maintained | seeded profile + procdump launcher for hash stall investigations |
+| `scripts\diag_hash_launch.py` | targeted diagnostic | maintained | seeded profile + procdump launcher for hash stall investigations |
 | `scripts\parse-dump.py` | targeted diagnostic | maintained | parses `diag-hash` dumps, defaults to `diag-hash-latest` |
 | `scripts\resolve-rva.py` | targeted diagnostic | maintained | resolves caller-provided RVAs against a selected debug build |
 
@@ -151,7 +145,7 @@ Canonical live auto-browse lane:
 
 Canonical live harness:
 
-- `scripts\run-pipe-live-matrix.ps1` is the operator-facing entrypoint for launch-only and full live named-pipe harness runs
+- `scripts\run_pipe_live_matrix.py` is the operator-facing entrypoint for launch-only and full live named-pipe harness runs
 - the wrapper resolves `helper-runtime-pipe-live-session.ps1` from `repos\eMule-tooling\helpers` first and falls back to the legacy app-side helper path only when needed
 - the harness stages a renamed binary copy, `eMule_v072_harness.exe`, beside the debug build output and launches that copy so processes, dumps, and cleanup are easier to identify
 - the machine-readable session manifest can be requested through the shared wrapper with `-SessionManifestPath`
@@ -192,8 +186,8 @@ Startup-profile scenarios:
 
 Tracked-file privacy guard:
 
-- `scripts\guard-tracked-files.ps1` fails when tracked files contain local user-home paths or personal-identifier filename leaks derived from the current environment or an untracked local override file
-- `scripts\build-emule-tests.ps1` runs that guard by default before building
+- `scripts\guard_tracked_files.py` fails when tracked files contain local user-home paths or personal-identifier filename leaks derived from the current environment or an untracked local override file
+- `scripts\build_emule_tests.py` runs that guard by default before building
 - the same guard is enforced in GitHub Actions for pushes and pull requests
 
 Native seam coverage and shared reports:
@@ -202,6 +196,4 @@ Native seam coverage and shared reports:
 - `scripts\run_bugfix_core_coverage.py` chains the canonical `main` and `bugfix` native-coverage runs with the workspace live-diff pass and writes a combined summary under `reports\bugfix-core-coverage`
 - Python OpenCppCoverage resolution uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run_live_diff.py` writes both text and JSON parity/divergence summaries under `reports`
-- the old PowerShell live-diff implementation lives under `scripts\obsolete` for audit only
-- the old PowerShell coverage scripts live under `scripts\obsolete` and `helpers\obsolete` for audit only
 - `scripts\publish-harness-summary.py` combines native coverage, parity, optional live-harness manifest data, optional live UI status, and optional startup-profile scenario status into one shared summary under `reports`

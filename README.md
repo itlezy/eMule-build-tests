@@ -59,6 +59,9 @@ Current critical comparison slices:
 Script inventory:
 
 - Python 3 is the canonical runtime for live/UI harnesses in this repo
+- `python -m pip install -e .[dev]` installs the fast pytest harness dependencies
+- `python -m pip install -e .[dev,live]` also installs the Win32 live/UI automation dependencies
+- default pytest collection is intentionally fast and excludes `native` and `live` marked tests
 - retained `*.ps1` scripts require `pwsh 7.6+` and are kept only for build/report/coverage flows or narrowly Windows-specific utilities
 - canonical Python entrypoints are documented below; retained PowerShell utilities and targeted diagnostics are listed here so maintenance scope stays explicit
 

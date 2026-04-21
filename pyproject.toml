@@ -1,0 +1,33 @@
+[project]
+name = "emule-build-tests"
+version = "0.0.0"
+description = "Shared eMule test harness helpers"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
+live = [
+    "pywin32",
+    "pywinauto",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-ra",
+    "-m",
+    "not live and not native",
+]
+markers = [
+    "unit: fast pure-Python harness tests",
+    "native: tests that require a built emule-tests.exe",
+    "live: tests that launch emule.exe or drive the Win32 UI",
+    "slow: long-running scenarios",
+]
+pythonpath = [
+    ".",
+]
+testpaths = [
+    "tests/python",
+]

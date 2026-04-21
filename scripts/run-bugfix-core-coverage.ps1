@@ -44,6 +44,29 @@ function Get-LatestCoverageSummaryPath {
     return $summary.FullName
 }
 
+function Get-PythonInvocation {
+    [CmdletBinding()]
+    param()
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        return @{
+            FilePath = $python.Source
+            Prefix = @()
+        }
+    }
+
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) {
+        return @{
+            FilePath = $py.Source
+            Prefix = @('-3')
+        }
+    }
+
+    throw 'Python 3 was not found on PATH.'
+}
+
 $testRepoRootPath = (Resolve-Path -LiteralPath $TestRepoRoot).Path
 $workspaceRootPath = if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     Get-DefaultWorkspaceRootFromTestRepo -TestRepoRoot $testRepoRootPath
@@ -69,7 +92,7 @@ $runReportDir = Join-Path $reportRoot $stamp
 New-Item -ItemType Directory -Force -Path $runReportDir | Out-Null
 
 $nativeCoverageScriptPath = Join-Path $testRepoRootPath 'scripts\run-native-coverage.ps1'
-$liveDiffScriptPath = Join-Path $testRepoRootPath 'scripts\run-live-diff.ps1'
+$liveDiffScriptPath = Join-Path $testRepoRootPath 'scripts\run_live_diff.py'
 
 & $nativeCoverageScriptPath `
     -TestRepoRoot $testRepoRootPath `
@@ -93,15 +116,22 @@ $mainCoverageSummaryPath = Get-LatestCoverageSummaryPath -TestRepoRootPath $test
 
 $bugfixCoverageSummaryPath = Get-LatestCoverageSummaryPath -TestRepoRootPath $testRepoRootPath
 
-& $liveDiffScriptPath `
-    -TestRepoRoot $testRepoRootPath `
-    -DevWorkspaceRoot $workspaceRootPath `
-    -DevAppRoot $mainAppRootPath `
-    -OracleWorkspaceRoot $workspaceRootPath `
-    -OracleAppRoot $bugfixAppRootPath `
-    -Configuration $Configuration `
-    -Platform $Platform `
-    -SuiteNames @('parity', 'bugfix-core-divergence')
+$pythonInvocation = Get-PythonInvocation
+& $pythonInvocation.FilePath @($pythonInvocation.Prefix + @(
+    $liveDiffScriptPath,
+    '--test-repo-root', $testRepoRootPath,
+    '--dev-workspace-root', $workspaceRootPath,
+    '--dev-app-root', $mainAppRootPath,
+    '--oracle-workspace-root', $workspaceRootPath,
+    '--oracle-app-root', $bugfixAppRootPath,
+    '--configuration', $Configuration,
+    '--platform', $Platform,
+    '--suite-name', 'parity',
+    '--suite-name', 'bugfix-core-divergence'
+))
+if ($LASTEXITCODE -ne 0) {
+    throw "Python live-diff runner failed with exit code $LASTEXITCODE."
+}
 
 $liveDiffSummaryPath = Join-Path $testRepoRootPath 'reports\live-diff-summary.json'
 $combinedSummaryPath = Join-Path $runReportDir 'bugfix-core-coverage-summary.json'

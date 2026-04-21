@@ -45,7 +45,7 @@ Bugfix core comparison workflow:
 - it runs native coverage for `app\eMule-main` with `parity` and `bugfix-core-divergence`
 - it runs the focused `bugfix-core-divergence` suite for main-only queue-scoring and persistence behavior
 - it runs native coverage for `app\eMule-v0.72a-bugfix` with `parity`
-- it runs `scripts\run-live-diff.ps1` against those two app roots and keeps the suite-level pass/fail split explicit
+- it runs `scripts\run_live_diff.py` against those two app roots and keeps the suite-level pass/fail split explicit
 - the wrapper writes a combined summary under `reports\bugfix-core-coverage`
 
 Current critical comparison slices:
@@ -71,7 +71,6 @@ Script inventory:
 | `scripts\guard-tracked-files.ps1` | operator-facing guard | maintained | privacy/path leak gate before builds |
 | `scripts\run-native-coverage.ps1` | operator-facing coverage wrapper | maintained | OpenCppCoverage orchestration |
 | `scripts\run_live_diff.py` | operator-facing Python parity runner | maintained | Python-first live-diff implementation |
-| `scripts\run-live-diff.ps1` | obsolete compatibility shim | obsolete | retained for `workspace.ps1` and legacy callers; delegates to Python |
 | `scripts\obsolete\run-live-diff.ps1` | obsolete historical implementation | obsolete | old PowerShell live-diff implementation, kept for audit only |
 | `scripts\run-bugfix-core-coverage.ps1` | operator-facing comparison wrapper | maintained | canonical `main` vs `bugfix` pass |
 | `scripts\run-pipe-live-matrix.ps1` | operator-facing live harness wrapper | maintained | resolves the current helper from `repos\eMule-tooling` first, legacy path second |
@@ -201,7 +200,6 @@ Native seam coverage and shared reports:
 - `scripts\run-bugfix-core-coverage.ps1` chains the canonical `main` and `bugfix` native-coverage runs with the workspace live-diff pass and writes a combined summary under `reports\bugfix-core-coverage`
 - `helpers\helper-opencppcoverage-bootstrap.ps1` uses an explicit install root when provided, otherwise discovers `OpenCppCoverage.exe` from `PATH`, and finally falls back to a repo-managed pinned install under `tools\OpenCppCoverage`
 - `scripts\run_live_diff.py` writes both text and JSON parity/divergence summaries under `reports`
-- `scripts\run-live-diff.ps1` is an obsolete compatibility shim that delegates to `scripts\run_live_diff.py`
 - the old PowerShell live-diff implementation lives under `scripts\obsolete` for audit only
 - native coverage remains on the retained PowerShell wrapper until the OpenCppCoverage bootstrap can be ported without touching build orchestration
 - `scripts\publish-harness-summary.py` combines native coverage, parity, optional live-harness manifest data, optional live UI status, and optional startup-profile scenario status into one shared summary under `reports`

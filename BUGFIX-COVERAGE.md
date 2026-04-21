@@ -36,6 +36,7 @@ Canonical test branch: `main`
 ## Current Checkpoint
 
 - Canonical comparison wrapper: `scripts/run-bugfix-core-coverage.ps1`
+- Live-diff implementation: `scripts/run_live_diff.py`
 - Latest wrapper run:
   - combined summary: `reports/bugfix-core-coverage/20260411-195801/bugfix-core-coverage-summary.json`
   - canonical `main` coverage: `reports/native-coverage/20260411-195802-eMuleaz01-v0.72a-eMule-main-x64-Debug`

@@ -35,7 +35,7 @@ Canonical test branch: `main`
 
 ## Current Checkpoint
 
-- Canonical comparison wrapper: `scripts/run-bugfix-core-coverage.ps1`
+- Canonical comparison wrapper: `scripts/run_bugfix_core_coverage.py`
 - Live-diff implementation: `scripts/run_live_diff.py`
 - Latest wrapper run:
   - combined summary: `reports/bugfix-core-coverage/20260411-195801/bugfix-core-coverage-summary.json`

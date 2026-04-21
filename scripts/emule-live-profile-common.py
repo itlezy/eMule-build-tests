@@ -38,8 +38,10 @@ STARTUP_PROFILE_SHARED_TREE_POPULATED_PHASE_ID = "shared.tree.populated"
 STARTUP_PROFILE_SHARED_MODEL_POPULATED_PHASE_ID = "shared.model.populated"
 STARTUP_PROFILE_SHARED_FILES_READY_PHASE_ID = "ui.shared_files_ready"
 STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID = "ui.shared_files_hashing_done"
+STARTUP_PROFILE_SHARED_LIST_RELOAD_PHASE_NAME = "CSharedFilesCtrl::ReloadFileList total"
 STARTUP_PROFILE_DEFERRED_SHARED_HASHING_START_PHASE_ID = "shared.hashing.deferred_start"
 STARTUP_PROFILE_DEFERRED_SHARED_HASHING_MAX_LEAD_MS = 10.0
+STARTUP_PROFILE_MAX_SHARED_LIST_RELOADS_DURING_HASH_DRAIN = 1
 
 REQUIRED_SEED_KEYS = (
     "AppVersion",
@@ -662,6 +664,23 @@ def get_counter_by_id(counters: list[dict[str, object]], counter_id: str) -> dic
     return None
 
 
+def count_phases_between(
+    phases: list[dict[str, object]],
+    phase_name: str,
+    start_absolute_us: int,
+    end_absolute_us: int | None,
+) -> int:
+    """Counts named phases that start after one timestamp and before an optional end timestamp."""
+
+    return sum(
+        1
+        for phase in phases
+        if str(phase.get("name") or "") == phase_name
+        and int(phase["absolute_us"]) > start_absolute_us
+        and (end_absolute_us is None or int(phase["absolute_us"]) <= end_absolute_us)
+    )
+
+
 def summarize_shared_files_readiness(
     phases: list[dict[str, object]],
     counters: list[dict[str, object]],
@@ -705,6 +724,21 @@ def summarize_shared_files_readiness(
     shared_files_hashing_done = get_phase_by_id(phases, STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID)
     if shared_files_hashing_done is not None and int(shared_files_hashing_done["absolute_us"]) < int(shared_files_ready["absolute_us"]):
         raise RuntimeError("Startup profile reached ui.shared_files_hashing_done before ui.shared_files_ready.")
+    shared_list_reloads_during_hash_drain = count_phases_between(
+        phases,
+        STARTUP_PROFILE_SHARED_LIST_RELOAD_PHASE_NAME,
+        int(shared_files_ready["absolute_us"]),
+        int(shared_files_hashing_done["absolute_us"]) if shared_files_hashing_done is not None else None,
+    )
+    if (
+        pending_hash_count > 0
+        and shared_files_hashing_done is not None
+        and shared_list_reloads_during_hash_drain > STARTUP_PROFILE_MAX_SHARED_LIST_RELOADS_DURING_HASH_DRAIN
+    ):
+        raise RuntimeError(
+            "Startup profile reloaded the Shared Files list "
+            f"{shared_list_reloads_during_hash_drain} times during shared hash drain."
+        )
 
     visible_rows = get_counter_by_id(counters, "shared.model.visible_rows")
     shared_files = get_counter_by_id(counters, "shared.model.shared_files")
@@ -732,6 +766,7 @@ def summarize_shared_files_readiness(
             3,
         ),
         "shared_files_hashing_done_observed": 1 if shared_files_hashing_done is not None else 0,
+        "shared_list_reloads_during_hash_drain": shared_list_reloads_during_hash_drain,
     }
     if visible_rows is not None:
         metrics["shared_visible_rows_at_readiness"] = int(visible_rows["value"])

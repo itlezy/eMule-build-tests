@@ -313,7 +313,58 @@ def build_comparison(left: dict[str, object], right: dict[str, object]) -> dict[
     return result
 
 
-def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, shared_root: Path, name: str) -> dict[str, object]:
+def collect_startup_profile_metrics(
+    startup_profile_path: Path,
+    summary: dict[str, object],
+    *,
+    require_startup_profile: bool,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Reads startup profile metrics or records a missing trace for non-instrumented baselines."""
+
+    try:
+        startup_profile_text = live_common.wait_for_startup_profile_complete(startup_profile_path)
+    except Exception as exc:
+        if require_startup_profile:
+            raise
+        summary["startup_profile_status"] = "missing"
+        summary["startup_profile_error"] = str(exc)
+        summary["startup_profile_phase_count"] = 0
+        summary["startup_profile_counter_count"] = 0
+        summary["startup_profile_counters"] = {}
+        summary["startup_profile_readiness"] = {}
+        summary["startup_profile_highlights"] = {}
+        summary["startup_profile_top_slowest_phases"] = []
+        summary["startup_profile_derived_metrics"] = {}
+        return [], []
+
+    startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
+    startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
+    summary["startup_profile_status"] = "present"
+    summary["startup_profile_phase_count"] = len(startup_profile_phases)
+    summary["startup_profile_counter_count"] = len(startup_profile_counters)
+    summary["startup_profile_counters"] = live_common.summarize_startup_profile_counters(startup_profile_counters)
+    summary["startup_profile_readiness"] = live_common.summarize_shared_files_readiness(
+        startup_profile_phases,
+        startup_profile_counters,
+    )
+    summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
+        startup_profile_phases,
+        HIGHLIGHTED_PHASES,
+    )
+    summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
+    summary["startup_profile_derived_metrics"] = build_derived_metrics(summary)
+    return startup_profile_phases, startup_profile_counters
+
+
+def run_scenario(
+    app_exe: Path,
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    shared_root: Path,
+    name: str,
+    *,
+    require_startup_profile: bool,
+) -> dict[str, object]:
     """Executes one startup-profile scenario and returns its machine-readable result."""
 
     scenario = build_scenario_definition(name=name, artifacts_dir=scenario_dir, shared_root=shared_root)
@@ -354,23 +405,13 @@ def run_scenario(app_exe: Path, seed_config_dir: Path, scenario_dir: Path, share
         if not summary["main_window_is_maximized"]:
             raise RuntimeError(f"Expected scenario '{name}' to start maximized, got showCmd={summary['main_window_show_cmd']}.")
 
-        startup_profile_text = live_common.wait_for_startup_profile_complete(fixture["startup_profile_path"])
-        startup_profile_phases = live_common.parse_startup_profile(startup_profile_text)
-        startup_profile_counters = live_common.parse_startup_profile_counters(startup_profile_text)
-        summary["startup_profile_phase_count"] = len(startup_profile_phases)
-        summary["startup_profile_counter_count"] = len(startup_profile_counters)
-        summary["startup_profile_counters"] = live_common.summarize_startup_profile_counters(startup_profile_counters)
-        summary["startup_profile_readiness"] = live_common.summarize_shared_files_readiness(
-            startup_profile_phases,
-            startup_profile_counters,
+        startup_profile_phases, _startup_profile_counters = collect_startup_profile_metrics(
+            fixture["startup_profile_path"],
+            summary,
+            require_startup_profile=require_startup_profile,
         )
-        summary["startup_profile_highlights"] = live_common.summarize_startup_profile(
-            startup_profile_phases,
-            HIGHLIGHTED_PHASES,
-        )
-        summary["startup_profile_top_slowest_phases"] = live_common.get_top_slowest_phases(startup_profile_phases, limit=8)
-        summary["startup_profile_derived_metrics"] = build_derived_metrics(summary)
-        live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, scenario["name"])
+        if startup_profile_phases:
+            live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, scenario["name"])
         summary["status"] = "passed"
         summary["error"] = None
         live_common.write_json(scenario_dir / "result.json", summary)
@@ -412,6 +453,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--artifacts-dir")
     parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
+    parser.add_argument("--startup-profile-mode", choices=["required", "optional"], default="required")
     parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
     parser.add_argument(
         "--scenario",
@@ -485,6 +527,7 @@ def main(argv: list[str]) -> int:
             if generated_fixture_manifest is not None
             else None
         ),
+        "startup_profile_mode": args.startup_profile_mode,
         "scenarios": [],
     }
 
@@ -498,6 +541,7 @@ def main(argv: list[str]) -> int:
             scenario_dir=scenario_dir,
             shared_root=shared_root,
             name=name,
+            require_startup_profile=(args.startup_profile_mode == "required"),
         )
         combined["scenarios"].append(result)
         if result["status"] != "passed":

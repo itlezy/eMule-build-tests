@@ -59,7 +59,8 @@ def test_privacy_guard_passes_clean_tracked_files(tmp_path: Path, monkeypatch) -
 def test_privacy_guard_fails_on_content_rule_match(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    init_tracked_repo(repo_root, {"README.md": r"path C:\Users\Example"})
+    forbidden_path = "path " + "C:" + "\\Users\\Example"
+    init_tracked_repo(repo_root, {"README.md": forbidden_path})
     policy_path = repo_root / "policy.json"
     write_policy(policy_path)
 

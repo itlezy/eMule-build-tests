@@ -92,6 +92,14 @@ TEST_CASE("Shared files reload defers only while shared hashing is active")
 	CHECK_FALSE(SharedFilesWndSeams::ShouldDeferReloadForSharedHashing(false));
 }
 
+TEST_CASE("Shared files startup-deferred list reload waits for hash drain")
+{
+	CHECK_FALSE(SharedFilesWndSeams::ShouldRunStartupDeferredListReload(false, false));
+	CHECK_FALSE(SharedFilesWndSeams::ShouldRunStartupDeferredListReload(false, true));
+	CHECK_FALSE(SharedFilesWndSeams::ShouldRunStartupDeferredListReload(true, true));
+	CHECK(SharedFilesWndSeams::ShouldRunStartupDeferredListReload(true, false));
+}
+
 TEST_CASE("Shared files deferred reload coalesces shared-only work and lets full tree reload win")
 {
 	SharedFilesWndSeams::ReloadDeferralState state = {};

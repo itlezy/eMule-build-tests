@@ -37,6 +37,7 @@ STARTUP_PROFILE_SHARED_SCAN_COMPLETE_PHASE_ID = "shared.scan.complete"
 STARTUP_PROFILE_SHARED_TREE_POPULATED_PHASE_ID = "shared.tree.populated"
 STARTUP_PROFILE_SHARED_MODEL_POPULATED_PHASE_ID = "shared.model.populated"
 STARTUP_PROFILE_SHARED_FILES_READY_PHASE_ID = "ui.shared_files_ready"
+STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID = "ui.shared_files_hashing_done"
 STARTUP_PROFILE_DEFERRED_SHARED_HASHING_START_PHASE_ID = "shared.hashing.deferred_start"
 STARTUP_PROFILE_DEFERRED_SHARED_HASHING_MAX_LEAD_MS = 10.0
 
@@ -677,16 +678,23 @@ def summarize_shared_files_readiness(
                 f"Startup profile milestone {phase_id} occurs after ui.shared_files_ready."
             )
 
-    pending_hashes = get_counter_by_id(counters, "shared.model.pending_hashes")
-    if pending_hashes is not None and int(pending_hashes["value"]) != 0:
+    pending_hashes_at_readiness = get_counter_by_id(counters, "shared.model.pending_hashes")
+    pending_hash_count = int(pending_hashes_at_readiness["value"]) if pending_hashes_at_readiness is not None else 0
+    shared_files_hashing_done = get_phase_by_id(phases, STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID)
+    if pending_hash_count > 0 and shared_files_hashing_done is None:
         raise RuntimeError(
-            "Startup profile reached ui.shared_files_ready before shared.model.pending_hashes drained to zero."
+            "Startup profile reported pending shared-file hashes at ui.shared_files_ready "
+            "but never reached ui.shared_files_hashing_done."
         )
+    if shared_files_hashing_done is not None and int(shared_files_hashing_done["absolute_us"]) < int(shared_files_ready["absolute_us"]):
+        raise RuntimeError("Startup profile reached ui.shared_files_hashing_done before ui.shared_files_ready.")
 
     visible_rows = get_counter_by_id(counters, "shared.model.visible_rows")
     shared_files = get_counter_by_id(counters, "shared.model.shared_files")
     hidden_files = get_counter_by_id(counters, "shared.model.hidden_shared_files")
     active_filter = get_counter_by_id(counters, "shared.model.active_filter")
+    hashing_done_visible_rows = get_counter_by_id(counters, "shared.model.hashing_done_visible_rows")
+    hashing_done_shared_files = get_counter_by_id(counters, "shared.model.hashing_done_shared_files")
 
     metrics: dict[str, object] = {
         "shared_files_ready_absolute_ms": float(shared_files_ready["absolute_ms"]),
@@ -715,6 +723,18 @@ def summarize_shared_files_readiness(
         metrics["shared_hidden_files_at_readiness"] = int(hidden_files["value"])
     if active_filter is not None:
         metrics["shared_active_filter_at_readiness"] = int(active_filter["value"])
+    if pending_hashes_at_readiness is not None:
+        metrics["shared_pending_hashes_at_readiness"] = pending_hash_count
+    if shared_files_hashing_done is not None:
+        metrics["shared_files_hashing_done_absolute_ms"] = float(shared_files_hashing_done["absolute_ms"])
+        metrics["shared_files_hashing_done_after_ready_ms"] = round(
+            (int(shared_files_hashing_done["absolute_us"]) - int(shared_files_ready["absolute_us"])) / 1000.0,
+            3,
+        )
+    if hashing_done_visible_rows is not None:
+        metrics["shared_visible_rows_at_hashing_done"] = int(hashing_done_visible_rows["value"])
+    if hashing_done_shared_files is not None:
+        metrics["shared_files_at_hashing_done"] = int(hashing_done_shared_files["value"])
 
     return {
         "phases": {
@@ -723,13 +743,16 @@ def summarize_shared_files_readiness(
             STARTUP_PROFILE_SHARED_TREE_POPULATED_PHASE_ID: dict(shared_tree_populated),
             STARTUP_PROFILE_SHARED_MODEL_POPULATED_PHASE_ID: dict(shared_model_populated),
             STARTUP_PROFILE_SHARED_FILES_READY_PHASE_ID: dict(shared_files_ready),
+            STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID: dict(shared_files_hashing_done) if shared_files_hashing_done is not None else None,
         },
         "counters": {
-            "shared.model.pending_hashes": dict(pending_hashes) if pending_hashes is not None else None,
+            "shared.model.pending_hashes": dict(pending_hashes_at_readiness) if pending_hashes_at_readiness is not None else None,
             "shared.model.visible_rows": dict(visible_rows) if visible_rows is not None else None,
             "shared.model.shared_files": dict(shared_files) if shared_files is not None else None,
             "shared.model.hidden_shared_files": dict(hidden_files) if hidden_files is not None else None,
             "shared.model.active_filter": dict(active_filter) if active_filter is not None else None,
+            "shared.model.hashing_done_visible_rows": dict(hashing_done_visible_rows) if hashing_done_visible_rows is not None else None,
+            "shared.model.hashing_done_shared_files": dict(hashing_done_shared_files) if hashing_done_shared_files is not None else None,
         },
         "metrics": metrics,
     }

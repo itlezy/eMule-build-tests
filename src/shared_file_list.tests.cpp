@@ -85,6 +85,31 @@ TEST_CASE("Shared files splitter keeps a usable right pane in narrow windows")
 	CHECK_EQ(SharedFilesWndSeams::GetSplitterRangeMax(180), SharedFilesWndSeams::kMinTreeWidth);
 	CHECK_EQ(SharedFilesWndSeams::ClampSplitterPosition(999, 180), SharedFilesWndSeams::kMinTreeWidth);
 }
+
+TEST_CASE("Shared files reload defers only while shared hashing is active")
+{
+	CHECK(SharedFilesWndSeams::ShouldDeferReloadForSharedHashing(true));
+	CHECK_FALSE(SharedFilesWndSeams::ShouldDeferReloadForSharedHashing(false));
+}
+
+TEST_CASE("Shared files deferred reload coalesces shared-only work and lets full tree reload win")
+{
+	SharedFilesWndSeams::ReloadDeferralState state = {};
+	CHECK_FALSE(SharedFilesWndSeams::HasDeferredReload(state));
+
+	state = SharedFilesWndSeams::AddDeferredReloadRequest(state, false);
+	CHECK_FALSE(state.bFullTreeReload);
+	CHECK(state.bSharedFilesReload);
+	CHECK(SharedFilesWndSeams::HasDeferredReload(state));
+
+	state = SharedFilesWndSeams::AddDeferredReloadRequest(state, true);
+	CHECK(state.bFullTreeReload);
+	CHECK_FALSE(state.bSharedFilesReload);
+
+	state = SharedFilesWndSeams::AddDeferredReloadRequest(state, false);
+	CHECK(state.bFullTreeReload);
+	CHECK_FALSE(state.bSharedFilesReload);
+}
 #endif
 
 #ifdef EMULE_TESTS_HAS_SHARED_DIRECTORY_OPS

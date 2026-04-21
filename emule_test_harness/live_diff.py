@@ -208,6 +208,7 @@ def _build_workspace(config: LiveDiffConfig, workspace_root: Path, app_root: Pat
         ),
         cwd=config.test_repo_root,
         check=True,
+        echo=True,
     )
 
 

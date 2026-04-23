@@ -79,6 +79,22 @@ TEST_CASE("Shared file hash worker waits for UI completion before starting anoth
 	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, true }));
 }
 
+TEST_CASE("Shared hash shutdown wait stays bounded by the configured budget")
+{
+	CHECK(SharedFileListSeams::ShouldKeepWaitingForSharedHashWorkerShutdown({ 0ui64, 5000ui64 }));
+	CHECK(SharedFileListSeams::ShouldKeepWaitingForSharedHashWorkerShutdown({ 4999ui64, 5000ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForSharedHashWorkerShutdown({ 5000ui64, 5000ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForSharedHashWorkerShutdown({ 7500ui64, 5000ui64 }));
+}
+
+TEST_CASE("Shared hash shutdown invalidates warm caches only when hashing work was interrupted")
+{
+	CHECK_FALSE(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, false }));
+	CHECK(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ true, false, false }));
+	CHECK(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, true, false }));
+	CHECK(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, true }));
+}
+
 #ifdef EMULE_TESTS_HAS_SHARED_FILES_WND_SEAMS
 TEST_CASE("Shared files splitter range scales with dialog width instead of capping at the legacy maximum")
 {

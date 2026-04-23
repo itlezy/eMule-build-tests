@@ -495,7 +495,7 @@ def get_remote_rect(process_handle: int, hwnd: int, message: int, index: int, le
         return RECT.from_buffer_copy(read_remote(process_handle, remote.address, ctypes.sizeof(RECT)))
 
 
-def get_control_handle(main_hwnd: int, control_id: int, class_name: str) -> int:
+def get_control_handle(main_hwnd: int, control_id: int, class_name: str, *, visible_only: bool = False) -> int:
     """Finds one descendant control by numeric ID and window class."""
 
     matches = []
@@ -507,7 +507,10 @@ def get_control_handle(main_hwnd: int, control_id: int, class_name: str) -> int:
                 child_class = win32gui.GetClassName(child)
                 child_id = win32gui.GetDlgCtrlID(child)
                 if child_class == class_name and child_id == control_id:
-                    matches.append(child)
+                    if visible_only and not win32gui.IsWindowVisible(child):
+                        pass
+                    else:
+                        matches.append(child)
             except win32gui.error:
                 pass
             walk(child)
@@ -810,14 +813,12 @@ def open_shared_files_page(main_hwnd: int) -> tuple[int, int]:
     """Opens the Shared Files page and returns the list and details control handles."""
 
     win32gui.SendMessage(main_hwnd, WM_COMMAND, MP_HM_FILES, 0)
-    list_hwnd = wait_for(
-        lambda: get_control_handle(main_hwnd, IDC_SFLIST, "SysListView32"),
-        30.0,
-        0.5,
-        "Shared Files list control",
-    )
-    static_hwnd = get_control_handle(main_hwnd, IDC_SF_FNAME, "Static")
-    return list_hwnd, static_hwnd
+    def resolve() -> tuple[int, int] | None:
+        list_hwnd = get_control_handle(main_hwnd, IDC_SFLIST, "SysListView32", visible_only=True)
+        static_hwnd = get_control_handle(main_hwnd, IDC_SF_FNAME, "Static", visible_only=True)
+        return (list_hwnd, static_hwnd)
+
+    return wait_for(resolve, 30.0, 0.5, "visible Shared Files page controls")
 
 
 def close_app_cleanly(app: Application) -> None:

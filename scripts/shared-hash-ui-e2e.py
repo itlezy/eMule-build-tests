@@ -50,6 +50,7 @@ SCENARIO_NAMES = [
     "clean-close-during-hash-partial-results-many-files",
     "hard-kill-during-hash-startup",
     "hard-kill-during-hash-startup-warm-relaunch",
+    "hard-kill-during-hash-startup-warm-relaunch-many-files",
     "hard-kill-during-hash-files-page",
     "hard-kill-during-hash-partial-results",
     "hard-kill-during-hash-partial-results-many-files",
@@ -60,6 +61,7 @@ SCENARIO_NAMES = [
     "reload-then-hard-kill-during-hash-files-page",
     "reload-then-hard-kill-during-hash-files-page-many-files",
     "clean-close-during-hash-startup-warm-relaunch",
+    "clean-close-during-hash-startup-warm-relaunch-many-files",
     "clean-close-during-hash-repeated-cycle",
     "clean-close-during-hash-repeated-cycle-many-files",
     "hard-kill-during-hash-repeated-cycle",
@@ -1068,10 +1070,7 @@ def run_shared_hash_ui_suite(
                 open_shared_files_before_interrupt=open_shared_files_before_interrupt,
                 interrupt_mode=interrupt_mode,
                 require_startup_profile=require_startup_profile,
-                perform_warm_relaunch_after_recovery=name in (
-                    "clean-close-during-hash-startup-warm-relaunch",
-                    "hard-kill-during-hash-startup-warm-relaunch",
-                ),
+                perform_warm_relaunch_after_recovery="startup-warm-relaunch" in name,
                 wait_for_partial_visible_results="partial-results" in name,
             )
         combined["scenarios"].append(result)

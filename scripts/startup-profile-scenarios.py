@@ -41,6 +41,7 @@ HIGHLIGHTED_PHASES = [
     "ui.shared_files_ready",
     "StartupTimer complete",
 ]
+WARM_RELAUNCH_SHARED_CACHE_TIMEOUT_SECONDS = 45.0
 
 
 def create_fixture_shared_dirs(artifacts_dir: Path) -> tuple[list[str], dict[str, object]]:
@@ -313,6 +314,17 @@ def build_comparison(left: dict[str, object], right: dict[str, object]) -> dict[
     return result
 
 
+def wait_for_shared_cache(path: Path, *, timeout: float = WARM_RELAUNCH_SHARED_CACHE_TIMEOUT_SECONDS) -> None:
+    """Waits until `sharedcache.dat` exists for one warmed profile run."""
+
+    live_common.wait_for(
+        lambda: path.exists(),
+        timeout=timeout,
+        interval=0.25,
+        description="shared startup cache persistence",
+    )
+
+
 def collect_startup_profile_metrics(
     startup_profile_path: Path,
     summary: dict[str, object],
@@ -387,6 +399,7 @@ def run_scenario(
     name: str,
     *,
     require_startup_profile: bool,
+    warm_relaunch: bool,
 ) -> dict[str, object]:
     """Executes one startup-profile scenario and returns its machine-readable result."""
 
@@ -436,6 +449,59 @@ def run_scenario(
         )
         if startup_profile_phases:
             live_common.enforce_deferred_shared_hashing_boundary(startup_profile_phases, scenario["name"])
+
+        if warm_relaunch:
+            shared_cache_path = Path(str(fixture["config_dir"])) / "sharedcache.dat"
+            summary["shared_cache_path"] = str(shared_cache_path)
+            wait_for_shared_cache(shared_cache_path)
+            summary["shared_cache_ready_before_relaunch"] = True
+
+            first_launch_trace_artifact = scenario_dir / "startup-profile-first-launch.trace.json"
+            first_launch_trace_artifact.write_bytes(Path(str(fixture["startup_profile_path"])).read_bytes())
+            summary["first_launch_trace_artifact"] = str(first_launch_trace_artifact)
+            Path(str(fixture["startup_profile_path"])).unlink(missing_ok=True)
+
+            live_common.close_app_cleanly(app)
+            app = None
+
+            relaunch_summary = {
+                "name": scenario["name"] + ".warm-relaunch",
+                "shared_directory_count": summary["shared_directory_count"],
+                "tree_summary": summary["tree_summary"],
+            }
+            app = live_common.launch_app(app_exe, fixture["profile_base"])
+            main_window = live_common.wait_for_main_window(app)
+            main_hwnd = main_window.handle
+            main_window.set_focus()
+
+            relaunch_summary["process_id"] = win32process.GetWindowThreadProcessId(main_hwnd)[1]
+            relaunch_summary["main_window_rect"] = list(win32gui.GetWindowRect(main_hwnd))
+            relaunch_summary["main_window_show_cmd"] = live_common.get_window_show_cmd(main_hwnd)
+            relaunch_summary["main_window_is_maximized"] = relaunch_summary["main_window_show_cmd"] == win32con.SW_SHOWMAXIMIZED
+            if not relaunch_summary["main_window_is_maximized"]:
+                raise RuntimeError(
+                    f"Expected warm relaunch for scenario '{name}' to start maximized, "
+                    f"got showCmd={relaunch_summary['main_window_show_cmd']}."
+                )
+
+            relaunch_profile_phases, _relaunch_profile_counters = collect_startup_profile_metrics(
+                fixture["startup_profile_path"],
+                relaunch_summary,
+                require_startup_profile=require_startup_profile,
+                wait_for_shared_hashing_done=require_startup_profile,
+            )
+            if relaunch_profile_phases:
+                live_common.enforce_deferred_shared_hashing_boundary(
+                    relaunch_profile_phases,
+                    scenario["name"] + ".warm-relaunch",
+                )
+
+            relaunch_trace_artifact = scenario_dir / "startup-profile-warm-relaunch.trace.json"
+            relaunch_trace_artifact.write_bytes(Path(str(fixture["startup_profile_path"])).read_bytes())
+            relaunch_summary["trace_artifact"] = str(relaunch_trace_artifact)
+            summary["warm_relaunch"] = relaunch_summary
+            summary["warm_relaunch_comparison"] = build_comparison(summary, relaunch_summary)
+
         summary["status"] = "passed"
         summary["error"] = None
         live_common.write_json(scenario_dir / "result.json", summary)
@@ -478,6 +544,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
     parser.add_argument("--startup-profile-mode", choices=["required", "optional"], default="required")
+    parser.add_argument("--warm-relaunch", action="store_true")
     parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
     parser.add_argument(
         "--scenario",
@@ -566,6 +633,7 @@ def main(argv: list[str]) -> int:
             shared_root=shared_root,
             name=name,
             require_startup_profile=(args.startup_profile_mode == "required"),
+            warm_relaunch=args.warm_relaunch,
         )
         combined["scenarios"].append(result)
         if result["status"] != "passed":

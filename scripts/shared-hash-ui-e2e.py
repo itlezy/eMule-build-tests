@@ -54,8 +54,11 @@ SCENARIO_NAMES = [
     "hard-kill-during-hash-partial-results",
     "hard-kill-during-hash-partial-results-many-files",
     "reload-during-hash-files-page",
+    "reload-during-hash-files-page-many-files",
     "reload-then-clean-close-during-hash-files-page",
+    "reload-then-clean-close-during-hash-files-page-many-files",
     "reload-then-hard-kill-during-hash-files-page",
+    "reload-then-hard-kill-during-hash-files-page-many-files",
     "clean-close-during-hash-startup-warm-relaunch",
     "clean-close-during-hash-repeated-cycle",
     "hard-kill-during-hash-repeated-cycle",
@@ -1026,7 +1029,7 @@ def run_shared_hash_ui_suite(
     for name in scenario_names:
         scenario_dir = artifacts_dir / name
         scenario_dir.mkdir(parents=True, exist_ok=True)
-        if name == "reload-during-hash-files-page":
+        if name.startswith("reload-during-hash-files-page"):
             result = run_reload_during_hash_scenario(
                 app_exe,
                 seed_config_dir,
@@ -1034,7 +1037,7 @@ def run_shared_hash_ui_suite(
                 name=name,
                 require_startup_profile=require_startup_profile,
             )
-        elif name in ("reload-then-clean-close-during-hash-files-page", "reload-then-hard-kill-during-hash-files-page"):
+        elif name.startswith("reload-then-clean-close-during-hash-files-page") or name.startswith("reload-then-hard-kill-during-hash-files-page"):
             result = run_reload_then_interrupt_scenario(
                 app_exe,
                 seed_config_dir,

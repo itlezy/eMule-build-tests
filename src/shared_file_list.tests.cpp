@@ -104,6 +104,12 @@ TEST_CASE("Startup-cache save shutdown wait stays bounded by the configured budg
 	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 7500ui64, 5000ui64 }));
 }
 
+TEST_CASE("Shutdown skips shared startup-cache persistence after interrupted hashing")
+{
+	CHECK(SharedFileListSeams::ShouldPersistStartupCacheOnShutdown(false));
+	CHECK_FALSE(SharedFileListSeams::ShouldPersistStartupCacheOnShutdown(true));
+}
+
 TEST_CASE("Startup-cache save scheduling waits longer while deferred hashing is still draining")
 {
 	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 4999ui64, 0ui64 }));

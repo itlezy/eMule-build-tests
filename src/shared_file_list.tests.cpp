@@ -87,6 +87,14 @@ TEST_CASE("Shared hash shutdown wait stays bounded by the configured budget")
 	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForSharedHashWorkerShutdown({ 7500ui64, 5000ui64 }));
 }
 
+TEST_CASE("Startup-cache save shutdown wait stays bounded by the configured budget")
+{
+	CHECK(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 0ui64, 5000ui64 }));
+	CHECK(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 4999ui64, 5000ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 5000ui64, 5000ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 7500ui64, 5000ui64 }));
+}
+
 TEST_CASE("Shared hash shutdown invalidates warm caches only when hashing work was interrupted")
 {
 	CHECK_FALSE(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, false }));

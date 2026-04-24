@@ -71,12 +71,21 @@ TEST_CASE("Shared file list accepts part files outside shared directories")
 	CHECK(SharedFileListSeams::CanAddSharedFile(true, false, false));
 }
 
-TEST_CASE("Shared file hash worker waits for UI completion before starting another job")
+TEST_CASE("Shared file hash worker allows only a bounded UI completion backlog")
 {
-	CHECK(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, false }));
-	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ false, true, false }));
-	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, false, false }));
-	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, true }));
+	CHECK(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, 0u }));
+	CHECK(SharedFileListSeams::ShouldStartSharedHashJob({
+		true,
+		true,
+		SharedFileListSeams::kSharedHashPendingCompletionBacklogMax - 1u
+	}));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({
+		true,
+		true,
+		SharedFileListSeams::kSharedHashPendingCompletionBacklogMax
+	}));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ false, true, 0u }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartSharedHashJob({ true, false, 0u }));
 }
 
 TEST_CASE("Shared hash shutdown wait stays bounded by the configured budget")

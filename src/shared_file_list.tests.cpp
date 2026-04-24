@@ -95,6 +95,21 @@ TEST_CASE("Startup-cache save shutdown wait stays bounded by the configured budg
 	CHECK_FALSE(SharedFileListSeams::ShouldKeepWaitingForStartupCacheSaveShutdown({ 7500ui64, 5000ui64 }));
 }
 
+TEST_CASE("Startup-cache save scheduling waits longer while deferred hashing is still draining")
+{
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 4999ui64, 0ui64 }));
+	CHECK(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 5000ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, false, 14999ui64, 0ui64 }));
+	CHECK(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, false, 15000ui64, 0ui64 }));
+}
+
+TEST_CASE("Startup-cache save scheduling stays blocked while closing, clean, or already saving")
+{
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ false, false, false, false, 20000ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, true, false, false, 20000ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, true, false, 20000ui64, 0ui64 }));
+}
+
 TEST_CASE("Shared hash shutdown invalidates warm caches only when hashing work was interrupted")
 {
 	CHECK_FALSE(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, false }));

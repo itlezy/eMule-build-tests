@@ -46,10 +46,17 @@ shared_files_ui = load_local_module("shared_files_ui_e2e", "shared-files-ui-e2e.
 SCENARIO_NAMES = [
     "clean-close-during-hash-startup",
     "clean-close-during-hash-files-page",
+    "clean-close-during-hash-partial-results",
     "hard-kill-during-hash-startup",
+    "hard-kill-during-hash-startup-warm-relaunch",
     "hard-kill-during-hash-files-page",
+    "hard-kill-during-hash-partial-results",
     "reload-during-hash-files-page",
+    "reload-then-clean-close-during-hash-files-page",
+    "reload-then-hard-kill-during-hash-files-page",
     "clean-close-during-hash-startup-warm-relaunch",
+    "clean-close-during-hash-repeated-cycle",
+    "hard-kill-during-hash-repeated-cycle",
 ]
 MAX_CLEAN_SHUTDOWN_DURATION_MS = 20000.0
 STARTUP_CACHE_FILE_NAME = "sharedcache.dat"
@@ -240,6 +247,37 @@ def open_shared_files_page_snapshot(main_hwnd: int) -> dict[str, object]:
     }
 
 
+def wait_for_partial_visible_shared_files(
+    main_hwnd: int,
+    process_id: int,
+    expected_names: list[str],
+    *,
+    timeout: float = 90.0,
+) -> dict[str, object]:
+    """Waits until hashing published at least one but not all Shared Files rows."""
+
+    list_hwnd, _static_hwnd = shared_files_ui.open_shared_files_page(main_hwnd)
+    process_handle = shared_files_ui.open_process(process_id)
+    try:
+        expected_count = len(expected_names)
+
+        def resolve() -> dict[str, object] | None:
+            row_count = int(win32gui.SendMessage(list_hwnd, shared_files_ui.LVM_GETITEMCOUNT, 0, 0))
+            if row_count <= 0:
+                return None
+            if row_count >= expected_count:
+                raise RuntimeError("Hashing completed before the partial-results interruption target was reached.")
+            visible_names = shared_files_ui.get_list_names(process_handle, list_hwnd, row_count)
+            return {
+                "row_count": row_count,
+                "visible_names": visible_names,
+            }
+
+        return live_common.wait_for(resolve, timeout=timeout, interval=0.25, description="partial Shared Files visibility during hash drain")
+    finally:
+        shared_files_ui.close_process(process_handle)
+
+
 def wait_for_process_exit(process_id: int, *, timeout: float = 15.0) -> None:
     """Waits until the target process exits."""
 
@@ -326,6 +364,7 @@ def run_interruption_scenario(
     interrupt_mode: str,
     require_startup_profile: bool,
     perform_warm_relaunch_after_recovery: bool = False,
+    wait_for_partial_visible_results: bool = False,
 ) -> dict[str, object]:
     """Runs one shutdown or hard-kill interruption scenario plus a recovery relaunch."""
 
@@ -358,6 +397,12 @@ def run_interruption_scenario(
 
         hashing_active = wait_for_hashing_active(Path(str(fixture["startup_profile_path"])))
         summary["first_launch_hashing_active"] = hashing_active
+        if wait_for_partial_visible_results:
+            summary["first_launch_partial_visible_before_interrupt"] = wait_for_partial_visible_shared_files(
+                main_hwnd,
+                process_id,
+                list(fixture["expected_visible_names"]),
+            )
 
         if interrupt_mode == "clean-close":
             close_started = time.perf_counter()
@@ -453,6 +498,335 @@ def run_interruption_scenario(
             validate_clean_shutdown_duration(warm_relaunch_close_duration_ms)
             summary["warm_relaunch_close_duration_ms"] = warm_relaunch_close_duration_ms
             app = None
+
+        summary["status"] = "passed"
+        summary["error"] = None
+        return summary
+    except Exception as exc:
+        summary["error"] = str(exc)
+        try:
+            if app is not None:
+                main_window = app.top_window()
+                live_common.dump_window_tree(main_window.handle, scenario_dir / "window-tree-failure.json")
+                try:
+                    image = main_window.capture_as_image()
+                    image.save(scenario_dir / "failure.png")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return summary
+    finally:
+        if app is not None:
+            try:
+                live_common.close_app_cleanly(app)
+            except Exception:
+                try:
+                    hard_kill_app(app)
+                except Exception:
+                    pass
+        write_json(scenario_dir / "result.json", summary)
+
+
+def run_repeated_interruption_cycle_scenario(
+    app_exe: Path,
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    *,
+    name: str,
+    require_startup_profile: bool,
+    interrupt_mode: str,
+) -> dict[str, object]:
+    """Runs two interrupted cycles on the same profile, then verifies warm recovery."""
+
+    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    summary = {
+        "name": name,
+        "status": "failed",
+        "app_exe": str(app_exe),
+        "profile_base": str(fixture["profile_base"]),
+        "shared_root": fixture["shared_root"],
+        "expected_row_count": fixture["expected_row_count"],
+        "expected_visible_names": fixture["expected_visible_names"],
+        "command_line": subprocess.list2cmdline(
+            [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
+        ),
+        "interrupt_mode": interrupt_mode,
+    }
+
+    app = None
+    try:
+        for cycle_index in (1, 2):
+            app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+            main_window = live_common.wait_for_main_window(app)
+            main_hwnd = main_window.handle
+            process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])
+            summary[f"cycle_{cycle_index}_process_id"] = process_id
+            summary[f"cycle_{cycle_index}_hashing_active"] = wait_for_hashing_active(Path(str(fixture["startup_profile_path"])))
+            if interrupt_mode == "clean-close":
+                close_started = time.perf_counter()
+                live_common.close_app_cleanly(app, window_timeout=30.0, process_timeout=30.0)
+                close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+                validate_clean_shutdown_duration(close_duration_ms)
+                summary[f"cycle_{cycle_index}_close_duration_ms"] = close_duration_ms
+            else:
+                summary[f"cycle_{cycle_index}_hard_kill_process_id"] = hard_kill_app(app)
+            app = None
+
+            archive_trace_if_present(
+                Path(str(fixture["startup_profile_path"])),
+                scenario_dir / f"startup-profile-cycle-{cycle_index}.trace.json",
+            )
+            startup_summary, startup_phases, _startup_counters = shared_files_ui.collect_startup_profile_bundle(
+                Path(str(fixture["startup_profile_path"])),
+                require_startup_profile=require_startup_profile,
+            )
+            if startup_phases:
+                live_common.enforce_deferred_shared_hashing_boundary(startup_phases, f"{name}.cycle_{cycle_index}")
+            summary[f"cycle_{cycle_index}_startup_profile"] = startup_summary
+
+            sidecar_state = capture_sidecar_state(Path(str(fixture["config_dir"])))
+            summary[f"cycle_{cycle_index}_post_interrupt_sidecar_state"] = sidecar_state
+            ensure_sidecars_absent(sidecar_state, description=f"{name} cycle {cycle_index}")
+
+        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        (
+            summary["recovery_relaunch_process_id"],
+            summary["recovery_relaunch_visible_shared_files"],
+            summary["recovery_relaunch_startup_profile"],
+        ) = wait_for_expected_shared_files_with_summary(
+            fixture,
+            app,
+            scenario_dir,
+            summary_prefix="recovery-relaunch",
+            require_startup_profile=require_startup_profile,
+        )
+        close_started = time.perf_counter()
+        live_common.close_app_cleanly(app, window_timeout=45.0, process_timeout=45.0)
+        recovery_close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+        validate_clean_shutdown_duration(recovery_close_duration_ms)
+        summary["recovery_relaunch_close_duration_ms"] = recovery_close_duration_ms
+        app = None
+
+        summary["post_recovery_clean_close_sidecar_state"] = capture_sidecar_state(Path(str(fixture["config_dir"])))
+        ensure_startup_cache_present(
+            summary["post_recovery_clean_close_sidecar_state"],
+            description=f"{name} recovery clean close",
+        )
+
+        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        (
+            summary["warm_recovery_relaunch_process_id"],
+            summary["warm_recovery_relaunch_visible_shared_files"],
+            summary["warm_recovery_relaunch_startup_profile"],
+        ) = wait_for_expected_shared_files_with_summary(
+            fixture,
+            app,
+            scenario_dir,
+            summary_prefix="warm-recovery-relaunch",
+            require_startup_profile=require_startup_profile,
+        )
+        warm_dirs_from_cache = shared_files_ui.get_profile_counter_value(
+            summary["warm_recovery_relaunch_startup_profile"],
+            "shared.scan.directories_from_cache",
+            "directories",
+        )
+        warm_files_queued = shared_files_ui.get_profile_counter_value(
+            summary["warm_recovery_relaunch_startup_profile"],
+            "shared.scan.files_queued_for_hash",
+            "files",
+        )
+        summary["warm_recovery_relaunch_directories_from_cache"] = warm_dirs_from_cache
+        summary["warm_recovery_relaunch_files_queued_for_hash"] = warm_files_queued
+        if warm_dirs_from_cache is None or warm_dirs_from_cache <= 0:
+            raise RuntimeError(
+                "Expected repeated-cycle warm relaunch to reuse the startup cache, "
+                f"got directories_from_cache={warm_dirs_from_cache!r}."
+            )
+        if warm_files_queued != 0:
+            raise RuntimeError(
+                "Expected repeated-cycle warm relaunch to queue no hash work, "
+                f"got files_queued_for_hash={warm_files_queued!r}."
+            )
+
+        close_started = time.perf_counter()
+        live_common.close_app_cleanly(app, window_timeout=45.0, process_timeout=45.0)
+        warm_close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+        validate_clean_shutdown_duration(warm_close_duration_ms)
+        summary["warm_recovery_relaunch_close_duration_ms"] = warm_close_duration_ms
+        app = None
+
+        summary["status"] = "passed"
+        summary["error"] = None
+        return summary
+    except Exception as exc:
+        summary["error"] = str(exc)
+        try:
+            if app is not None:
+                main_window = app.top_window()
+                live_common.dump_window_tree(main_window.handle, scenario_dir / "window-tree-failure.json")
+                try:
+                    image = main_window.capture_as_image()
+                    image.save(scenario_dir / "failure.png")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return summary
+    finally:
+        if app is not None:
+            try:
+                live_common.close_app_cleanly(app)
+            except Exception:
+                try:
+                    hard_kill_app(app)
+                except Exception:
+                    pass
+        write_json(scenario_dir / "result.json", summary)
+
+
+def run_reload_then_interrupt_scenario(
+    app_exe: Path,
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    *,
+    name: str,
+    require_startup_profile: bool,
+    interrupt_mode: str,
+) -> dict[str, object]:
+    """Triggers Reload during hash drain, then interrupts before the deferred reload can complete."""
+
+    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    summary = {
+        "name": name,
+        "status": "failed",
+        "app_exe": str(app_exe),
+        "profile_base": str(fixture["profile_base"]),
+        "shared_root": fixture["shared_root"],
+        "expected_row_count": fixture["expected_row_count"],
+        "expected_visible_names": fixture["expected_visible_names"],
+        "interrupt_mode": interrupt_mode,
+        "command_line": subprocess.list2cmdline(
+            [str(app_exe), "-ignoreinstances", "-c", str(fixture["profile_base"])]
+        ),
+    }
+
+    app = None
+    try:
+        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        main_window = live_common.wait_for_main_window(app)
+        main_hwnd = main_window.handle
+        process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])
+        summary["first_launch_process_id"] = process_id
+        summary["visible_before_reload"] = open_shared_files_page_snapshot(main_hwnd)
+        summary["hashing_active"] = wait_for_hashing_active(Path(str(fixture["startup_profile_path"])))
+
+        shared_files_ui.click_reload_button(main_hwnd)
+        summary["visible_immediately_after_reload"] = open_shared_files_page_snapshot(main_hwnd)
+        if int(summary["visible_immediately_after_reload"]["row_count"]) != 0:
+            raise RuntimeError(
+                "Reload while hashing should remain deferred until hash drain, "
+                f"got immediate row count {summary['visible_immediately_after_reload']['row_count']}."
+            )
+
+        if interrupt_mode == "clean-close":
+            close_started = time.perf_counter()
+            live_common.close_app_cleanly(app, window_timeout=30.0, process_timeout=30.0)
+            close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+            validate_clean_shutdown_duration(close_duration_ms)
+            summary["first_launch_close_duration_ms"] = close_duration_ms
+            archive_trace_if_present(
+                Path(str(fixture["startup_profile_path"])),
+                scenario_dir / "startup-profile-first-launch.trace.json",
+            )
+            startup_summary, startup_phases, _startup_counters = shared_files_ui.collect_startup_profile_bundle(
+                Path(str(fixture["startup_profile_path"])),
+                require_startup_profile=require_startup_profile,
+            )
+            if startup_phases:
+                live_common.enforce_deferred_shared_hashing_boundary(startup_phases, name + ".first_launch")
+            summary["first_launch_startup_profile"] = startup_summary
+        else:
+            summary["first_launch_hard_kill_process_id"] = hard_kill_app(app)
+            archive_trace_if_present(
+                Path(str(fixture["startup_profile_path"])),
+                scenario_dir / "startup-profile-first-launch.partial.trace.json",
+            )
+        app = None
+
+        summary["post_interrupt_sidecar_state"] = capture_sidecar_state(Path(str(fixture["config_dir"])))
+        ensure_sidecars_absent(
+            summary["post_interrupt_sidecar_state"],
+            description=f"{name} interruption after deferred reload",
+        )
+
+        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        (
+            summary["relaunch_process_id"],
+            summary["relaunch_visible_shared_files"],
+            summary["relaunch_startup_profile"],
+        ) = wait_for_expected_shared_files_with_summary(
+            fixture,
+            app,
+            scenario_dir,
+            summary_prefix="relaunch",
+            require_startup_profile=require_startup_profile,
+        )
+
+        close_started = time.perf_counter()
+        live_common.close_app_cleanly(app, window_timeout=45.0, process_timeout=45.0)
+        relaunch_close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+        validate_clean_shutdown_duration(relaunch_close_duration_ms)
+        summary["relaunch_close_duration_ms"] = relaunch_close_duration_ms
+        app = None
+
+        summary["post_recovery_clean_close_sidecar_state"] = capture_sidecar_state(Path(str(fixture["config_dir"])))
+        ensure_startup_cache_present(
+            summary["post_recovery_clean_close_sidecar_state"],
+            description=f"{name} recovery clean close",
+        )
+
+        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        (
+            summary["warm_relaunch_process_id"],
+            summary["warm_relaunch_visible_shared_files"],
+            summary["warm_relaunch_startup_profile"],
+        ) = wait_for_expected_shared_files_with_summary(
+            fixture,
+            app,
+            scenario_dir,
+            summary_prefix="warm-relaunch",
+            require_startup_profile=require_startup_profile,
+        )
+        warm_dirs_from_cache = shared_files_ui.get_profile_counter_value(
+            summary["warm_relaunch_startup_profile"],
+            "shared.scan.directories_from_cache",
+            "directories",
+        )
+        warm_files_queued = shared_files_ui.get_profile_counter_value(
+            summary["warm_relaunch_startup_profile"],
+            "shared.scan.files_queued_for_hash",
+            "files",
+        )
+        summary["warm_relaunch_directories_from_cache"] = warm_dirs_from_cache
+        summary["warm_relaunch_files_queued_for_hash"] = warm_files_queued
+        if warm_dirs_from_cache is None or warm_dirs_from_cache <= 0:
+            raise RuntimeError(
+                "Expected deferred-reload warm relaunch to reuse the startup cache, "
+                f"got directories_from_cache={warm_dirs_from_cache!r}."
+            )
+        if warm_files_queued != 0:
+            raise RuntimeError(
+                "Expected deferred-reload warm relaunch to queue no hash work, "
+                f"got files_queued_for_hash={warm_files_queued!r}."
+            )
+
+        close_started = time.perf_counter()
+        live_common.close_app_cleanly(app, window_timeout=45.0, process_timeout=45.0)
+        warm_relaunch_close_duration_ms = round((time.perf_counter() - close_started) * 1000.0, 3)
+        validate_clean_shutdown_duration(warm_relaunch_close_duration_ms)
+        summary["warm_relaunch_close_duration_ms"] = warm_relaunch_close_duration_ms
+        app = None
 
         summary["status"] = "passed"
         summary["error"] = None
@@ -623,6 +997,24 @@ def run_shared_hash_ui_suite(
                 name=name,
                 require_startup_profile=require_startup_profile,
             )
+        elif name in ("reload-then-clean-close-during-hash-files-page", "reload-then-hard-kill-during-hash-files-page"):
+            result = run_reload_then_interrupt_scenario(
+                app_exe,
+                seed_config_dir,
+                scenario_dir,
+                name=name,
+                require_startup_profile=require_startup_profile,
+                interrupt_mode="hard-kill" if name.startswith("reload-then-hard-kill") else "clean-close",
+            )
+        elif name in ("clean-close-during-hash-repeated-cycle", "hard-kill-during-hash-repeated-cycle"):
+            result = run_repeated_interruption_cycle_scenario(
+                app_exe,
+                seed_config_dir,
+                scenario_dir,
+                name=name,
+                require_startup_profile=require_startup_profile,
+                interrupt_mode="hard-kill" if name.startswith("hard-kill") else "clean-close",
+            )
         else:
             open_shared_files_before_interrupt = "files-page" in name
             interrupt_mode = "hard-kill" if name.startswith("hard-kill") else "clean-close"
@@ -634,7 +1026,11 @@ def run_shared_hash_ui_suite(
                 open_shared_files_before_interrupt=open_shared_files_before_interrupt,
                 interrupt_mode=interrupt_mode,
                 require_startup_profile=require_startup_profile,
-                perform_warm_relaunch_after_recovery=(name == "clean-close-during-hash-startup-warm-relaunch"),
+                perform_warm_relaunch_after_recovery=name in (
+                    "clean-close-during-hash-startup-warm-relaunch",
+                    "hard-kill-during-hash-startup-warm-relaunch",
+                ),
+                wait_for_partial_visible_results=name.endswith("partial-results"),
             )
         combined["scenarios"].append(result)
         if result.get("status") != "passed":

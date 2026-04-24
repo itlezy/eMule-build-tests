@@ -119,6 +119,38 @@ TEST_CASE("Startup-cache save scheduling stays blocked while closing, clean, or 
 	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, true, false, 20000ui64, 0ui64 }));
 }
 
+TEST_CASE("Startup-cache save post failures retry unless shutdown already abandoned the result")
+{
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSavePostFailureAction({ false, false }),
+		SharedFileListSeams::StartupCacheSavePostFailureAction::RetryLater);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSavePostFailureAction({ true, false }),
+		SharedFileListSeams::StartupCacheSavePostFailureAction::DiscardPersistedResultAndClearDirty);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSavePostFailureAction({ false, true }),
+		SharedFileListSeams::StartupCacheSavePostFailureAction::DiscardPersistedResultAndClearDirty);
+}
+
+TEST_CASE("Startup-cache save completion clears dirty state only after a full successful apply")
+{
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSaveCompletionAction({ true, false, true, true, false }),
+		SharedFileListSeams::StartupCacheSaveCompletionAction::DiscardPersistedResultAndClearDirty);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSaveCompletionAction({ false, true, true, true, false }),
+		SharedFileListSeams::StartupCacheSaveCompletionAction::DiscardPersistedResultAndClearDirty);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSaveCompletionAction({ false, false, true, true, false }),
+		SharedFileListSeams::StartupCacheSaveCompletionAction::ApplyResultAndClearDirty);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSaveCompletionAction({ false, false, true, false, false }),
+		SharedFileListSeams::StartupCacheSaveCompletionAction::ApplyResultAndRemainDirty);
+	CHECK_EQ(
+		SharedFileListSeams::GetStartupCacheSaveCompletionAction({ false, false, true, true, true }),
+		SharedFileListSeams::StartupCacheSaveCompletionAction::ApplyResultAndRemainDirty);
+}
+
 TEST_CASE("Shared hash completion delivery keeps results for UI retry unless shutdown owns the object")
 {
 	CHECK_EQ(

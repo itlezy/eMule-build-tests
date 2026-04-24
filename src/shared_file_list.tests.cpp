@@ -110,6 +110,22 @@ TEST_CASE("Startup-cache save scheduling stays blocked while closing, clean, or 
 	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, true, false, 20000ui64, 0ui64 }));
 }
 
+TEST_CASE("Shared hash completion delivery keeps results for UI retry unless shutdown owns the object")
+{
+	CHECK_EQ(
+		SharedFileListSeams::GetSharedHashCompletionDeliveryAction({ false, false, true }),
+		SharedFileListSeams::SharedHashCompletionDeliveryAction::PostDirect);
+	CHECK_EQ(
+		SharedFileListSeams::GetSharedHashCompletionDeliveryAction({ false, false, false }),
+		SharedFileListSeams::SharedHashCompletionDeliveryAction::QueueForUiRetry);
+	CHECK_EQ(
+		SharedFileListSeams::GetSharedHashCompletionDeliveryAction({ true, false, false }),
+		SharedFileListSeams::SharedHashCompletionDeliveryAction::DropResult);
+	CHECK_EQ(
+		SharedFileListSeams::GetSharedHashCompletionDeliveryAction({ false, true, false }),
+		SharedFileListSeams::SharedHashCompletionDeliveryAction::DropResult);
+}
+
 TEST_CASE("Shared hash shutdown invalidates warm caches only when hashing work was interrupted")
 {
 	CHECK_FALSE(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, false }));

@@ -46,12 +46,14 @@ shared_files_ui = load_local_module("shared_files_ui_e2e", "shared-files-ui-e2e.
 SCENARIO_NAMES = [
     "clean-close-during-hash-startup",
     "clean-close-during-hash-files-page",
+    "clean-close-during-hash-files-page-warm-relaunch",
     "clean-close-during-hash-partial-results",
     "clean-close-during-hash-partial-results-many-files",
     "hard-kill-during-hash-startup",
     "hard-kill-during-hash-startup-warm-relaunch",
     "hard-kill-during-hash-startup-warm-relaunch-many-files",
     "hard-kill-during-hash-files-page",
+    "hard-kill-during-hash-files-page-warm-relaunch",
     "hard-kill-during-hash-partial-results",
     "hard-kill-during-hash-partial-results-many-files",
     "reload-during-hash-files-page",
@@ -1070,7 +1072,7 @@ def run_shared_hash_ui_suite(
                 open_shared_files_before_interrupt=open_shared_files_before_interrupt,
                 interrupt_mode=interrupt_mode,
                 require_startup_profile=require_startup_profile,
-                perform_warm_relaunch_after_recovery="startup-warm-relaunch" in name,
+                perform_warm_relaunch_after_recovery="warm-relaunch" in name,
                 wait_for_partial_visible_results="partial-results" in name,
             )
         combined["scenarios"].append(result)

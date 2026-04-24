@@ -47,10 +47,12 @@ SCENARIO_NAMES = [
     "clean-close-during-hash-startup",
     "clean-close-during-hash-files-page",
     "clean-close-during-hash-partial-results",
+    "clean-close-during-hash-partial-results-many-files",
     "hard-kill-during-hash-startup",
     "hard-kill-during-hash-startup-warm-relaunch",
     "hard-kill-during-hash-files-page",
     "hard-kill-during-hash-partial-results",
+    "hard-kill-during-hash-partial-results-many-files",
     "reload-during-hash-files-page",
     "reload-then-clean-close-during-hash-files-page",
     "reload-then-hard-kill-during-hash-files-page",
@@ -65,6 +67,14 @@ HASH_STRESS_FILE_SPECS = [
     ("alpha_hash_payload.bin", 96 * 1024 * 1024, 0x61),
     ("beta_hash_payload.bin", 96 * 1024 * 1024, 0x62),
     ("gamma_hash_payload.bin", 96 * 1024 * 1024, 0x63),
+]
+HASH_STRESS_FILE_SPECS_MANY = [
+    ("alpha_hash_payload.bin", 64 * 1024 * 1024, 0x61),
+    ("beta_hash_payload.bin", 64 * 1024 * 1024, 0x62),
+    ("gamma_hash_payload.bin", 64 * 1024 * 1024, 0x63),
+    ("delta_hash_payload.bin", 64 * 1024 * 1024, 0x64),
+    ("epsilon_hash_payload.bin", 64 * 1024 * 1024, 0x65),
+    ("zeta_hash_payload.bin", 64 * 1024 * 1024, 0x66),
 ]
 HASH_STRESS_NESTED_SEGMENTS = [
     "segment-00-shared-hash-startup",
@@ -94,12 +104,23 @@ def write_pattern_file(path: Path, size_bytes: int, fill_byte: int) -> None:
             remaining -= len(current)
 
 
-def prepare_hash_interruption_fixture(seed_config_dir: Path, scenario_dir: Path) -> dict[str, object]:
+def get_hash_stress_file_specs_for_scenario(name: str) -> list[tuple[str, int, int]]:
+    """Returns the shared-hash fixture file layout for one scenario."""
+
+    return list(HASH_STRESS_FILE_SPECS_MANY if "many-files" in name else HASH_STRESS_FILE_SPECS)
+
+
+def prepare_hash_interruption_fixture(
+    seed_config_dir: Path,
+    scenario_dir: Path,
+    *,
+    file_specs: list[tuple[str, int, int]] | None = None,
+) -> dict[str, object]:
     """Creates one recursive shared-tree fixture that keeps shared hashing active after startup."""
 
     shared_root = scenario_dir / "shared-hash-root"
     expected_visible_names: list[str] = []
-    for index, (file_name, size_bytes, fill_byte) in enumerate(HASH_STRESS_FILE_SPECS):
+    for index, (file_name, size_bytes, fill_byte) in enumerate(file_specs or HASH_STRESS_FILE_SPECS):
         branch_root = shared_root / f"branch-{index:02d}-shared-hash-interruption"
         current = branch_root
         for segment in HASH_STRESS_NESTED_SEGMENTS:
@@ -368,7 +389,11 @@ def run_interruption_scenario(
 ) -> dict[str, object]:
     """Runs one shutdown or hard-kill interruption scenario plus a recovery relaunch."""
 
-    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    fixture = prepare_hash_interruption_fixture(
+        seed_config_dir,
+        scenario_dir,
+        file_specs=get_hash_stress_file_specs_for_scenario(name),
+    )
     summary = {
         "name": name,
         "status": "failed",
@@ -539,7 +564,11 @@ def run_repeated_interruption_cycle_scenario(
 ) -> dict[str, object]:
     """Runs two interrupted cycles on the same profile, then verifies warm recovery."""
 
-    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    fixture = prepare_hash_interruption_fixture(
+        seed_config_dir,
+        scenario_dir,
+        file_specs=get_hash_stress_file_specs_for_scenario(name),
+    )
     summary = {
         "name": name,
         "status": "failed",
@@ -696,7 +725,11 @@ def run_reload_then_interrupt_scenario(
 ) -> dict[str, object]:
     """Triggers Reload during hash drain, then interrupts before the deferred reload can complete."""
 
-    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    fixture = prepare_hash_interruption_fixture(
+        seed_config_dir,
+        scenario_dir,
+        file_specs=get_hash_stress_file_specs_for_scenario(name),
+    )
     summary = {
         "name": name,
         "status": "failed",
@@ -867,7 +900,11 @@ def run_reload_during_hash_scenario(
 ) -> dict[str, object]:
     """Runs the Shared Files reload button while startup hashing is still draining."""
 
-    fixture = prepare_hash_interruption_fixture(seed_config_dir, scenario_dir)
+    fixture = prepare_hash_interruption_fixture(
+        seed_config_dir,
+        scenario_dir,
+        file_specs=get_hash_stress_file_specs_for_scenario(name),
+    )
     summary = {
         "name": name,
         "status": "failed",
@@ -1030,7 +1067,7 @@ def run_shared_hash_ui_suite(
                     "clean-close-during-hash-startup-warm-relaunch",
                     "hard-kill-during-hash-startup-warm-relaunch",
                 ),
-                wait_for_partial_visible_results=name.endswith("partial-results"),
+                wait_for_partial_visible_results="partial-results" in name,
             )
         combined["scenarios"].append(result)
         if result.get("status") != "passed":

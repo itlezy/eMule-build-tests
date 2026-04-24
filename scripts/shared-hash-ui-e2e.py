@@ -61,7 +61,9 @@ SCENARIO_NAMES = [
     "reload-then-hard-kill-during-hash-files-page-many-files",
     "clean-close-during-hash-startup-warm-relaunch",
     "clean-close-during-hash-repeated-cycle",
+    "clean-close-during-hash-repeated-cycle-many-files",
     "hard-kill-during-hash-repeated-cycle",
+    "hard-kill-during-hash-repeated-cycle-many-files",
 ]
 MAX_CLEAN_SHUTDOWN_DURATION_MS = 20000.0
 STARTUP_CACHE_FILE_NAME = "sharedcache.dat"
@@ -1046,7 +1048,7 @@ def run_shared_hash_ui_suite(
                 require_startup_profile=require_startup_profile,
                 interrupt_mode="hard-kill" if name.startswith("reload-then-hard-kill") else "clean-close",
             )
-        elif name in ("clean-close-during-hash-repeated-cycle", "hard-kill-during-hash-repeated-cycle"):
+        elif name.startswith("clean-close-during-hash-repeated-cycle") or name.startswith("hard-kill-during-hash-repeated-cycle"):
             result = run_repeated_interruption_cycle_scenario(
                 app_exe,
                 seed_config_dir,

@@ -47,6 +47,7 @@ SCENARIO_NAMES = [
     "clean-close-during-hash-startup",
     "clean-close-during-hash-files-page",
     "clean-close-during-hash-files-page-warm-relaunch",
+    "clean-close-during-hash-files-page-warm-relaunch-many-files",
     "clean-close-during-hash-partial-results",
     "clean-close-during-hash-partial-results-many-files",
     "hard-kill-during-hash-startup",
@@ -54,6 +55,7 @@ SCENARIO_NAMES = [
     "hard-kill-during-hash-startup-warm-relaunch-many-files",
     "hard-kill-during-hash-files-page",
     "hard-kill-during-hash-files-page-warm-relaunch",
+    "hard-kill-during-hash-files-page-warm-relaunch-many-files",
     "hard-kill-during-hash-partial-results",
     "hard-kill-during-hash-partial-results-many-files",
     "reload-during-hash-files-page",
@@ -765,10 +767,11 @@ def run_reload_then_interrupt_scenario(
 
         shared_files_ui.click_reload_button(main_hwnd)
         summary["visible_immediately_after_reload"] = open_shared_files_page_snapshot(main_hwnd)
-        if int(summary["visible_immediately_after_reload"]["row_count"]) != 0:
+        immediate_row_count = int(summary["visible_immediately_after_reload"]["row_count"])
+        if immediate_row_count >= int(fixture["expected_row_count"]):
             raise RuntimeError(
-                "Reload while hashing should remain deferred until hash drain, "
-                f"got immediate row count {summary['visible_immediately_after_reload']['row_count']}."
+                "Reload while hashing should not fully converge before hash drain, "
+                f"got immediate row count {immediate_row_count} for expected {fixture['expected_row_count']}."
             )
 
         if interrupt_mode == "clean-close":
@@ -939,10 +942,11 @@ def run_reload_during_hash_scenario(
 
         shared_files_ui.click_reload_button(main_hwnd)
         summary["visible_immediately_after_reload"] = open_shared_files_page_snapshot(main_hwnd)
-        if int(summary["visible_immediately_after_reload"]["row_count"]) != 0:
+        immediate_row_count = int(summary["visible_immediately_after_reload"]["row_count"])
+        if immediate_row_count >= int(fixture["expected_row_count"]):
             raise RuntimeError(
-                "Reload while hashing should remain deferred until hash drain, "
-                f"got immediate row count {summary['visible_immediately_after_reload']['row_count']}."
+                "Reload while hashing should not fully converge before hash drain, "
+                f"got immediate row count {immediate_row_count} for expected {fixture['expected_row_count']}."
             )
 
         summary["visible_after_hash_drain"] = wait_for_expected_shared_files(

@@ -163,6 +163,14 @@ def archive_trace_if_present(source_path: Path, destination_path: Path) -> None:
         shutil.copy2(source_path, destination_path)
 
 
+def launch_app_with_fresh_startup_trace(app_exe: Path, fixture: dict[str, object]) -> Application:
+    """Starts eMule after removing any trace left by an earlier launch on the same profile."""
+
+    startup_profile_path = Path(str(fixture["startup_profile_path"]))
+    startup_profile_path.unlink(missing_ok=True)
+    return live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+
+
 def capture_sidecar_state(config_dir: Path) -> dict[str, dict[str, object]]:
     """Captures the persisted shared startup-cache sidecar state for one profile config dir."""
 
@@ -449,7 +457,7 @@ def run_interruption_scenario(
 
     app = None
     try:
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
         process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])
@@ -498,7 +506,7 @@ def run_interruption_scenario(
             description=f"{name} interruption",
         )
 
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         (
             summary["relaunch_process_id"],
             summary["relaunch_visible_shared_files"],
@@ -525,7 +533,7 @@ def run_interruption_scenario(
                 description=f"{name} recovery clean close",
             )
 
-            app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+            app = launch_app_with_fresh_startup_trace(app_exe, fixture)
             (
                 summary["warm_relaunch_process_id"],
                 summary["warm_relaunch_visible_shared_files"],
@@ -623,7 +631,7 @@ def run_repeated_interruption_cycle_scenario(
     app = None
     try:
         for cycle_index in (1, 2):
-            app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+            app = launch_app_with_fresh_startup_trace(app_exe, fixture)
             main_window = live_common.wait_for_main_window(app)
             main_hwnd = main_window.handle
             process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])
@@ -655,7 +663,7 @@ def run_repeated_interruption_cycle_scenario(
             summary[f"cycle_{cycle_index}_post_interrupt_sidecar_state"] = sidecar_state
             ensure_sidecars_absent(sidecar_state, description=f"{name} cycle {cycle_index}")
 
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         (
             summary["recovery_relaunch_process_id"],
             summary["recovery_relaunch_visible_shared_files"],
@@ -680,7 +688,7 @@ def run_repeated_interruption_cycle_scenario(
             description=f"{name} recovery clean close",
         )
 
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         (
             summary["warm_recovery_relaunch_process_id"],
             summary["warm_recovery_relaunch_visible_shared_files"],
@@ -783,7 +791,7 @@ def run_reload_then_interrupt_scenario(
 
     app = None
     try:
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
         process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])
@@ -831,7 +839,7 @@ def run_reload_then_interrupt_scenario(
             description=f"{name} interruption after deferred reload",
         )
 
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         (
             summary["relaunch_process_id"],
             summary["relaunch_visible_shared_files"],
@@ -857,7 +865,7 @@ def run_reload_then_interrupt_scenario(
             description=f"{name} recovery clean close",
         )
 
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         (
             summary["warm_relaunch_process_id"],
             summary["warm_relaunch_visible_shared_files"],
@@ -958,7 +966,7 @@ def run_reload_during_hash_scenario(
 
     app = None
     try:
-        app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
+        app = launch_app_with_fresh_startup_trace(app_exe, fixture)
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
         process_id = int(win32process.GetWindowThreadProcessId(main_hwnd)[1])

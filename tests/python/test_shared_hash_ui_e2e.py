@@ -108,6 +108,34 @@ def test_configure_profile_upnp_disables_mapping_and_exit_cleanup(tmp_path: Path
     assert "CloseUPnPOnExit=0" in text
 
 
+def test_launch_app_with_fresh_startup_trace_removes_stale_trace(monkeypatch, tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    profile_base = tmp_path / "profile-base"
+    config_dir = profile_base / "config"
+    config_dir.mkdir(parents=True)
+    trace_path = config_dir / "startup-profile.trace.json"
+    trace_path.write_text('{"traceEvents":[]}', encoding="utf-8")
+    launched: list[Path] = []
+
+    def launch_app(app_exe: Path, launched_profile_base: Path) -> object:
+        launched.append(launched_profile_base)
+        assert not trace_path.exists()
+        return {"app": str(app_exe)}
+
+    monkeypatch.setattr(module.live_common, "launch_app", launch_app)
+
+    app = module.launch_app_with_fresh_startup_trace(
+        tmp_path / "emule.exe",
+        {
+            "profile_base": profile_base,
+            "startup_profile_path": trace_path,
+        },
+    )
+
+    assert app == {"app": str(tmp_path / "emule.exe")}
+    assert launched == [profile_base]
+
+
 def test_shared_hash_snapshot_does_not_require_details_static(monkeypatch) -> None:
     module = load_shared_hash_module()
     opened_pages: list[int] = []

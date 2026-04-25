@@ -204,6 +204,9 @@
     <ClCompile Include="src\upnp_impl_minilib.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')">
       <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
     </ClCompile>
+    <ClCompile Include="src\upnp_impl_wrapper.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplWrapperSeams.h')">
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="src\worker_ui_message.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\WorkerUiMessageSeams.h')">
       <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
     </ClCompile>
@@ -250,6 +253,7 @@
     <ClInclude Include="$(AppRoot)\srchybrid\SocketPolicySeams.h" Condition="Exists('$(AppRoot)\srchybrid\SocketPolicySeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\StatusBarInfo.h" Condition="Exists('$(AppRoot)\srchybrid\StatusBarInfo.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplMiniLibSeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\UPnPImplWrapperSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UPnPImplWrapperSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerFlowSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadBandwidthThrottlerSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\UploadQueueFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\UploadQueueFlowSeams.h')" />

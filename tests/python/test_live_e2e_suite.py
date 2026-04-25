@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -134,3 +136,17 @@ def test_fail_fast_stops_after_first_failed_suite(tmp_path: Path, monkeypatch) -
 
     assert summary["status"] == "failed"
     assert [script_name(command) for command in commands] == ["preference-ui-e2e.py"]
+
+
+def test_operator_script_help_loads_hyphenated_helpers() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    completed = subprocess.run(
+        [sys.executable, str(repo_root / "scripts" / "run_live_e2e_suite.py"), "--help"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert "--skip-live-seed-refresh" in completed.stdout

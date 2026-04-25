@@ -96,6 +96,7 @@ SUITE_SPECS = (
     ),
 )
 SUITE_NAMES = tuple(spec.name for spec in SUITE_SPECS)
+SUITE_INCONCLUSIVE_RETURN_CODE = 2
 
 
 def resolve_suite_specs(selected_names: list[str] | None) -> tuple[SuiteSpec, ...]:
@@ -181,6 +182,16 @@ def run_suite_command(command: list[str]) -> int:
     return completed.returncode
 
 
+def get_suite_status_from_return_code(return_code: int) -> str:
+    """Maps one child process return code into an aggregate suite status."""
+
+    if return_code == 0:
+        return "passed"
+    if return_code == SUITE_INCONCLUSIVE_RETURN_CODE:
+        return "inconclusive"
+    return "failed"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Builds the aggregate live E2E argument parser."""
 
@@ -245,6 +256,7 @@ def run_live_e2e_suite(args: argparse.Namespace, harness_cli_common) -> dict[str
         "live_seed_source_url": EMULE_SECURITY_HOME_URL,
         "live_seed_refresh_enabled": not args.skip_live_seed_refresh,
         "fail_fast": bool(args.fail_fast),
+        "has_inconclusive_suites": False,
         "suites": [],
     }
 
@@ -270,10 +282,11 @@ def run_live_e2e_suite(args: argparse.Namespace, harness_cli_common) -> dict[str
         )
         started = time.monotonic()
         return_code = run_suite_command(command)
+        suite_status = get_suite_status_from_return_code(return_code)
         result = {
             "name": spec.name,
             "category": spec.category,
-            "status": "passed" if return_code == 0 else "failed",
+            "status": suite_status,
             "return_code": return_code,
             "duration_seconds": round(time.monotonic() - started, 3),
             "artifacts_dir": str(child_artifacts_dir.resolve()),
@@ -282,7 +295,9 @@ def run_live_e2e_suite(args: argparse.Namespace, harness_cli_common) -> dict[str
             "uses_live_seed_refresh": bool(spec.uses_live_seed_refresh and not args.skip_live_seed_refresh),
         }
         summary["suites"].append(result)  # type: ignore[index]
-        if return_code != 0:
+        if suite_status == "inconclusive":
+            summary["has_inconclusive_suites"] = True
+        if suite_status == "failed":
             summary["status"] = "failed"
             if args.fail_fast:
                 break

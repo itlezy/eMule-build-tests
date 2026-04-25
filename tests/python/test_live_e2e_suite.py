@@ -121,6 +121,23 @@ def test_suite_continues_after_failures_by_default(tmp_path: Path, monkeypatch) 
     assert calls == len(live_e2e_suite.SUITE_SPECS)
 
 
+def test_inconclusive_live_wire_suite_does_not_fail_aggregate(tmp_path: Path, monkeypatch) -> None:
+    def return_inconclusive_for_auto_browse(command: list[str]) -> int:
+        return live_e2e_suite.SUITE_INCONCLUSIVE_RETURN_CODE if script_name(command) == "auto-browse-live.py" else 0
+
+    monkeypatch.setattr(live_e2e_suite, "run_suite_command", return_inconclusive_for_auto_browse)
+
+    summary = live_e2e_suite.run_live_e2e_suite(
+        parse_args("--workspace-root", str(tmp_path / "workspaces" / "v0.72a")),
+        FakeHarnessCliCommon(tmp_path),
+    )
+
+    assert summary["status"] == "passed"
+    assert summary["has_inconclusive_suites"] is True
+    assert summary["suites"][-1]["name"] == "auto-browse-live"
+    assert summary["suites"][-1]["status"] == "inconclusive"
+
+
 def test_fail_fast_stops_after_first_failed_suite(tmp_path: Path, monkeypatch) -> None:
     commands: list[list[str]] = []
     monkeypatch.setattr(

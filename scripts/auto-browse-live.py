@@ -37,7 +37,14 @@ write_json = live_common.write_json
 
 BOOTSTRAP_TRANSFER_HASH = "28EAB1A0AB1B9416AAF534E27A234941"
 FALLBACK_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
+BOOTSTRAP_SEARCH_METHODS = ("server", "global", "automatic", "kad")
+FALLBACK_SEARCH_METHODS = ("server", "global", "kad", "automatic")
+LIVE_SOURCE_UNAVAILABLE_EXIT_CODE = 2
 PREFERRED_SERVER_ADDRESSES = ("91.148.135.252", "45.82.80.155", "91.148.135.254")
+
+
+class LiveSourceUnavailableError(RuntimeError):
+    """Raised when live networks are reachable but no sourced transfer can be acquired."""
 
 
 def compact_http_result(result: dict[str, object]) -> dict[str, object]:
@@ -191,6 +198,14 @@ def find_transfer_candidate(
     raise RuntimeError(f"No downloadable search result found for {query!r} via {method_candidates!r}.")
 
 
+def build_transfer_acquisition_plan() -> list[tuple[str, list[str]]]:
+    """Returns the live-search plan used to find one safe sourced transfer."""
+
+    plan = [(BOOTSTRAP_TRANSFER_HASH, list(BOOTSTRAP_SEARCH_METHODS))]
+    plan.extend((query, list(FALLBACK_SEARCH_METHODS)) for query in FALLBACK_SEARCH_QUERIES)
+    return plan
+
+
 def add_transfer_from_search_result(base_url: str, api_key: str, result_row: dict[str, Any]) -> dict[str, Any]:
     """Adds one transfer from a REST search-result row and returns the created transfer payload."""
 
@@ -320,7 +335,7 @@ def wait_for_process_id(app: object) -> int | None:
     return process_id if isinstance(process_id, int) else None
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace-root")
     parser.add_argument("--app-root")
@@ -476,10 +491,7 @@ def main() -> None:
             }
         else:
             acquisition_attempts: list[dict[str, object]] = []
-            for query, methods in (
-                (BOOTSTRAP_TRANSFER_HASH, ["server", "global", "automatic", "kad"]),
-                (FALLBACK_SEARCH_QUERIES[0], ["kad", "automatic"]),
-            ):
+            for query, methods in build_transfer_acquisition_plan():
                 try:
                     selection = find_transfer_candidate(
                         base_url,
@@ -515,7 +527,15 @@ def main() -> None:
                     )
             report["checks"]["transfer_acquisition"] = acquisition_attempts
             if not any(isinstance(item, dict) and item.get("selected") for item in acquisition_attempts):
-                raise RuntimeError("Natural auto-browse did not succeed, and fallback transfer acquisition produced no sourced transfer.")
+                report["checks"]["live_source_availability"] = {
+                    "status": "unavailable",
+                    "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
+                    "blocking": False,
+                }
+                raise LiveSourceUnavailableError(
+                    "Live networks connected, but no safe downloadable sourced transfer was available "
+                    "from the configured live-search plan."
+                )
 
             remaining_timeout = max(1.0, args.auto_browse_timeout_seconds - args.natural_auto_browse_timeout_seconds)
             report["checks"]["auto_browse"] = wait_for_auto_browse_success(
@@ -529,12 +549,19 @@ def main() -> None:
             }
         report["status"] = "passed"
     except Exception as exc:
-        pending_error = exc
-        report["status"] = "failed"
-        report["error"] = {
-            "type": type(exc).__name__,
-            "message": str(exc),
-        }
+        if isinstance(exc, LiveSourceUnavailableError):
+            report["status"] = "inconclusive"
+            report["inconclusive_reason"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+        else:
+            pending_error = exc
+            report["status"] = "failed"
+            report["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
     finally:
         cleanup = report["cleanup"]
         assert isinstance(cleanup, dict)
@@ -568,6 +595,13 @@ def main() -> None:
     if pending_error is not None:
         raise pending_error
 
+    if report["status"] == "inconclusive":
+        print(
+            "Auto-browse live validation was inconclusive because no safe sourced transfer was available. "
+            f"Report directory: {paths.run_report_dir}"
+        )
+        return LIVE_SOURCE_UNAVAILABLE_EXIT_CODE
+
     if args.keep_running:
         print(
             "Auto-browse live validation passed and left the app running. "
@@ -576,7 +610,8 @@ def main() -> None:
         )
     else:
         print(f"Auto-browse live validation passed. Report directory: {paths.run_report_dir}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -14,6 +14,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from emule_test_harness.live_seed_sources import EMULE_SECURITY_HOME_URL, refresh_seed_files
+
 
 def load_local_module(module_name: str, filename: str):
     """Loads one sibling helper module from a hyphenated script filename."""
@@ -870,6 +876,8 @@ def main() -> None:
     parser.add_argument("--server-search-count", type=int, default=0)
     parser.add_argument("--kad-search-count", type=int, default=0)
     parser.add_argument("--search-method-override", choices=["automatic", "server", "global", "kad"])
+    parser.add_argument("--seed-download-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--skip-live-seed-refresh", action="store_true")
     parser.add_argument("--keep-running", action="store_true")
     args = parser.parse_args()
     if args.server_search_count < 0 or args.kad_search_count < 0:
@@ -892,6 +900,12 @@ def main() -> None:
     port = choose_listen_port()
     base_url = f"http://127.0.0.1:{port}"
     profile = prepare_profile_base(seed_config_dir, artifacts_dir, shared_dirs=[])
+    seed_refresh = None
+    if not args.skip_live_seed_refresh:
+        seed_refresh = refresh_seed_files(
+            Path(profile["config_dir"]),
+            timeout_seconds=args.seed_download_timeout_seconds,
+        )
     configure_webserver_profile(
         Path(profile["config_dir"]),
         app_exe,
@@ -918,6 +932,8 @@ def main() -> None:
         "launch_inputs": {
             "app_exe": str(app_exe),
             "seed_config_dir": str(seed_config_dir),
+            "live_seed_source_url": EMULE_SECURITY_HOME_URL,
+            "live_seed_refresh": seed_refresh,
             "artifacts_dir": str(artifacts_dir),
             "profile_base": str(profile["profile_base"]),
             "config_dir": str(profile["config_dir"]),
@@ -936,6 +952,7 @@ def main() -> None:
                 "kad_running_seconds": args.kad_running_timeout_seconds,
                 "network_ready_seconds": args.network_ready_timeout_seconds,
                 "search_observation_seconds": args.search_observation_timeout_seconds,
+                "seed_download_seconds": args.seed_download_timeout_seconds,
             },
         },
         "checks": {},

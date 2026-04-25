@@ -340,6 +340,8 @@ def main() -> None:
     parser.add_argument("--search-observation-timeout-seconds", type=float, default=120.0)
     parser.add_argument("--auto-browse-timeout-seconds", type=float, default=1800.0)
     parser.add_argument("--natural-auto-browse-timeout-seconds", type=float, default=900.0)
+    parser.add_argument("--seed-download-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--skip-live-seed-refresh", action="store_true")
     args = parser.parse_args()
 
     paths = harness_cli_common.prepare_run_paths(
@@ -360,6 +362,12 @@ def main() -> None:
     bind_updater_script = get_tooling_bind_updater(paths)
 
     profile = prepare_profile_base(seed_config_dir, artifacts_dir, shared_dirs=[])
+    seed_refresh = None
+    if not args.skip_live_seed_refresh:
+        seed_refresh = rest_smoke.refresh_seed_files(
+            Path(profile["config_dir"]),
+            timeout_seconds=args.seed_download_timeout_seconds,
+        )
     configure_auto_browse_profile(
         config_dir=Path(profile["config_dir"]),
         app_exe=paths.app_exe,
@@ -383,6 +391,8 @@ def main() -> None:
         "launch_inputs": {
             "app_exe": str(paths.app_exe),
             "seed_config_dir": str(seed_config_dir),
+            "live_seed_source_url": rest_smoke.EMULE_SECURITY_HOME_URL,
+            "live_seed_refresh": seed_refresh,
             "artifacts_dir": str(artifacts_dir),
             "profile_base": str(profile["profile_base"]),
             "config_dir": str(profile["config_dir"]),
@@ -403,6 +413,7 @@ def main() -> None:
                 "source_discovery_seconds": args.source_discovery_timeout_seconds,
                 "natural_auto_browse_seconds": args.natural_auto_browse_timeout_seconds,
                 "auto_browse_seconds": args.auto_browse_timeout_seconds,
+                "seed_download_seconds": args.seed_download_timeout_seconds,
             },
         },
         "checks": {},

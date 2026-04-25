@@ -60,3 +60,43 @@ def test_live_server_unavailable_is_inconclusive_exit_code() -> None:
     assert module.LIVE_NETWORK_UNAVAILABLE_EXIT_CODE == 2
     with pytest.raises(module.LiveNetworkUnavailableError, match="No server candidates"):
         module.connect_to_live_server("http://127.0.0.1:1", "api-key", [], 1.0)
+
+
+def test_missing_transfer_bulk_result_requires_per_item_error() -> None:
+    module = load_rest_api_smoke_module()
+
+    result = module.require_missing_transfer_bulk_result(
+        {
+            "status": 200,
+            "json": {
+                "results": [
+                    {
+                        "hash": module.REST_SURFACE_MISSING_HASH,
+                        "ok": False,
+                        "error": "transfer not found",
+                    },
+                ],
+            },
+        }
+    )
+
+    assert result["hash"] == module.REST_SURFACE_MISSING_HASH
+
+
+def test_missing_transfer_bulk_result_rejects_success_rows() -> None:
+    module = load_rest_api_smoke_module()
+
+    with pytest.raises(AssertionError):
+        module.require_missing_transfer_bulk_result(
+            {
+                "status": 200,
+                "json": {
+                    "results": [
+                        {
+                            "hash": module.REST_SURFACE_MISSING_HASH,
+                            "ok": True,
+                        },
+                    ],
+                },
+            }
+        )

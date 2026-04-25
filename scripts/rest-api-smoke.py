@@ -252,6 +252,20 @@ def require_error_response(
     return payload
 
 
+def require_missing_transfer_bulk_result(result: dict[str, object]) -> dict[str, object]:
+    """Asserts one bulk transfer mutation reports a per-item missing-transfer result."""
+
+    payload = require_json_object(result, 200)
+    rows = payload.get("results")
+    assert isinstance(rows, list) and rows, compact_http_result(result)
+    first = rows[0]
+    assert isinstance(first, dict), compact_http_result(result)
+    assert first.get("ok") is False, compact_http_result(result)
+    assert str(first.get("hash") or "").lower() == REST_SURFACE_MISSING_HASH
+    assert "transfer not found" in str(first.get("error") or "")
+    return first
+
+
 def get_app_process_id(app: object) -> int | None:
     """Returns the launched process id when pywinauto exposes it."""
 
@@ -449,9 +463,27 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
         api_key=api_key,
         json_body={"hashes": [REST_SURFACE_MISSING_HASH]},
     )
-    transfer_pause_payload = require_json_object(transfer_pause, 200)
-    assert isinstance(transfer_pause_payload.get("results"), list)
-    assert transfer_pause_payload["results"] and transfer_pause_payload["results"][0].get("ok") is False
+    transfer_resume = http_request(
+        base_url,
+        "/api/v1/transfers/resume",
+        method="POST",
+        api_key=api_key,
+        json_body={"hashes": [REST_SURFACE_MISSING_HASH]},
+    )
+    transfer_stop = http_request(
+        base_url,
+        "/api/v1/transfers/stop",
+        method="POST",
+        api_key=api_key,
+        json_body={"hashes": [REST_SURFACE_MISSING_HASH]},
+    )
+    transfer_delete_missing = http_request(
+        base_url,
+        "/api/v1/transfers/delete",
+        method="POST",
+        api_key=api_key,
+        json_body={"hashes": [REST_SURFACE_MISSING_HASH], "delete_files": True},
+    )
     transfer_delete_bad = http_request(
         base_url,
         "/api/v1/transfers/delete",
@@ -459,19 +491,59 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
         api_key=api_key,
         json_body={},
     )
+    transfer_add_bad = http_request(
+        base_url,
+        "/api/v1/transfers/add",
+        method="POST",
+        api_key=api_key,
+        json_body={"link": "not-an-ed2k-link"},
+    )
+    transfer_recheck_missing = http_request(
+        base_url,
+        f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/recheck",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
+    transfer_priority_missing = http_request(
+        base_url,
+        f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/priority",
+        method="POST",
+        api_key=api_key,
+        json_body={"priority": "high"},
+    )
+    transfer_category_missing = http_request(
+        base_url,
+        f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/category",
+        method="POST",
+        api_key=api_key,
+        json_body={"category": 0},
+    )
     surface["transfers"] = {
         "list_count": len(transfer_rows),
         "list_status": transfers["status"],
         "filter_status": transfers_by_filter["status"],
         "missing_get": require_error_response(missing_transfer, 404, "NOT_FOUND", message_contains="transfer not found"),
         "missing_sources": require_error_response(missing_transfer_sources, 404, "NOT_FOUND", message_contains="transfer not found"),
-        "pause_missing_item": transfer_pause_payload["results"][0],
+        "pause_missing_item": require_missing_transfer_bulk_result(transfer_pause),
+        "resume_missing_item": require_missing_transfer_bulk_result(transfer_resume),
+        "stop_missing_item": require_missing_transfer_bulk_result(transfer_stop),
+        "delete_missing_item": require_missing_transfer_bulk_result(transfer_delete_missing),
         "delete_bad_payload": require_error_response(
             transfer_delete_bad,
             400,
             "INVALID_ARGUMENT",
             message_contains="hashes must be a string array",
         ),
+        "add_bad_payload": require_error_response(
+            transfer_add_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="Not an eD2K server or file link",
+        ),
+        "recheck_missing": require_error_response(transfer_recheck_missing, 404, "NOT_FOUND", message_contains="transfer not found"),
+        "priority_missing": require_error_response(transfer_priority_missing, 404, "NOT_FOUND", message_contains="transfer not found"),
+        "category_missing": require_error_response(transfer_category_missing, 404, "NOT_FOUND", message_contains="transfer not found"),
     }
 
     upload_list = http_request(base_url, "/api/v1/uploads/list", api_key=api_key)
@@ -479,6 +551,13 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
     upload_remove_bad = http_request(
         base_url,
         "/api/v1/uploads/remove",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
+    upload_release_bad = http_request(
+        base_url,
+        "/api/v1/uploads/release_slot",
         method="POST",
         api_key=api_key,
         json_body={},
@@ -492,11 +571,24 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
             "INVALID_ARGUMENT",
             message_contains="userHash or ip and port are required",
         ),
+        "release_slot_bad_payload": require_error_response(
+            upload_release_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="userHash or ip and port are required",
+        ),
     }
 
     shared = http_request(base_url, "/api/v1/shared/list", api_key=api_key)
     shared_rows = require_json_array(shared, 200)
     missing_shared = http_request(base_url, f"/api/v1/shared/{REST_SURFACE_MISSING_HASH}", api_key=api_key)
+    shared_add_bad = http_request(
+        base_url,
+        "/api/v1/shared/add",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
     shared_remove_bad = http_request(
         base_url,
         "/api/v1/shared/remove",
@@ -507,6 +599,12 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
     surface["shared"] = {
         "list_count": len(shared_rows),
         "missing_get": require_error_response(missing_shared, 404, "NOT_FOUND", message_contains="shared file not found"),
+        "add_bad_payload": require_error_response(
+            shared_add_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="path must be a non-empty string path",
+        ),
         "remove_bad_payload": require_error_response(
             shared_remove_bad,
             400,

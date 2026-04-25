@@ -30,6 +30,51 @@ TEST_CASE("Known-file AICH purge seam drops orphaned partially purged hashsets t
 	CHECK(ShouldPurgeKnownAICHHashset(false, true));
 }
 
+TEST_CASE("Known-file collision seam keeps existing shared entries")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(true, false, false, false),
+		KnownFileCollisionDecision::KeepExisting);
+}
+
+TEST_CASE("Known-file collision seam keeps existing downloading entries")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(false, true, false, false),
+		KnownFileCollisionDecision::KeepExisting);
+}
+
+TEST_CASE("Known-file collision seam adopts incoming shared entries over inactive existing entries")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(false, false, true, false),
+		KnownFileCollisionDecision::AdoptIncoming);
+}
+
+TEST_CASE("Known-file collision seam adopts incoming downloading entries over inactive existing entries")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(false, false, false, true),
+		KnownFileCollisionDecision::AdoptIncoming);
+}
+
+TEST_CASE("Known-file collision seam keeps existing entries when both sides are inactive")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(false, false, false, false),
+		KnownFileCollisionDecision::KeepExisting);
+}
+
+TEST_CASE("Known-file collision seam keeps existing live entries even when incoming is live too")
+{
+	CHECK_EQ(
+		ResolveKnownFileCollision(true, false, false, true),
+		KnownFileCollisionDecision::KeepExisting);
+	CHECK_EQ(
+		ResolveKnownFileCollision(false, true, true, false),
+		KnownFileCollisionDecision::KeepExisting);
+}
+
 TEST_CASE("Known-file progress seam posts only for matching known-file owners")
 {
 	CHECK(IsCompatibleKnownFileProgressOwner(true, 1024u, 1024u));

@@ -95,6 +95,9 @@
       <IncrementalLink>true</IncrementalLink>
       <SubSystem>Console</SubSystem>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>manifests\emule-tests.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
@@ -118,6 +121,9 @@
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Console</SubSystem>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>manifests\emule-tests.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(AppRoot)\srchybrid\kademlia\utils\FastKad.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.cpp') and Exists('$(VCToolsInstallDir)atlmfc\include\afximpl.h')" />

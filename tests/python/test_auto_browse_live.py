@@ -32,6 +32,14 @@ def test_transfer_acquisition_plan_covers_bootstrap_and_public_queries() -> None
 
 def test_selected_transfer_source_summary_is_compact() -> None:
     module = load_auto_browse_module()
+    sources = [
+        {"userHash": "a"},
+        {"userHash": "b"},
+        {"userHash": "c"},
+        {"userHash": "d"},
+        {"userHash": "e"},
+        {"userHash": "f"},
+    ]
 
     summary = module.summarize_selected_transfer_sources(
         [
@@ -47,14 +55,7 @@ def test_selected_transfer_source_summary_is_compact() -> None:
                         "size": 68082727,
                     },
                     "sources_ready": {
-                        "sources": [
-                            {"userHash": "a"},
-                            {"userHash": "b"},
-                            {"userHash": "c"},
-                            {"userHash": "d"},
-                            {"userHash": "e"},
-                            {"userHash": "f"},
-                        ]
+                        "sources": sources
                     },
                 }
             },
@@ -66,6 +67,49 @@ def test_selected_transfer_source_summary_is_compact() -> None:
     assert summary["source_count"] == 6
     assert len(summary["sources"]) == 5
     assert summary["hash"] == "b05c1075089e1de58a13de1b77ba4b2a"
+
+
+def test_selected_transfer_sources_returns_full_source_list() -> None:
+    module = load_auto_browse_module()
+    sources = [{"userHash": "a"}, {"userHash": "b"}, {"userHash": "c"}, {"userHash": "d"}, {"userHash": "e"}, {"userHash": "f"}]
+
+    selected_sources = module.get_selected_transfer_sources([{"selected": {"sources_ready": {"sources": sources}}}])
+
+    assert selected_sources == sources
+
+
+def test_source_browse_candidates_prefer_reachable_emule_sources() -> None:
+    module = load_auto_browse_module()
+
+    candidates = module.iter_source_browse_candidates(
+        [
+            {"userHash": "0" * 32, "ip": "", "port": 0},
+            {
+                "userHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "ip": "",
+                "port": 4662,
+                "lowId": True,
+                "clientSoftware": "",
+            },
+            {
+                "userHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "ip": "1.2.3.4",
+                "port": 4662,
+                "lowId": False,
+                "clientSoftware": "eMule v0.70b",
+            },
+            {
+                "userHash": "cccccccccccccccccccccccccccccccc",
+                "ip": "1.2.3.5",
+                "port": 4662,
+                "viewSharedFiles": False,
+            },
+        ]
+    )
+
+    assert len(candidates) == 2
+    assert candidates[0]["selector"]["userHash"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert candidates[0]["selector"]["ip"] == "1.2.3.4"
 
 
 def test_record_phase_writes_partial_report(tmp_path: Path, capsys) -> None:

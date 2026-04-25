@@ -278,6 +278,181 @@ def summarize_selected_transfer_sources(acquisition_attempts: list[dict[str, obj
     }
 
 
+def get_selected_transfer_sources(acquisition_attempts: list[dict[str, object]]) -> list[object]:
+    """Returns the full source list for the selected fallback transfer."""
+
+    for item in acquisition_attempts:
+        selected = item.get("selected")
+        if not isinstance(selected, dict):
+            continue
+        sources_ready = selected.get("sources_ready")
+        if isinstance(sources_ready, dict) and isinstance(sources_ready.get("sources"), list):
+            return list(sources_ready["sources"])
+    return []
+
+
+def is_valid_source_user_hash(value: object) -> bool:
+    """Reports whether one source user hash is useful as a stable selector."""
+
+    if not isinstance(value, str):
+        return False
+    text = value.strip().lower()
+    return len(text) == 32 and text != "0" * 32 and all(ch in "0123456789abcdef" for ch in text)
+
+
+def build_source_browse_selector(source: dict[str, Any]) -> dict[str, object] | None:
+    """Builds the selector accepted by the REST source-browse endpoint."""
+
+    selector: dict[str, object] = {}
+    if is_valid_source_user_hash(source.get("userHash")):
+        selector["userHash"] = str(source["userHash"]).strip().lower()
+
+    ip = str(source.get("ip") or "").strip()
+    port = source.get("port")
+    if ip and isinstance(port, int) and 0 < port <= 65535:
+        selector["ip"] = ip
+        selector["port"] = port
+
+    return selector or None
+
+
+def iter_source_browse_candidates(sources: list[object]) -> list[dict[str, object]]:
+    """Returns stable unique source-browse candidates, preferring reachable eMule peers."""
+
+    candidates: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    seen: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        if source.get("viewSharedFiles") is False:
+            continue
+        selector = build_source_browse_selector(source)
+        if selector is None:
+            continue
+        selector_key = json.dumps(selector, sort_keys=True)
+        if selector_key in seen:
+            continue
+        seen.add(selector_key)
+        candidates.append(
+            (
+                (
+                    not bool(source.get("ip")),
+                    bool(source.get("lowId")),
+                    "emule" not in str(source.get("clientSoftware") or "").lower(),
+                ),
+                {
+                    "selector": selector,
+                    "source": source,
+                },
+            )
+        )
+
+    candidates.sort(key=lambda item: item[0])
+    return [candidate for _key, candidate in candidates]
+
+
+def request_source_browse(
+    base_url: str,
+    api_key: str,
+    transfer_hash: str,
+    selector: dict[str, object],
+) -> dict[str, Any]:
+    """Requests one manual shared-file browse against a selected transfer source."""
+
+    result = rest_smoke.http_request(
+        base_url,
+        f"/api/v1/transfers/{transfer_hash}/sources/browse",
+        method="POST",
+        api_key=api_key,
+        json_body=selector,
+    )
+    return require_json_object(result, 200)
+
+
+def wait_for_source_browse_results(
+    base_url: str,
+    api_key: str,
+    search_id: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Waits for one manual shared-file browse search tab to receive rows."""
+
+    deadline = time.time() + timeout_seconds
+    observations: list[dict[str, object]] = []
+    while time.time() < deadline:
+        payload = fetch_search_results(base_url, api_key, search_id)
+        rows = payload.get("results")
+        assert isinstance(rows, list), payload
+        observation = {
+            "observed_at": round(time.time(), 3),
+            "result_count": len(rows),
+        }
+        observations.append(observation)
+        if rows:
+            return {
+                "observations": observations,
+                "search_id": search_id,
+                "result_count": len(rows),
+                "sample_results": rows[:5],
+            }
+        time.sleep(5.0)
+
+    raise RuntimeError(
+        "Timed out waiting for manual source-browse results. "
+        f"Last observations: {observations[-10:]!r}"
+    )
+
+
+def wait_for_source_browse_success(
+    base_url: str,
+    api_key: str,
+    transfer_hash: str,
+    sources: list[object],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Requests shared files from live transfer sources until one returns rows."""
+
+    deadline = time.time() + timeout_seconds
+    attempts: list[dict[str, object]] = []
+    candidates = iter_source_browse_candidates(sources)
+    for candidate in candidates[:12]:
+        remaining = deadline - time.time()
+        if remaining <= 1.0:
+            break
+        selector = candidate["selector"]
+        assert isinstance(selector, dict)
+        attempt: dict[str, object] = {
+            "selector": selector,
+            "source": candidate["source"],
+        }
+        attempts.append(attempt)
+        try:
+            response = request_source_browse(base_url, api_key, transfer_hash, selector)
+            attempt["response"] = response
+            search_id = str(response["search_id"])
+            attempt["results"] = wait_for_source_browse_results(
+                base_url,
+                api_key,
+                search_id,
+                min(60.0, max(1.0, deadline - time.time())),
+            )
+            return {
+                "ok": True,
+                "attempts": attempts,
+                "selected": attempt,
+            }
+        except Exception as exc:
+            attempt["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+
+    raise RuntimeError(
+        "No browse-capable transfer source returned shared-file rows. "
+        f"Candidate count: {len(candidates)}. Last attempts: {attempts[-5:]!r}"
+    )
+
+
 def add_transfer_from_search_result(base_url: str, api_key: str, result_row: dict[str, Any]) -> dict[str, Any]:
     """Adds one transfer from a REST search-result row and returns the created transfer payload."""
 
@@ -622,6 +797,9 @@ def main() -> int:
                         str(add_payload["hash"]),
                         args.source_discovery_timeout_seconds,
                     )
+                    source_rows = selected_attempt["sources_ready"].get("sources")
+                    if not isinstance(source_rows, list) or not iter_source_browse_candidates(source_rows):
+                        raise RuntimeError("Sourced transfer had no source candidates with shared-file browsing enabled.")
                     acquisition_attempts.append(selection)
                     break
                 except Exception as exc:
@@ -653,21 +831,18 @@ def main() -> int:
                 "mode": "fallback-transfer-bootstrap",
             }
             try:
-                record_phase(artifacts_dir, report, "fallback_auto_browse")
-                report["checks"]["auto_browse"] = wait_for_auto_browse_success(
+                record_phase(artifacts_dir, report, "source_browse")
+                selected_transfer = summarize_selected_transfer_sources(acquisition_attempts)
+                selected_sources = get_selected_transfer_sources(acquisition_attempts)
+                report["checks"]["source_browse"] = wait_for_source_browse_success(
                     base_url,
                     args.api_key,
-                    cache_dir,
+                    str(selected_transfer["hash"]),
+                    selected_sources,
                     fallback_timeout,
-                    lambda observation: record_auto_browse_observation(
-                        artifacts_dir,
-                        report,
-                        "fallback_auto_browse_progress",
-                        observation,
-                    ),
                 )
             except RuntimeError as exc:
-                report["checks"]["auto_browse"] = {
+                report["checks"]["source_browse"] = {
                     "ok": False,
                     "timeout_seconds": fallback_timeout,
                     "error": {
@@ -676,14 +851,14 @@ def main() -> int:
                     },
                 }
                 report["checks"]["live_source_availability"] = {
-                    "status": "browse_capability_unavailable",
+                    "status": "shared_file_response_unavailable",
                     "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
                     "blocking": False,
                     "selected_transfer": summarize_selected_transfer_sources(acquisition_attempts),
                 }
                 raise LiveSourceUnavailableError(
-                    "A safe live transfer was acquired, but no browse-capable source produced a "
-                    "remote-browse request or cache file during the fallback observation window."
+                    "A safe live transfer was acquired, but no selected source returned shared-file "
+                    "rows during the source-browse observation window."
                 ) from exc
         report["status"] = "passed"
         record_phase(artifacts_dir, report, "passed")

@@ -456,6 +456,13 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
         f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/sources",
         api_key=api_key,
     )
+    missing_transfer_source_browse = http_request(
+        base_url,
+        f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/sources/browse",
+        method="POST",
+        api_key=api_key,
+        json_body={"userHash": REST_SURFACE_MISSING_HASH},
+    )
     transfer_pause = http_request(
         base_url,
         "/api/v1/transfers/pause",
@@ -525,6 +532,7 @@ def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object
         "filter_status": transfers_by_filter["status"],
         "missing_get": require_error_response(missing_transfer, 404, "NOT_FOUND", message_contains="transfer not found"),
         "missing_sources": require_error_response(missing_transfer_sources, 404, "NOT_FOUND", message_contains="transfer not found"),
+        "missing_source_browse": require_error_response(missing_transfer_source_browse, 404, "NOT_FOUND", message_contains="transfer not found"),
         "pause_missing_item": require_missing_transfer_bulk_result(transfer_pause),
         "resume_missing_item": require_missing_transfer_bulk_result(transfer_resume),
         "stop_missing_item": require_missing_transfer_bulk_result(transfer_stop),

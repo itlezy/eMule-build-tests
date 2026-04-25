@@ -356,6 +356,9 @@ TEST_CASE("Web API maps every current REST route family to a command")
 	CHECK_EQ(route.params["hash"].get<std::string>(), pszHash);
 	assertRoute("GET", "/api/v1/transfers/0123456789abcdef0123456789abcdef/sources", "", "transfers/sources");
 	CHECK_EQ(route.params["hash"].get<std::string>(), pszHash);
+	assertRoute("POST", "/api/v1/transfers/0123456789abcdef0123456789abcdef/sources/browse", R"({"userHash":"fedcba9876543210fedcba9876543210"})", "transfers/source_browse");
+	CHECK_EQ(route.params["hash"].get<std::string>(), pszHash);
+	CHECK_EQ(route.params["userHash"].get<std::string>(), "fedcba9876543210fedcba9876543210");
 	assertRoute("POST", "/api/v1/transfers/0123456789abcdef0123456789abcdef/recheck", R"({})", "transfers/recheck");
 	CHECK_EQ(route.params["hash"].get<std::string>(), pszHash);
 	assertRoute("POST", "/api/v1/transfers/0123456789abcdef0123456789abcdef/priority", R"({"priority":"high"})", "transfers/set_priority");

@@ -78,6 +78,7 @@ Script inventory:
 | `scripts\emule-live-profile-common.py` | internal Python helper | maintained | shared live-profile launch and trace helpers |
 | `scripts\rest-api-smoke.py` | operator-facing Python E2E | maintained | canonical isolated REST live E2E lane |
 | `scripts\auto-browse-live.py` | operator-facing Python E2E | maintained | isolated live auto-browse validation with `hide.me` bind and P2P UPnP |
+| `scripts\preference-ui-e2e.py` | operator-facing Python E2E | maintained | real Preferences dialog coverage for WebServer fields and Tweaks tree controls |
 | `scripts\config-stability-ui-e2e.py` | operator-facing Python E2E | maintained | long `-c` config path, settings save, relaunch, and stability regression |
 | `scripts\shared-files-ui-e2e.py` | operator-facing Python E2E | maintained | real Win32 Shared Files regression |
 | `scripts\startup-profile-scenarios.py` | operator-facing Python E2E | maintained | Chrome Trace startup-profile scenarios |
@@ -122,6 +123,7 @@ Canonical live REST E2E lane:
 - `scripts\rest-api-smoke.py` is the operator-facing entrypoint for the canonical isolated REST live E2E lane
 - the Python runner is intentionally strict pass/fail and owns app resolution, report publication, and latest-report mirroring directly
 - the lane launches `emule.exe` with explicit `-ignoreinstances -c <profile-base>` and enables WebServer REST against one per-run localhost port
+- each run refreshes `server.met` and `nodes.dat` in the isolated profile from `https://emule-security.org/` / `https://upd.emule-security.org/` before launch, and records file sizes plus SHA-256 hashes in the report; `--skip-live-seed-refresh` keeps the checked-in seed files for offline diagnosis
 - the lane requires real server-connect activity, Kad running state, network readiness, and one real live search lifecycle through the first usable network path
 - `-ServerSearchCount <N>` and `-KadSearchCount <N>` upgrade the run into one stricter mixed-network scenario with exact per-network live search counts
 - `-KeepRunning` leaves the launched isolated eMule instance alive after a passing run and forces artifact retention so the profile can be inspected afterward
@@ -135,6 +137,7 @@ Canonical live auto-browse lane:
 - the scenario relies on `Autoconnect=1` in the isolated profile and intentionally does not issue overlapping REST connect requests for eD2K or Kad
 - the scenario first waits for real browse-capable clients to accumulate naturally after server+Kad autoconnect; transfer/source bootstrap is only a fallback if natural auto-browse never starts succeeding
 - the transfer bootstrap path uses the persisted hash `28EAB1A0AB1B9416AAF534E27A234941` first and refuses `.exe` candidates when selecting a downloadable result
+- like the REST smoke lane, each run refreshes `server.met` and `nodes.dat` in the isolated profile from eMule Security unless `--skip-live-seed-refresh` is supplied
 - the lane requires:
   - real eD2K server connectivity
   - Kad running state
@@ -170,6 +173,13 @@ Config-stability live UI regression:
 - the roundtrip scenario edits the real Preferences dialog, saves `OnlineSignature`, verifies `preferences.ini`, relaunches the same long-path profile, and confirms persisted UI state
 - the stress scenario repeats launch, Preferences save, Shared Files activation, and clean shutdown across multiple cycles while recursively sharing the generated robustness tree under `C:\tmp\00_long_paths`
 - each run publishes artifacts and `ui-summary.json` under `reports\config-stability-ui-e2e\...` and refreshes `reports\config-stability-ui-e2e-latest`
+
+Preferences live UI regression:
+
+- `scripts\preference-ui-e2e.py` is the operator-facing entrypoint for the real Preferences dialog regression
+- it launches an isolated profile, opens Preferences, drives the WebServer page fields for max upload size and allowed IPs, then drives the Tweaks advanced tree through real tree selection, checkbox/radio activation, and in-place edit controls
+- the scenario saves through the dialog and asserts `preferences.ini` persistence for crash dumps, log size/buffer/format, performance logging, text editor command, preview small-block policy, chat/session limits, WebServer max upload, and WebServer allowed IPs
+- each run publishes `ui-summary.json` under `reports\preference-ui-e2e\...` and refreshes `reports\preference-ui-e2e-latest`
 
 Startup-profile scenarios:
 

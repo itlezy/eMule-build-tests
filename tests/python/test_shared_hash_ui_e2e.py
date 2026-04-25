@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+
+def load_shared_hash_module():
+    """Loads the hyphenated shared-hash script when Win32 UI helpers are available."""
+
+    pytest.importorskip("win32api")
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "shared-hash-ui-e2e.py"
+    spec = importlib.util.spec_from_file_location("shared_hash_ui_e2e_for_tests", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["shared_hash_ui_e2e_for_tests"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_startup_trace(path: Path, events: list[dict[str, object]]) -> None:
+    """Writes one compact Chrome Trace payload for startup-profile parser tests."""
+
+    path.write_text(json.dumps({"traceEvents": events}), encoding="utf-8")
+
+
+def counter_event(timestamp_us: int, counter_id: str, value_key: str, value: int) -> dict[str, object]:
+    """Builds one Chrome Trace counter event with the stable counter id shape."""
+
+    return {
+        "name": counter_id,
+        "ph": "C",
+        "ts": timestamp_us,
+        "args": {
+            "counter_id": counter_id,
+            value_key: value,
+        },
+    }
+
+
+def phase_event(timestamp_us: int, phase_id: str) -> dict[str, object]:
+    """Builds one Chrome Trace instant phase event with a stable phase id."""
+
+    return {
+        "name": phase_id,
+        "ph": "i",
+        "ts": timestamp_us,
+        "args": {
+            "phase_id": phase_id,
+        },
+    }
+
+
+def test_partial_hash_progress_uses_trace_counters(tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    trace_path = tmp_path / "startup-profile.trace.json"
+    write_startup_trace(
+        trace_path,
+        [
+            counter_event(1000, "shared.hash.completed_files", "files", 1),
+            counter_event(1001, "shared.hash.waiting_queue_depth", "files", 2),
+            counter_event(1002, "shared.hash.currently_hashing", "files", 1),
+        ],
+    )
+
+    summary = module.wait_for_partial_hash_progress(trace_path, expected_count=3, timeout=0.1)
+
+    assert summary == {
+        "completed_files": 1,
+        "expected_count": 3,
+        "waiting_queue_depth": 2,
+        "currently_hashing": 1,
+        "hashing_done_observed": False,
+    }
+
+
+def test_partial_hash_progress_rejects_completed_hashing(tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    trace_path = tmp_path / "startup-profile.trace.json"
+    write_startup_trace(
+        trace_path,
+        [
+            counter_event(1000, "shared.hash.completed_files", "files", 3),
+            phase_event(1001, module.live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="Hashing completed"):
+        module.wait_for_partial_hash_progress(trace_path, expected_count=3, timeout=0.1)
+
+
+def test_configure_profile_upnp_disables_mapping_and_exit_cleanup(tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    preferences_path = config_dir / "preferences.ini"
+    preferences_path.write_text("[eMule]\r\nNick=CodexE2E\r\n", encoding="utf-8")
+
+    module.live_common.configure_profile_upnp(config_dir, enable_upnp=False)
+
+    text = preferences_path.read_text(encoding="utf-8")
+    assert "[UPnP]" in text
+    assert "EnableUPnP=0" in text
+    assert "CloseUPnPOnExit=0" in text

@@ -91,6 +91,56 @@ def patch_ini_value(text: str, key: str, value: str) -> str:
     return f"{text}{suffix}{replacement}\r\n"
 
 
+def upsert_ini_section_value(text: str, section: str, key: str, value: str) -> str:
+    """Upserts one key/value pair inside a simple INI section."""
+
+    section_header = f"[{section}]"
+    lines = text.splitlines()
+    output: list[str] = []
+    inside_target = False
+    inserted = False
+    saw_section = False
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if inside_target and not inserted:
+                output.append(f"{key}={value}")
+                inserted = True
+            inside_target = stripped == section_header
+            saw_section = saw_section or inside_target
+            output.append(raw_line)
+            continue
+
+        if inside_target and raw_line.partition("=")[0].strip().lower() == key.lower():
+            output.append(f"{key}={value}")
+            inserted = True
+            continue
+
+        output.append(raw_line)
+
+    if saw_section:
+        if inside_target and not inserted:
+            output.append(f"{key}={value}")
+    else:
+        if output and output[-1] != "":
+            output.append("")
+        output.append(section_header)
+        output.append(f"{key}={value}")
+
+    return "\r\n".join(output) + "\r\n"
+
+
+def configure_profile_upnp(config_dir: Path, *, enable_upnp: bool, close_on_exit: bool = False) -> None:
+    """Writes deterministic UPnP preferences for one isolated live profile."""
+
+    preferences_path = config_dir / "preferences.ini"
+    text = preferences_path.read_text(encoding="utf-8", errors="ignore")
+    text = upsert_ini_section_value(text, "UPnP", "EnableUPnP", "1" if enable_upnp else "0")
+    text = patch_ini_value(text, "CloseUPnPOnExit", "1" if close_on_exit else "0")
+    preferences_path.write_text(text, encoding="utf-8", newline="\r\n")
+
+
 def parse_ini_values(text: str) -> dict[str, str]:
     """Parses one simple INI text blob into key/value pairs for seed validation."""
 

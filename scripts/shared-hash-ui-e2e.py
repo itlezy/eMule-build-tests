@@ -145,6 +145,7 @@ def prepare_hash_interruption_fixture(
         artifacts_dir=scenario_dir,
         shared_dirs=live_common.enumerate_recursive_directories(shared_root),
     )
+    live_common.configure_profile_upnp(Path(str(fixture["config_dir"])), enable_upnp=False)
     fixture.update(
         {
             "shared_root": live_common.win_path(shared_root.resolve(), trailing_slash=True),
@@ -279,35 +280,61 @@ def open_shared_files_page_snapshot(main_hwnd: int) -> dict[str, object]:
     }
 
 
-def wait_for_partial_visible_shared_files(
-    main_hwnd: int,
-    process_id: int,
-    expected_names: list[str],
+def get_counter_int(counters: list[dict[str, object]], counter_id: str) -> int:
+    """Returns the latest integer value for one startup-profile counter."""
+
+    counter = live_common.get_counter_by_id(counters, counter_id)
+    return int(counter["value"]) if counter is not None else 0
+
+
+def wait_for_partial_hash_progress(
+    startup_profile_path: Path,
     *,
+    expected_count: int,
     timeout: float = 90.0,
 ) -> dict[str, object]:
-    """Waits until hashing published at least one but not all Shared Files rows."""
+    """Waits until shared hashing has completed some files while more work remains."""
 
-    list_hwnd, _static_hwnd = shared_files_ui.open_shared_files_page(main_hwnd)
-    process_handle = shared_files_ui.open_process(process_id)
-    try:
-        expected_count = len(expected_names)
+    deadline = time.time() + timeout
+    last_state: dict[str, object] | str | None = None
+    while time.time() < deadline:
+        if not startup_profile_path.exists():
+            last_state = "startup profile not created yet"
+            time.sleep(0.25)
+            continue
 
-        def resolve() -> dict[str, object] | None:
-            row_count = int(win32gui.SendMessage(list_hwnd, shared_files_ui.LVM_GETITEMCOUNT, 0, 0))
-            if row_count <= 0:
-                return None
-            if row_count >= expected_count:
-                raise RuntimeError("Hashing completed before the partial-results interruption target was reached.")
-            visible_names = shared_files_ui.get_list_names(process_handle, list_hwnd, row_count)
-            return {
-                "row_count": row_count,
-                "visible_names": visible_names,
-            }
+        try:
+            text = startup_profile_path.read_text(encoding="utf-8", errors="ignore")
+            phases = live_common.parse_startup_profile(text)
+            counters = live_common.parse_startup_profile_counters(text)
+        except Exception as exc:
+            last_state = f"{type(exc).__name__}: {exc}"
+            time.sleep(0.25)
+            continue
 
-        return live_common.wait_for(resolve, timeout=timeout, interval=0.25, description="partial Shared Files visibility during hash drain")
-    finally:
-        shared_files_ui.close_process(process_handle)
+        hashing_done_phase = live_common.get_phase_by_id(
+            phases,
+            live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID,
+        )
+        completed_count = get_counter_int(counters, "shared.hash.completed_files")
+        waiting_queue_depth = get_counter_int(counters, "shared.hash.waiting_queue_depth")
+        currently_hashing = get_counter_int(counters, "shared.hash.currently_hashing")
+        last_state = {
+            "completed_files": completed_count,
+            "expected_count": expected_count,
+            "waiting_queue_depth": waiting_queue_depth,
+            "currently_hashing": currently_hashing,
+            "hashing_done_observed": hashing_done_phase is not None,
+        }
+
+        if 0 < completed_count < expected_count and hashing_done_phase is None:
+            return last_state
+        if completed_count >= expected_count or hashing_done_phase is not None:
+            raise RuntimeError("Hashing completed before the partial-results interruption target was reached.")
+
+        time.sleep(0.25)
+
+    raise RuntimeError(f"Timed out waiting for partial shared-hash progress. Last value: {last_state!r}")
 
 
 def wait_for_process_exit(process_id: int, *, timeout: float = 15.0) -> None:
@@ -396,7 +423,7 @@ def run_interruption_scenario(
     interrupt_mode: str,
     require_startup_profile: bool,
     perform_warm_relaunch_after_recovery: bool = False,
-    wait_for_partial_visible_results: bool = False,
+    wait_for_partial_hash_progress_before_interrupt: bool = False,
 ) -> dict[str, object]:
     """Runs one shutdown or hard-kill interruption scenario plus a recovery relaunch."""
 
@@ -433,11 +460,10 @@ def run_interruption_scenario(
 
         hashing_active = wait_for_hashing_active(Path(str(fixture["startup_profile_path"])))
         summary["first_launch_hashing_active"] = hashing_active
-        if wait_for_partial_visible_results:
-            summary["first_launch_partial_visible_before_interrupt"] = wait_for_partial_visible_shared_files(
-                main_hwnd,
-                process_id,
-                list(fixture["expected_visible_names"]),
+        if wait_for_partial_hash_progress_before_interrupt:
+            summary["first_launch_partial_hash_progress_before_interrupt"] = wait_for_partial_hash_progress(
+                Path(str(fixture["startup_profile_path"])),
+                expected_count=int(fixture["expected_row_count"]),
             )
 
         if interrupt_mode == "clean-close":
@@ -1077,7 +1103,7 @@ def run_shared_hash_ui_suite(
                 interrupt_mode=interrupt_mode,
                 require_startup_profile=require_startup_profile,
                 perform_warm_relaunch_after_recovery="warm-relaunch" in name,
-                wait_for_partial_visible_results="partial-results" in name,
+                wait_for_partial_hash_progress_before_interrupt="partial-results" in name,
             )
         combined["scenarios"].append(result)
         if result.get("status") != "passed":

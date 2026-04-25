@@ -14,6 +14,7 @@ from pathlib import Path
 
 WORKSPACE_NAME = "v0.72a"
 DEFAULT_APP_VARIANTS = ("main", "build", "bugfix")
+REPORT_EXCLUDED_DIRECTORY_NAMES = frozenset(("shared-hash-root",))
 
 
 @dataclass(frozen=True)
@@ -203,9 +204,15 @@ def publish_directory_snapshot(source_directory: Path, destination_directory: Pa
         shutil.rmtree(destination_directory)
     destination_directory.mkdir(parents=True, exist_ok=True)
     for entry in source_directory.iterdir():
+        if entry.is_dir() and entry.name in REPORT_EXCLUDED_DIRECTORY_NAMES:
+            continue
         target_path = destination_directory / entry.name
         if entry.is_dir():
-            shutil.copytree(entry, target_path)
+            shutil.copytree(
+                entry,
+                target_path,
+                ignore=shutil.ignore_patterns(*REPORT_EXCLUDED_DIRECTORY_NAMES),
+            )
         else:
             shutil.copy2(entry, target_path)
 

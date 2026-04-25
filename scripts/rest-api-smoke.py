@@ -40,6 +40,7 @@ close_app_cleanly = live_common.close_app_cleanly
 launch_app = live_common.launch_app
 patch_ini_value = live_common.patch_ini_value
 prepare_profile_base = live_common.prepare_profile_base
+upsert_ini_section_value = live_common.upsert_ini_section_value
 wait_for = live_common.wait_for
 wait_for_main_window = live_common.wait_for_main_window
 write_json = live_common.write_json
@@ -57,46 +58,6 @@ def choose_listen_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
-
-
-def upsert_ini_section_value(text: str, section: str, key: str, value: str) -> str:
-    """Upserts one key/value pair inside a simple INI section."""
-
-    section_header = f"[{section}]"
-    lines = text.splitlines()
-    output: list[str] = []
-    inside_target = False
-    inserted = False
-    saw_section = False
-
-    for raw_line in lines:
-        stripped = raw_line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            if inside_target and not inserted:
-                output.append(f"{key}={value}")
-                inserted = True
-            inside_target = stripped == section_header
-            saw_section = saw_section or inside_target
-            output.append(raw_line)
-            continue
-
-        if inside_target and raw_line.partition("=")[0].strip().lower() == key.lower():
-            output.append(f"{key}={value}")
-            inserted = True
-            continue
-
-        output.append(raw_line)
-
-    if saw_section:
-        if inside_target and not inserted:
-            output.append(f"{key}={value}")
-    else:
-        if output and output[-1] != "":
-            output.append("")
-        output.append(section_header)
-        output.append(f"{key}={value}")
-
-    return "\r\n".join(output) + "\r\n"
 
 
 def configure_webserver_profile(
@@ -143,6 +104,7 @@ def configure_webserver_profile(
     ):
         text = upsert_ini_section_value(text, "WebServer", key, value)
     text = upsert_ini_section_value(text, "UPnP", "EnableUPnP", "1" if enable_upnp else "0")
+    text = patch_ini_value(text, "CloseUPnPOnExit", "0")
     preferences_path.write_text(text, encoding="utf-8", newline="\r\n")
 
 

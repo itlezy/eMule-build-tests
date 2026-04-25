@@ -51,6 +51,29 @@ NAT_BACKEND_ATTEMPT_PREFIX = "Attempting NAT mapping backend "
 UPNP_IGD_BACKEND_NAME = "UPnP IGD (MiniUPnP)"
 PCP_NATPMP_BACKEND_NAME = "PCP/NAT-PMP"
 LIVE_NETWORK_UNAVAILABLE_EXIT_CODE = 2
+REST_SURFACE_TEST_SERVER = {
+    "addr": "192.0.2.254",
+    "port": 4669,
+    "name": "REST surface smoke disposable",
+}
+REST_SURFACE_MISSING_HASH = "0123456789abcdef0123456789abcdef"
+REST_PREFERENCE_KEYS = {
+    "maxUploadKiB",
+    "maxDownloadKiB",
+    "maxConnections",
+    "maxConPerFive",
+    "maxSourcesPerFile",
+    "uploadClientDataRate",
+    "maxUploadSlots",
+    "queueSize",
+    "autoConnect",
+    "newAutoUp",
+    "newAutoDown",
+    "creditSystem",
+    "safeServerConnect",
+    "networkKademlia",
+    "networkEd2k",
+}
 
 
 class LiveNetworkUnavailableError(RuntimeError):
@@ -203,6 +226,32 @@ def require_json_object(result: dict[str, object], expected_status: int) -> dict
     return result["json"]
 
 
+def require_json_array(result: dict[str, object], expected_status: int) -> list[Any]:
+    """Asserts one REST response is the expected JSON array payload."""
+
+    assert int(result["status"]) == expected_status, compact_http_result(result)
+    assert isinstance(result["json"], list), compact_http_result(result)
+    return list(result["json"])
+
+
+def require_error_response(
+    result: dict[str, object],
+    expected_status: int,
+    expected_code: str,
+    *,
+    message_contains: str | None = None,
+) -> dict[str, Any]:
+    """Asserts one REST error response carries the stable JSON error envelope."""
+
+    payload = require_json_object(result, expected_status)
+    assert payload.get("error") == expected_code, compact_http_result(result)
+    message = payload.get("message")
+    assert isinstance(message, str), compact_http_result(result)
+    if message_contains is not None:
+        assert message_contains in message, compact_http_result(result)
+    return payload
+
+
 def get_app_process_id(app: object) -> int | None:
     """Returns the launched process id when pywinauto exposes it."""
 
@@ -333,6 +382,202 @@ def wait_for_upnp_backend_order(base_url: str, api_key: str, timeout_seconds: fl
         return assert_upnp_backend_order(list(result["json"]))
 
     return wait_for(resolve, timeout=timeout_seconds, interval=0.5, description="UPnP NAT backend order")
+
+
+def exercise_rest_surface_smoke(base_url: str, api_key: str) -> dict[str, object]:
+    """Exercises low-risk REST endpoints that do not depend on external live peers."""
+
+    surface: dict[str, object] = {}
+
+    preferences = http_request(base_url, "/api/v1/app/preferences", api_key=api_key)
+    preference_payload = require_json_object(preferences, 200)
+    missing_preference_keys = sorted(REST_PREFERENCE_KEYS.difference(preference_payload.keys()))
+    assert not missing_preference_keys, missing_preference_keys
+    surface["app_preferences_get"] = {
+        "status": preferences["status"],
+        "keys": sorted(preference_payload.keys()),
+    }
+
+    invalid_preference = http_request(
+        base_url,
+        "/api/v1/app/preferences",
+        method="POST",
+        api_key=api_key,
+        json_body={"unsupportedPreference": True},
+    )
+    surface["app_preferences_invalid"] = {
+        "status": invalid_preference["status"],
+        "error": require_error_response(
+            invalid_preference,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="unsupported preference key",
+        ),
+    }
+
+    safe_preference_update = {
+        "safeServerConnect": bool(preference_payload["safeServerConnect"]),
+    }
+    preference_set = http_request(
+        base_url,
+        "/api/v1/app/preferences",
+        method="POST",
+        api_key=api_key,
+        json_body=safe_preference_update,
+    )
+    preference_set_payload = require_json_object(preference_set, 200)
+    assert preference_set_payload.get("ok") is True
+    surface["app_preferences_set_noop"] = {
+        "status": preference_set["status"],
+        "updated": safe_preference_update,
+    }
+
+    transfers = http_request(base_url, "/api/v1/transfers", api_key=api_key)
+    transfer_rows = require_json_array(transfers, 200)
+    transfers_by_filter = http_request(base_url, "/api/v1/transfers?filter=downloading&category=0", api_key=api_key)
+    require_json_array(transfers_by_filter, 200)
+    missing_transfer = http_request(base_url, f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}", api_key=api_key)
+    missing_transfer_sources = http_request(
+        base_url,
+        f"/api/v1/transfers/{REST_SURFACE_MISSING_HASH}/sources",
+        api_key=api_key,
+    )
+    transfer_pause = http_request(
+        base_url,
+        "/api/v1/transfers/pause",
+        method="POST",
+        api_key=api_key,
+        json_body={"hashes": [REST_SURFACE_MISSING_HASH]},
+    )
+    transfer_pause_payload = require_json_object(transfer_pause, 200)
+    assert isinstance(transfer_pause_payload.get("results"), list)
+    assert transfer_pause_payload["results"] and transfer_pause_payload["results"][0].get("ok") is False
+    transfer_delete_bad = http_request(
+        base_url,
+        "/api/v1/transfers/delete",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
+    surface["transfers"] = {
+        "list_count": len(transfer_rows),
+        "list_status": transfers["status"],
+        "filter_status": transfers_by_filter["status"],
+        "missing_get": require_error_response(missing_transfer, 404, "NOT_FOUND", message_contains="transfer not found"),
+        "missing_sources": require_error_response(missing_transfer_sources, 404, "NOT_FOUND", message_contains="transfer not found"),
+        "pause_missing_item": transfer_pause_payload["results"][0],
+        "delete_bad_payload": require_error_response(
+            transfer_delete_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="hashes must be a string array",
+        ),
+    }
+
+    upload_list = http_request(base_url, "/api/v1/uploads/list", api_key=api_key)
+    upload_queue = http_request(base_url, "/api/v1/uploads/queue", api_key=api_key)
+    upload_remove_bad = http_request(
+        base_url,
+        "/api/v1/uploads/remove",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
+    surface["uploads"] = {
+        "list_count": len(require_json_array(upload_list, 200)),
+        "queue_count": len(require_json_array(upload_queue, 200)),
+        "remove_bad_payload": require_error_response(
+            upload_remove_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="userHash or ip and port are required",
+        ),
+    }
+
+    shared = http_request(base_url, "/api/v1/shared/list", api_key=api_key)
+    shared_rows = require_json_array(shared, 200)
+    missing_shared = http_request(base_url, f"/api/v1/shared/{REST_SURFACE_MISSING_HASH}", api_key=api_key)
+    shared_remove_bad = http_request(
+        base_url,
+        "/api/v1/shared/remove",
+        method="POST",
+        api_key=api_key,
+        json_body={},
+    )
+    surface["shared"] = {
+        "list_count": len(shared_rows),
+        "missing_get": require_error_response(missing_shared, 404, "NOT_FOUND", message_contains="shared file not found"),
+        "remove_bad_payload": require_error_response(
+            shared_remove_bad,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="exactly one of hash or path is required",
+        ),
+    }
+
+    missing_route = http_request(base_url, "/api/v1/not-a-route", api_key=api_key)
+    invalid_method = http_request(base_url, "/api/v1/app/version", method="POST", api_key=api_key, json_body={})
+    invalid_json_shape = http_request(
+        base_url,
+        "/api/v1/search/start",
+        method="POST",
+        api_key=api_key,
+        json_body=[],
+    )
+    surface["errors"] = {
+        "missing_route": require_error_response(missing_route, 404, "NOT_FOUND", message_contains="API route not found"),
+        "invalid_method": require_error_response(
+            invalid_method,
+            404,
+            "NOT_FOUND",
+            message_contains="API route not found",
+        ),
+        "invalid_json_shape": require_error_response(
+            invalid_json_shape,
+            400,
+            "INVALID_ARGUMENT",
+            message_contains="JSON body must be an object",
+        ),
+    }
+
+    server_payload = dict(REST_SURFACE_TEST_SERVER)
+    server_add = http_request(
+        base_url,
+        "/api/v1/servers/add",
+        method="POST",
+        api_key=api_key,
+        json_body=server_payload,
+    )
+    server_add_payload = require_json_object(server_add, 200)
+    servers_after_add = http_request(base_url, "/api/v1/servers/list", api_key=api_key)
+    servers_after_add_rows = require_json_array(servers_after_add, 200)
+    added_servers = [
+        row
+        for row in servers_after_add_rows
+        if isinstance(row, dict)
+        and str(row.get("address") or "") == REST_SURFACE_TEST_SERVER["addr"]
+        and int(row.get("port") or 0) == REST_SURFACE_TEST_SERVER["port"]
+    ]
+    assert added_servers, compact_http_result(servers_after_add)
+    server_remove = http_request(
+        base_url,
+        "/api/v1/servers/remove",
+        method="POST",
+        api_key=api_key,
+        json_body={
+            "addr": REST_SURFACE_TEST_SERVER["addr"],
+            "port": REST_SURFACE_TEST_SERVER["port"],
+        },
+    )
+    server_remove_payload = require_json_object(server_remove, 200)
+    surface["servers_mutation"] = {
+        "add": compact_http_result(server_add),
+        "added_server": server_add_payload,
+        "remove": compact_http_result(server_remove),
+        "removed_server": server_remove_payload,
+    }
+
+    return surface
 
 
 def wait_for_server_activity(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
@@ -1048,6 +1293,9 @@ def main() -> int:
         assert "connected" in stats["json"]
         report["checks"]["stats_global"] = compact_http_result(stats)
 
+        current_phase = set_phase(report, "rest_surface")
+        report["checks"]["rest_surface"] = exercise_rest_surface_smoke(base_url, args.api_key)
+
         current_phase = set_phase(report, "servers_list")
         servers = http_request(base_url, "/api/v1/servers/list", api_key=args.api_key)
         assert servers["status"] == 200
@@ -1098,6 +1346,12 @@ def main() -> int:
         kad_running = wait_for_kad_running(base_url, args.api_key, args.kad_running_timeout_seconds)
         report["checks"]["kad_running"] = kad_running
 
+        current_phase = set_phase(report, "kad_recheck_firewall")
+        kad_recheck = http_request(base_url, "/api/v1/kad/recheck_firewall", method="POST", api_key=args.api_key, json_body={})
+        assert kad_recheck["status"] == 200
+        assert isinstance(kad_recheck["json"], dict)
+        report["checks"]["kad_recheck_firewall"] = compact_http_result(kad_recheck)
+
         current_phase = set_phase(report, "network_ready")
         live_network = wait_for_requested_networks(
             base_url,
@@ -1137,6 +1391,12 @@ def main() -> int:
         assert isinstance(log_entries["json"], list)
         assert len(log_entries["json"]) <= 1
         report["checks"]["log_limit"] = compact_http_result(log_entries)
+
+        current_phase = set_phase(report, "servers_disconnect")
+        server_disconnect = http_request(base_url, "/api/v1/servers/disconnect", method="POST", api_key=args.api_key, json_body={})
+        assert server_disconnect["status"] == 200
+        assert isinstance(server_disconnect["json"], dict)
+        report["checks"]["servers_disconnect"] = compact_http_result(server_disconnect)
 
         current_phase = set_phase(report, "kad_disconnect")
         kad_disconnect = http_request(base_url, "/api/v1/kad/disconnect", method="POST", api_key=args.api_key, json_body={})

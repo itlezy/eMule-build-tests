@@ -50,6 +50,11 @@ DEFAULT_KAD_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
 NAT_BACKEND_ATTEMPT_PREFIX = "Attempting NAT mapping backend "
 UPNP_IGD_BACKEND_NAME = "UPnP IGD (MiniUPnP)"
 PCP_NATPMP_BACKEND_NAME = "PCP/NAT-PMP"
+LIVE_NETWORK_UNAVAILABLE_EXIT_CODE = 2
+
+
+class LiveNetworkUnavailableError(RuntimeError):
+    """Raised when live seed files load but no external network candidate connects."""
 
 
 def choose_listen_port() -> int:
@@ -680,7 +685,7 @@ def connect_to_live_server(
         if isinstance(row, dict) and row.get("address") and row.get("port")
     ]
     if not candidates:
-        raise AssertionError("No server candidates were available for live connect attempts.")
+        raise LiveNetworkUnavailableError("No server candidates were available for live connect attempts.")
 
     deadline = time.time() + timeout_seconds
     attempts: list[dict[str, object]] = []
@@ -732,7 +737,7 @@ def connect_to_live_server(
         if not bool(settle.get("aborted")):
             break
 
-    raise AssertionError(f"Failed to connect to any seeded server candidate. Attempts: {attempts!r}")
+    raise LiveNetworkUnavailableError(f"Failed to connect to any seeded server candidate. Attempts: {attempts!r}")
 
 
 def wait_for_search_observation(
@@ -889,7 +894,7 @@ def set_phase(report: dict[str, object], phase: str) -> str:
     return phase
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace-root")
     parser.add_argument("--app-root")
@@ -1154,13 +1159,21 @@ def main() -> None:
         current_phase = set_phase(report, "completed")
         report["status"] = "passed"
     except Exception as exc:
-        pending_error = exc
-        report["status"] = "failed"
-        report["failed_phase"] = current_phase
-        report["error"] = {
-            "type": type(exc).__name__,
-            "message": str(exc),
-        }
+        if isinstance(exc, LiveNetworkUnavailableError):
+            report["status"] = "inconclusive"
+            report["inconclusive_phase"] = current_phase
+            report["inconclusive_reason"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+        else:
+            pending_error = exc
+            report["status"] = "failed"
+            report["failed_phase"] = current_phase
+            report["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
     finally:
         cleanup = report["cleanup"]
         assert isinstance(cleanup, dict)
@@ -1199,6 +1212,13 @@ def main() -> None:
     if pending_error is not None:
         raise pending_error
 
+    if report["status"] == "inconclusive":
+        print(
+            "REST API live E2E was inconclusive because no seeded live server candidate connected. "
+            f"Report directory: {paths.run_report_dir}"
+        )
+        return LIVE_NETWORK_UNAVAILABLE_EXIT_CODE
+
     print(f"REST API live E2E {'passed' if report['status'] == 'passed' else 'failed'}. Report directory: {paths.run_report_dir}")
     if args.keep_running and str(report.get("status")) == "passed":
         cleanup = report.get("cleanup")
@@ -1207,7 +1227,8 @@ def main() -> None:
                 "eMule left running. PID: "
                 f"{cleanup.get('process_id')} Profile: {cleanup.get('profile_base')}"
             )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

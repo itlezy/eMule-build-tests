@@ -41,6 +41,7 @@ BOOTSTRAP_SEARCH_METHODS = ("server", "global", "automatic", "kad")
 FALLBACK_SEARCH_METHODS = ("server", "global", "kad", "automatic")
 LIVE_SOURCE_UNAVAILABLE_EXIT_CODE = 2
 PREFERRED_SERVER_ADDRESSES = ("91.148.135.252", "45.82.80.155", "91.148.135.254")
+DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS = 300.0
 
 
 class LiveSourceUnavailableError(RuntimeError):
@@ -206,6 +207,36 @@ def build_transfer_acquisition_plan() -> list[tuple[str, list[str]]]:
     return plan
 
 
+def summarize_selected_transfer_sources(acquisition_attempts: list[dict[str, object]]) -> dict[str, object]:
+    """Extracts a compact source summary from the selected fallback transfer."""
+
+    for item in acquisition_attempts:
+        selected = item.get("selected")
+        if not isinstance(selected, dict):
+            continue
+        result_row = selected.get("result")
+        sources_ready = selected.get("sources_ready")
+        sources: list[object] = []
+        if isinstance(sources_ready, dict) and isinstance(sources_ready.get("sources"), list):
+            sources = list(sources_ready["sources"])
+        summary: dict[str, object] = {
+            "query": selected.get("query"),
+            "method": selected.get("method"),
+            "search_id": selected.get("search_id"),
+            "source_count": len(sources),
+            "sources": sources[:5],
+        }
+        if isinstance(result_row, dict):
+            summary["hash"] = result_row.get("hash")
+            summary["name"] = result_row.get("name")
+            summary["size"] = result_row.get("size")
+        return summary
+    return {
+        "source_count": 0,
+        "sources": [],
+    }
+
+
 def add_transfer_from_search_result(base_url: str, api_key: str, result_row: dict[str, Any]) -> dict[str, Any]:
     """Adds one transfer from a REST search-result row and returns the created transfer payload."""
 
@@ -355,6 +386,11 @@ def main() -> int:
     parser.add_argument("--search-observation-timeout-seconds", type=float, default=120.0)
     parser.add_argument("--auto-browse-timeout-seconds", type=float, default=1800.0)
     parser.add_argument("--natural-auto-browse-timeout-seconds", type=float, default=900.0)
+    parser.add_argument(
+        "--fallback-auto-browse-timeout-seconds",
+        type=float,
+        default=DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS,
+    )
     parser.add_argument("--seed-download-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--skip-live-seed-refresh", action="store_true")
     args = parser.parse_args()
@@ -428,6 +464,7 @@ def main() -> int:
                 "source_discovery_seconds": args.source_discovery_timeout_seconds,
                 "natural_auto_browse_seconds": args.natural_auto_browse_timeout_seconds,
                 "auto_browse_seconds": args.auto_browse_timeout_seconds,
+                "fallback_auto_browse_seconds": args.fallback_auto_browse_timeout_seconds,
                 "seed_download_seconds": args.seed_download_timeout_seconds,
             },
         },
@@ -538,15 +575,36 @@ def main() -> int:
                 )
 
             remaining_timeout = max(1.0, args.auto_browse_timeout_seconds - args.natural_auto_browse_timeout_seconds)
-            report["checks"]["auto_browse"] = wait_for_auto_browse_success(
-                base_url,
-                args.api_key,
-                cache_dir,
-                remaining_timeout,
-            )
+            fallback_timeout = max(1.0, min(args.fallback_auto_browse_timeout_seconds, remaining_timeout))
             report["checks"]["bootstrap_strategy"] = {
                 "mode": "fallback-transfer-bootstrap",
             }
+            try:
+                report["checks"]["auto_browse"] = wait_for_auto_browse_success(
+                    base_url,
+                    args.api_key,
+                    cache_dir,
+                    fallback_timeout,
+                )
+            except RuntimeError as exc:
+                report["checks"]["auto_browse"] = {
+                    "ok": False,
+                    "timeout_seconds": fallback_timeout,
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                }
+                report["checks"]["live_source_availability"] = {
+                    "status": "browse_capability_unavailable",
+                    "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
+                    "blocking": False,
+                    "selected_transfer": summarize_selected_transfer_sources(acquisition_attempts),
+                }
+                raise LiveSourceUnavailableError(
+                    "A safe live transfer was acquired, but no browse-capable source produced a "
+                    "remote-browse request or cache file during the fallback observation window."
+                ) from exc
         report["status"] = "passed"
     except Exception as exc:
         if isinstance(exc, LiveSourceUnavailableError):
@@ -597,7 +655,7 @@ def main() -> int:
 
     if report["status"] == "inconclusive":
         print(
-            "Auto-browse live validation was inconclusive because no safe sourced transfer was available. "
+            "Auto-browse live validation was inconclusive because no browse-capable live source was available. "
             f"Report directory: {paths.run_report_dir}"
         )
         return LIVE_SOURCE_UNAVAILABLE_EXIT_CODE

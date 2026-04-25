@@ -52,3 +52,11 @@ def test_nat_backend_order_requires_attempts() -> None:
 
     with pytest.raises(AssertionError, match="No NAT mapping backend attempts"):
         module.assert_upnp_backend_order([{"message": "eMule Version 0.72a x64 ready"}])
+
+
+def test_live_server_unavailable_is_inconclusive_exit_code() -> None:
+    module = load_rest_api_smoke_module()
+
+    assert module.LIVE_NETWORK_UNAVAILABLE_EXIT_CODE == 2
+    with pytest.raises(module.LiveNetworkUnavailableError, match="No server candidates"):
+        module.connect_to_live_server("http://127.0.0.1:1", "api-key", [], 1.0)

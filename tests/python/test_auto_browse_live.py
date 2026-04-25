@@ -27,6 +27,7 @@ def test_transfer_acquisition_plan_covers_bootstrap_and_public_queries() -> None
     assert [query for query, _methods in plan[1:]] == list(module.FALLBACK_SEARCH_QUERIES)
     assert all("server" in methods and "kad" in methods for _query, methods in plan)
     assert module.LIVE_SOURCE_UNAVAILABLE_EXIT_CODE == 2
+    assert module.DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS < module.DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS
 
 
 def test_selected_transfer_source_summary_is_compact() -> None:
@@ -65,3 +66,39 @@ def test_selected_transfer_source_summary_is_compact() -> None:
     assert summary["source_count"] == 6
     assert len(summary["sources"]) == 5
     assert summary["hash"] == "b05c1075089e1de58a13de1b77ba4b2a"
+
+
+def test_record_phase_writes_partial_report(tmp_path: Path, capsys) -> None:
+    module = load_auto_browse_module()
+    report: dict[str, object] = {"status": "failed"}
+
+    module.record_phase(tmp_path, report, "network_ready")
+
+    assert report["current_phase"] == "network_ready"
+    assert report["phase_history"] and report["phase_history"][0]["phase"] == "network_ready"
+    assert (tmp_path / "result.partial.json").is_file()
+    assert "auto-browse-live phase: network_ready" in capsys.readouterr().out
+
+
+def test_record_auto_browse_observation_keeps_recent_partial_state(tmp_path: Path) -> None:
+    module = load_auto_browse_module()
+    report: dict[str, object] = {"checks": {}}
+
+    for index in range(25):
+        module.record_auto_browse_observation(
+            tmp_path,
+            report,
+            "natural_auto_browse_progress",
+            {
+                "observed_at": float(index),
+                "auto_count": 0,
+                "success_count": 0,
+                "cache_files": [],
+            },
+        )
+
+    progress = report["checks"]["natural_auto_browse_progress"]
+    assert len(progress["observations"]) == 20
+    assert progress["observations"][0]["observed_at"] == 5.0
+    assert progress["last_observation"]["observed_at"] == 24.0
+    assert (tmp_path / "result.partial.json").is_file()

@@ -9,7 +9,7 @@ import sys
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 def load_local_module(module_name: str, filename: str):
@@ -41,6 +41,7 @@ BOOTSTRAP_SEARCH_METHODS = ("server", "global", "automatic", "kad")
 FALLBACK_SEARCH_METHODS = ("server", "global", "kad", "automatic")
 LIVE_SOURCE_UNAVAILABLE_EXIT_CODE = 2
 PREFERRED_SERVER_ADDRESSES = ("91.148.135.252", "45.82.80.155", "91.148.135.254")
+DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS = 180.0
 DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS = 300.0
 
 
@@ -66,6 +67,46 @@ def require_json_object(result: dict[str, object], expected_status: int) -> dict
     payload = result.get("json")
     assert isinstance(payload, dict), compact_http_result(result)
     return payload
+
+
+def checkpoint_report(artifacts_dir: Path, report: dict[str, object]) -> None:
+    """Persists best-effort live progress so interrupted runs keep diagnostic context."""
+
+    try:
+        write_json(artifacts_dir / "result.partial.json", report)
+    except Exception as exc:  # pragma: no cover - diagnostics must not mask the live failure
+        (artifacts_dir / "result.partial.write-error.txt").write_text(repr(exc), encoding="utf-8")
+
+
+def record_phase(artifacts_dir: Path, report: dict[str, object], phase: str) -> None:
+    """Records one auto-browse live phase transition and flushes a partial report."""
+
+    report["current_phase"] = phase
+    history = report.setdefault("phase_history", [])
+    assert isinstance(history, list)
+    history.append({"phase": phase, "entered_at": round(time.time(), 3)})
+    print(f"auto-browse-live phase: {phase}", flush=True)
+    checkpoint_report(artifacts_dir, report)
+
+
+def record_auto_browse_observation(
+    artifacts_dir: Path,
+    report: dict[str, object],
+    check_name: str,
+    observation: dict[str, object],
+) -> None:
+    """Stores the newest auto-browse polling state in the partial report."""
+
+    checks = report.setdefault("checks", {})
+    assert isinstance(checks, dict)
+    check = checks.setdefault(check_name, {"observations": []})
+    assert isinstance(check, dict)
+    observations = check.setdefault("observations", [])
+    assert isinstance(observations, list)
+    observations.append(observation)
+    del observations[:-20]
+    check["last_observation"] = observation
+    checkpoint_report(artifacts_dir, report)
 
 
 def get_tooling_bind_updater(paths: harness_cli_common.HarnessRunPaths) -> Path:
@@ -285,6 +326,7 @@ def wait_for_auto_browse_success(
     api_key: str,
     cache_dir: Path,
     timeout_seconds: float,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     """Waits for one real auto-browse session to log success and persist cache files."""
 
@@ -305,14 +347,20 @@ def wait_for_auto_browse_success(
         success_lines = [message for message in messages if message.startswith("Cached ") and " shared files from " in message]
         cache_files = sorted(path.name for path in cache_dir.glob("*.browsecache"))
 
-        observations.append(
-            {
-                "observed_at": round(time.time(), 3),
-                "auto_count": len(auto_lines),
-                "success_count": len(success_lines),
-                "cache_files": cache_files,
-            }
+        observation = {
+            "observed_at": round(time.time(), 3),
+            "auto_count": len(auto_lines),
+            "success_count": len(success_lines),
+            "cache_files": cache_files,
+        }
+        observations.append(observation)
+        print(
+            "auto-browse-live observation: "
+            f"auto={len(auto_lines)} success={len(success_lines)} cache_files={len(cache_files)}",
+            flush=True,
         )
+        if progress_callback is not None:
+            progress_callback(observation)
 
         if auto_lines and success_lines and cache_files:
             return {
@@ -335,11 +383,18 @@ def try_wait_for_auto_browse_success(
     api_key: str,
     cache_dir: Path,
     timeout_seconds: float,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     """Attempts to wait for one automatic browse success and reports timeout state without raising."""
 
     try:
-        success = wait_for_auto_browse_success(base_url, api_key, cache_dir, timeout_seconds)
+        success = wait_for_auto_browse_success(
+            base_url,
+            api_key,
+            cache_dir,
+            timeout_seconds,
+            progress_callback,
+        )
         return {
             "ok": True,
             "success": success,
@@ -385,7 +440,11 @@ def main() -> int:
     parser.add_argument("--source-discovery-timeout-seconds", type=float, default=600.0)
     parser.add_argument("--search-observation-timeout-seconds", type=float, default=120.0)
     parser.add_argument("--auto-browse-timeout-seconds", type=float, default=1800.0)
-    parser.add_argument("--natural-auto-browse-timeout-seconds", type=float, default=900.0)
+    parser.add_argument(
+        "--natural-auto-browse-timeout-seconds",
+        type=float,
+        default=DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS,
+    )
     parser.add_argument(
         "--fallback-auto-browse-timeout-seconds",
         type=float,
@@ -471,15 +530,19 @@ def main() -> int:
         "checks": {},
         "cleanup": {},
     }
+    record_phase(artifacts_dir, report, "prepared")
 
     try:
+        record_phase(artifacts_dir, report, "launch")
         app = launch_app(paths.app_exe, Path(profile["profile_base"]))
         report["launched_process_id"] = wait_for_process_id(app)
         report["main_window_title"] = wait_for_main_window(app).window_text()
 
+        record_phase(artifacts_dir, report, "rest_ready")
         ready = rest_smoke.wait_for_rest_ready(base_url, args.api_key, args.rest_ready_timeout_seconds)
         report["checks"]["ready"] = compact_http_result(ready)
 
+        record_phase(artifacts_dir, report, "auth")
         no_key = rest_smoke.http_request(base_url, "/api/v1/app/version")
         wrong_key = rest_smoke.http_request(base_url, "/api/v1/app/version", api_key="wrong-key")
         assert int(no_key["status"]) == 401
@@ -489,6 +552,7 @@ def main() -> int:
             "wrong": compact_http_result(wrong_key),
         }
 
+        record_phase(artifacts_dir, report, "servers_list")
         servers = rest_smoke.http_request(base_url, "/api/v1/servers/list", api_key=args.api_key)
         assert int(servers["status"]) == 200, compact_http_result(servers)
         server_rows = servers.get("json")
@@ -499,6 +563,7 @@ def main() -> int:
             "preferred_candidates": ordered_server_rows[:5],
         }
 
+        record_phase(artifacts_dir, report, "network_ready")
         network_ready = rest_smoke.wait_for_requested_networks(
             base_url,
             args.api_key,
@@ -513,11 +578,18 @@ def main() -> int:
         report["checks"]["network_ready"] = network_ready
 
         cache_dir = Path(profile["config_dir"]) / "RemoteBrowseCache"
+        record_phase(artifacts_dir, report, "natural_auto_browse")
         natural_auto_browse = try_wait_for_auto_browse_success(
             base_url,
             args.api_key,
             cache_dir,
             args.natural_auto_browse_timeout_seconds,
+            lambda observation: record_auto_browse_observation(
+                artifacts_dir,
+                report,
+                "natural_auto_browse_progress",
+                observation,
+            ),
         )
         report["checks"]["natural_auto_browse"] = natural_auto_browse
 
@@ -527,6 +599,7 @@ def main() -> int:
                 "mode": "natural-clients-only",
             }
         else:
+            record_phase(artifacts_dir, report, "transfer_acquisition")
             acquisition_attempts: list[dict[str, object]] = []
             for query, methods in build_transfer_acquisition_plan():
                 try:
@@ -580,11 +653,18 @@ def main() -> int:
                 "mode": "fallback-transfer-bootstrap",
             }
             try:
+                record_phase(artifacts_dir, report, "fallback_auto_browse")
                 report["checks"]["auto_browse"] = wait_for_auto_browse_success(
                     base_url,
                     args.api_key,
                     cache_dir,
                     fallback_timeout,
+                    lambda observation: record_auto_browse_observation(
+                        artifacts_dir,
+                        report,
+                        "fallback_auto_browse_progress",
+                        observation,
+                    ),
                 )
             except RuntimeError as exc:
                 report["checks"]["auto_browse"] = {
@@ -606,7 +686,9 @@ def main() -> int:
                     "remote-browse request or cache file during the fallback observation window."
                 ) from exc
         report["status"] = "passed"
+        record_phase(artifacts_dir, report, "passed")
     except Exception as exc:
+        record_phase(artifacts_dir, report, "exception")
         if isinstance(exc, LiveSourceUnavailableError):
             report["status"] = "inconclusive"
             report["inconclusive_reason"] = {
@@ -621,6 +703,7 @@ def main() -> int:
                 "message": str(exc),
             }
     finally:
+        record_phase(artifacts_dir, report, "cleanup_start")
         cleanup = report["cleanup"]
         assert isinstance(cleanup, dict)
         if app is not None:
@@ -645,6 +728,7 @@ def main() -> int:
                             "message": str(exc),
                         }
 
+        record_phase(artifacts_dir, report, "cleanup_done")
         write_json(artifacts_dir / "result.json", report)
         harness_cli_common.publish_run_artifacts(paths)
         harness_cli_common.publish_latest_report(paths)

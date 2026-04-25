@@ -87,7 +87,10 @@ MEM_RESERVE = 0x2000
 MEM_RELEASE = 0x8000
 PAGE_READWRITE = 0x04
 
+TWEAKS_LOGGING_GROUP_LABEL = "Logging & Diagnostics"
+
 TWEAKS_EXPECTED_LABELS = (
+    TWEAKS_LOGGING_GROUP_LABEL,
     "Crash dump creation",
     "Create dump automatically",
     "Maximum log file size [KiB]",
@@ -546,7 +549,7 @@ def run_preference_roundtrip(paths: harness_cli_common.HarnessRunPaths, args: ar
         set_tree_edit(tweaks_tree, "Maximum chat history lines", "321")
         set_tree_edit(tweaks_tree, "Maximum message sessions", "61")
 
-        select_tree_item(tweaks_tree, find_tree_item_by_label(tweaks_tree, "Logging"))
+        select_tree_item(tweaks_tree, find_tree_item_by_label(tweaks_tree, TWEAKS_LOGGING_GROUP_LABEL))
         click_button(find_control(dialog_hwnd, IDOK, "Button"))
         wait_for(lambda: not win32gui.IsWindow(dialog_hwnd), timeout=20.0, interval=0.2, description="Preferences dialog close")
 

@@ -873,7 +873,7 @@ def run_shared_files_e2e(
         app = live_common.launch_app(app_exe, fixture["profile_base"])
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
-        main_window.set_focus()
+        live_common.bring_window_to_front(main_window)
         process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
         summary["process_id"] = process_id
         summary["main_window_show_cmd"] = live_common.get_window_show_cmd(main_hwnd)
@@ -1091,7 +1091,7 @@ def run_generated_robustness_e2e(
         app = live_common.launch_app(app_exe, fixture["profile_base"])
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
-        main_window.set_focus()
+        live_common.bring_window_to_front(main_window)
         process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
         summary["process_id"] = process_id
         summary["main_window_show_cmd"] = live_common.get_window_show_cmd(main_hwnd)
@@ -1250,7 +1250,7 @@ def run_duplicate_startup_reuse_e2e(
         app = live_common.launch_app(app_exe, fixture["profile_base"])
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
-        main_window.set_focus()
+        live_common.bring_window_to_front(main_window)
         process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
         summary["first_launch_process_id"] = process_id
         process_handle = open_process(process_id)
@@ -1298,7 +1298,7 @@ def run_duplicate_startup_reuse_e2e(
         app = live_common.launch_app(app_exe, fixture["profile_base"])
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
-        main_window.set_focus()
+        live_common.bring_window_to_front(main_window)
         process_id = win32process.GetWindowThreadProcessId(main_hwnd)[1]
         summary["relaunch_process_id"] = process_id
         process_handle = open_process(process_id)

@@ -396,6 +396,44 @@ def get_window_show_cmd(hwnd: int) -> int:
     return int(win32gui.GetWindowPlacement(hwnd)[1])
 
 
+def bring_window_to_front(window: object) -> bool:
+    """Best-effort foreground preparation for live UI scenarios.
+
+    Windows can reject `SetForegroundWindow` even when the launched eMule window
+    is visible and fully usable through direct Win32 messages. This helper keeps
+    that focus restriction from masking real scenario assertions while still
+    making a normal attempt to restore and foreground the window.
+    """
+
+    hwnd = int(getattr(window, "handle", 0) or 0)
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        return False
+
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    else:
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+    set_focus = getattr(window, "set_focus", None)
+    if callable(set_focus):
+        try:
+            set_focus()
+            return True
+        except Exception:
+            pass
+
+    try:
+        win32gui.BringWindowToTop(hwnd)
+    except Exception:
+        pass
+
+    try:
+        win32gui.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
 def dump_window_tree(main_hwnd: int, output_path: Path) -> None:
     """Writes a recursive Win32 control dump for failure diagnosis."""
 

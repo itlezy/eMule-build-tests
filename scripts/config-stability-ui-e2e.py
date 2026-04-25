@@ -368,10 +368,7 @@ def launch_and_capture_startup(
     app = live_common.launch_app(app_exe, Path(str(fixture["profile_base"])))
     main_window = live_common.wait_for_main_window(app)
     main_hwnd = int(main_window.handle)
-    try:
-        main_window.set_focus()
-    except Exception:
-        pass
+    live_common.bring_window_to_front(main_window)
     process_id = get_main_process_id(app)
     startup_summary = collect_startup_profile_summary(
         Path(str(fixture["startup_profile_path"])),

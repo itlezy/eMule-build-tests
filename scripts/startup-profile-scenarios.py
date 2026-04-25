@@ -432,7 +432,7 @@ def run_scenario(
         app = live_common.launch_app(app_exe, fixture["profile_base"])
         main_window = live_common.wait_for_main_window(app)
         main_hwnd = main_window.handle
-        main_window.set_focus()
+        live_common.bring_window_to_front(main_window)
 
         summary["process_id"] = win32process.GetWindowThreadProcessId(main_hwnd)[1]
         summary["main_window_rect"] = list(win32gui.GetWindowRect(main_hwnd))
@@ -472,7 +472,7 @@ def run_scenario(
             app = live_common.launch_app(app_exe, fixture["profile_base"])
             main_window = live_common.wait_for_main_window(app)
             main_hwnd = main_window.handle
-            main_window.set_focus()
+            live_common.bring_window_to_front(main_window)
 
             relaunch_summary["process_id"] = win32process.GetWindowThreadProcessId(main_hwnd)[1]
             relaunch_summary["main_window_rect"] = list(win32gui.GetWindowRect(main_hwnd))

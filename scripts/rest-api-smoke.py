@@ -46,6 +46,9 @@ write_json = live_common.write_json
 
 DEFAULT_SERVER_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
 DEFAULT_KAD_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
+NAT_BACKEND_ATTEMPT_PREFIX = "Attempting NAT mapping backend "
+UPNP_IGD_BACKEND_NAME = "UPnP IGD (MiniUPnP)"
+PCP_NATPMP_BACKEND_NAME = "PCP/NAT-PMP"
 
 
 def choose_listen_port() -> int:
@@ -116,6 +119,9 @@ def configure_webserver_profile(
         ("NetworkKademlia", "1"),
     ):
         text = patch_ini_value(text, key, value)
+    if enable_upnp:
+        for key in ("Verbose", "FullVerbose"):
+            text = patch_ini_value(text, key, "1")
     template_path = app_exe.parent.parent.parent / "webinterface" / "eMule.tmpl"
     text = patch_ini_value(text, "WebTemplateFile", str(template_path))
     for key, value in (
@@ -293,6 +299,73 @@ def compact_http_result(result: dict[str, object]) -> dict[str, object]:
     elif isinstance(result.get("body_text"), str):
         compact["body_text"] = result["body_text"]
     return compact
+
+
+def extract_log_messages(log_entries: list[object]) -> list[str]:
+    """Extracts message strings from one REST log payload."""
+
+    messages: list[str] = []
+    for entry in log_entries:
+        if not isinstance(entry, dict):
+            continue
+        message = entry.get("message")
+        if isinstance(message, str):
+            messages.append(message)
+    return messages
+
+
+def summarize_nat_backend_order(log_entries: list[object]) -> dict[str, object]:
+    """Summarizes NAT backend attempt ordering from REST log entries."""
+
+    messages = extract_log_messages(log_entries)
+    attempts = [
+        message
+        for message in messages
+        if message.startswith(NAT_BACKEND_ATTEMPT_PREFIX)
+    ]
+    backend_names = [
+        message[len(NAT_BACKEND_ATTEMPT_PREFIX):].strip("'")
+        for message in attempts
+    ]
+    return {
+        "attempts": attempts,
+        "backend_names": backend_names,
+        "message_count": len(messages),
+        "upnp_first": bool(backend_names) and backend_names[0] == UPNP_IGD_BACKEND_NAME,
+        "pcp_before_upnp": (
+            UPNP_IGD_BACKEND_NAME in backend_names
+            and PCP_NATPMP_BACKEND_NAME in backend_names
+            and backend_names.index(PCP_NATPMP_BACKEND_NAME) < backend_names.index(UPNP_IGD_BACKEND_NAME)
+        ),
+    }
+
+
+def assert_upnp_backend_order(log_entries: list[object]) -> dict[str, object]:
+    """Requires automatic NAT mapping to attempt MiniUPnP before PCP/NAT-PMP."""
+
+    summary = summarize_nat_backend_order(log_entries)
+    backend_names = summary["backend_names"]
+    assert isinstance(backend_names, list)
+    if not backend_names:
+        raise AssertionError("No NAT mapping backend attempts were found in the live log.")
+    if backend_names[0] != UPNP_IGD_BACKEND_NAME:
+        raise AssertionError(f"Expected first NAT backend to be {UPNP_IGD_BACKEND_NAME!r}, got {backend_names!r}.")
+    return summary
+
+
+def wait_for_upnp_backend_order(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
+    """Waits until the live log exposes NAT backend ordering and asserts UPnP is first."""
+
+    def resolve():
+        result = http_request(base_url, "/api/v1/log?limit=400", api_key=api_key)
+        if int(result["status"]) != 200 or not isinstance(result["json"], list):
+            return None
+        summary = summarize_nat_backend_order(list(result["json"]))
+        if not summary["backend_names"]:
+            return None
+        return assert_upnp_backend_order(list(result["json"]))
+
+    return wait_for(resolve, timeout=timeout_seconds, interval=0.5, description="UPnP NAT backend order")
 
 
 def wait_for_server_activity(base_url: str, api_key: str, timeout_seconds: float) -> dict[str, object]:
@@ -971,6 +1044,14 @@ def main() -> None:
         current_phase = set_phase(report, "rest_ready")
         ready = wait_for_rest_ready(base_url, args.api_key, args.rest_ready_timeout_seconds)
         report["checks"]["ready"] = compact_http_result(ready)
+
+        if args.enable_upnp:
+            current_phase = set_phase(report, "nat_backend_order")
+            report["checks"]["nat_backend_order"] = wait_for_upnp_backend_order(
+                base_url,
+                args.api_key,
+                timeout_seconds=20.0,
+            )
 
         current_phase = set_phase(report, "auth_checks")
         no_key = http_request(base_url, "/api/v1/app/version")

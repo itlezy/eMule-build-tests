@@ -254,7 +254,7 @@ def wait_for_hashing_active(startup_profile_path: Path, *, timeout: float = 90.0
 def wait_for_expected_shared_files(main_hwnd: int, process_id: int, expected_names: list[str]) -> dict[str, object]:
     """Opens the Shared Files page and waits until the expected visible rows converge."""
 
-    list_hwnd, _static_hwnd = shared_files_ui.open_shared_files_page(main_hwnd)
+    list_hwnd = shared_files_ui.open_shared_files_list_page(main_hwnd)
     row_count = shared_files_ui.wait_for_exact_list_count(list_hwnd, len(expected_names))
     process_handle = shared_files_ui.open_process(process_id)
     try:
@@ -273,7 +273,7 @@ def wait_for_expected_shared_files(main_hwnd: int, process_id: int, expected_nam
 def open_shared_files_page_snapshot(main_hwnd: int) -> dict[str, object]:
     """Opens the Shared Files page and records the immediate visible row count."""
 
-    list_hwnd, _static_hwnd = shared_files_ui.open_shared_files_page(main_hwnd)
+    list_hwnd = shared_files_ui.open_shared_files_list_page(main_hwnd)
     time.sleep(0.2)
     return {
         "row_count": int(win32gui.SendMessage(list_hwnd, shared_files_ui.LVM_GETITEMCOUNT, 0, 0)),

@@ -106,3 +106,26 @@ def test_configure_profile_upnp_disables_mapping_and_exit_cleanup(tmp_path: Path
     assert "[UPnP]" in text
     assert "EnableUPnP=0" in text
     assert "CloseUPnPOnExit=0" in text
+
+
+def test_shared_hash_snapshot_does_not_require_details_static(monkeypatch) -> None:
+    module = load_shared_hash_module()
+    opened_pages: list[int] = []
+
+    def open_list_page(main_hwnd: int) -> int:
+        opened_pages.append(main_hwnd)
+        return 1234
+
+    def send_message(hwnd: int, message: int, wparam: int, lparam: int) -> int:
+        assert hwnd == 1234
+        assert message == module.shared_files_ui.LVM_GETITEMCOUNT
+        assert wparam == 0
+        assert lparam == 0
+        return 7
+
+    monkeypatch.setattr(module.shared_files_ui, "open_shared_files_list_page", open_list_page)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(module.win32gui, "SendMessage", send_message)
+
+    assert module.open_shared_files_page_snapshot(5678) == {"row_count": 7}
+    assert opened_pages == [5678]

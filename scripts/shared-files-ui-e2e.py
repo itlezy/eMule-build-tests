@@ -544,6 +544,8 @@ def dump_window_tree(main_hwnd: int, output_path: Path) -> None:
                 "text": text,
                 "control_id": control_id,
                 "rect": rect,
+                "visible": bool(win32gui.IsWindowVisible(hwnd)),
+                "enabled": bool(win32gui.IsWindowEnabled(hwnd)),
             }
         )
         child = win32gui.GetWindow(hwnd, win32con.GW_CHILD)
@@ -807,20 +809,33 @@ def wait_for_list_prefix_one_of(
 def click_reload_button(main_hwnd: int) -> None:
     """Invokes the real Reload button on the Shared Files page."""
 
-    reload_hwnd = get_control_handle(main_hwnd, IDC_RELOADSHAREDFILES, "Button")
+    reload_hwnd = get_control_handle(main_hwnd, IDC_RELOADSHAREDFILES, "Button", visible_only=True)
     win32gui.SendMessage(reload_hwnd, BM_CLICK, 0, 0)
+
+
+def open_shared_files_list_page(main_hwnd: int) -> int:
+    """Opens the Shared Files page and returns the visible owner-data list handle."""
+
+    win32gui.SendMessage(main_hwnd, WM_COMMAND, MP_HM_FILES, 0)
+
+    def resolve() -> int | None:
+        list_hwnd = get_control_handle(main_hwnd, IDC_SFLIST, "SysListView32", visible_only=True)
+        get_control_handle(main_hwnd, IDC_RELOADSHAREDFILES, "Button", visible_only=True)
+        return list_hwnd
+
+    return wait_for(resolve, 30.0, 0.5, "visible Shared Files list controls")
 
 
 def open_shared_files_page(main_hwnd: int) -> tuple[int, int]:
     """Opens the Shared Files page and returns the list and details control handles."""
 
-    win32gui.SendMessage(main_hwnd, WM_COMMAND, MP_HM_FILES, 0)
+    list_hwnd = open_shared_files_list_page(main_hwnd)
+
     def resolve() -> tuple[int, int] | None:
-        list_hwnd = get_control_handle(main_hwnd, IDC_SFLIST, "SysListView32", visible_only=True)
         static_hwnd = get_control_handle(main_hwnd, IDC_SF_FNAME, "Static", visible_only=True)
         return (list_hwnd, static_hwnd)
 
-    return wait_for(resolve, 30.0, 0.5, "visible Shared Files page controls")
+    return wait_for(resolve, 30.0, 0.5, "visible Shared Files details controls")
 
 
 def close_app_cleanly(app: Application) -> None:

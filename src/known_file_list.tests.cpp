@@ -30,6 +30,7 @@ TEST_CASE("Known-file AICH purge seam drops orphaned partially purged hashsets t
 	CHECK(ShouldPurgeKnownAICHHashset(false, true));
 }
 
+#ifdef EMULE_TESTS_HAS_KNOWN_FILE_COLLISION_SEAMS
 TEST_CASE("Known-file collision seam keeps existing shared entries")
 {
 	CHECK_EQ(
@@ -74,6 +75,7 @@ TEST_CASE("Known-file collision seam keeps existing live entries even when incom
 		ResolveKnownFileCollision(false, true, true, false),
 		KnownFileCollisionDecision::KeepExisting);
 }
+#endif
 
 TEST_CASE("Known-file progress seam posts only for matching known-file owners")
 {

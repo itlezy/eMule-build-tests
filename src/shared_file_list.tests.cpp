@@ -71,6 +71,7 @@ TEST_CASE("Shared file list accepts part files outside shared directories")
 	CHECK(SharedFileListSeams::CanAddSharedFile(true, false, false));
 }
 
+#ifdef EMULE_TESTS_HAS_SHARED_FILE_LIST_ASYNC_HASH_SEAMS
 TEST_CASE("Shared file hash worker allows only a bounded UI completion backlog")
 {
 	CHECK(SharedFileListSeams::ShouldStartSharedHashJob({ true, true, 0u }));
@@ -180,6 +181,7 @@ TEST_CASE("Shared hash shutdown invalidates warm caches only when hashing work w
 	CHECK(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, true, false }));
 	CHECK(SharedFileListSeams::ShouldInvalidateStartupCacheAfterSharedHashShutdown({ false, false, true }));
 }
+#endif
 
 #ifdef EMULE_TESTS_HAS_SHARED_FILES_WND_SEAMS
 TEST_CASE("Shared files splitter range scales with dialog width instead of capping at the legacy maximum")

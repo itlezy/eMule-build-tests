@@ -20,12 +20,10 @@ import win32gui
 import win32process
 
 try:
-    from pywinauto import Application, findwindows, mouse
+    from pywinauto import Application
     _PYWINAUTO_IMPORT_ERROR = None
 except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
     Application = object  # type: ignore[assignment]
-    findwindows = None  # type: ignore[assignment]
-    mouse = None  # type: ignore[assignment]
     _PYWINAUTO_IMPORT_ERROR = exc
 
 
@@ -47,7 +45,10 @@ harness_cli_common = load_local_module("harness_cli_common", "harness-cli-common
 generated_fixture = load_local_module("create_long_paths_tree", "create-long-paths-tree.py")
 
 WM_COMMAND = 0x0111
+WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP = 0x0202
 BM_CLICK = 0x00F5
+MK_LBUTTON = 0x0001
 MP_HM_FILES = 10213
 IDC_RELOADSHAREDFILES = 2049
 IDC_SFLIST = 2167
@@ -555,12 +556,13 @@ def dump_window_tree(main_hwnd: int, output_path: Path) -> None:
 
 
 def click_client_rect(hwnd: int, rect: RECT) -> None:
-    """Clicks the center of a client-rect region on screen."""
+    """Clicks the center of a client-rect region without requiring the active desktop."""
 
-    origin = win32gui.ClientToScreen(hwnd, (0, 0))
-    x = origin[0] + rect.left + max((rect.right - rect.left) // 2, 1)
-    y = origin[1] + rect.top + max((rect.bottom - rect.top) // 2, 1)
-    mouse.click(coords=(x, y))
+    x = rect.left + max((rect.right - rect.left) // 2, 1)
+    y = rect.top + max((rect.bottom - rect.top) // 2, 1)
+    lparam = (x & 0xFFFF) | ((y & 0xFFFF) << 16)
+    win32gui.SendMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
+    win32gui.SendMessage(hwnd, WM_LBUTTONUP, 0, lparam)
 
 
 def set_list_row_selected(process_handle: int, list_hwnd: int, row_index: int) -> None:

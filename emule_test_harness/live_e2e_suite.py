@@ -1,0 +1,295 @@
+"""Aggregate live UI, REST, and live-wire E2E suite orchestration."""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from emule_test_harness.live_seed_sources import EMULE_SECURITY_HOME_URL
+
+SHARED_FILES_UI_SCENARIOS = (
+    "fixture-three-files",
+    "generated-robustness-recursive",
+    "duplicate-startup-reuse",
+)
+CONFIG_STABILITY_UI_SCENARIOS = (
+    "long-config-settings-roundtrip",
+    "long-config-shared-stress",
+)
+STARTUP_PROFILE_SCENARIOS = (
+    "baseline-no-shares",
+    "fixture-three-files",
+    "long-paths-root-only",
+    "long-paths-recursive",
+    "long-path-output-root-only",
+    "long-path-output-recursive",
+    "long-path-emule-fixture-root-only",
+    "long-path-emule-fixture-recursive",
+    "shared-files-robustness-root-only",
+    "shared-files-robustness-recursive",
+)
+
+
+@dataclass(frozen=True)
+class SuiteSpec:
+    """One child live E2E suite invoked by the aggregate runner."""
+
+    name: str
+    script_name: str
+    category: str
+    scenarios: tuple[str, ...] = ()
+    accepts_startup_profile_mode: bool = False
+    accepts_shared_root: bool = False
+    uses_live_seed_refresh: bool = False
+    is_rest_api: bool = False
+    is_auto_browse: bool = False
+
+
+SUITE_SPECS = (
+    SuiteSpec(name="preference-ui", script_name="preference-ui-e2e.py", category="ui"),
+    SuiteSpec(
+        name="shared-files-ui",
+        script_name="shared-files-ui-e2e.py",
+        category="ui",
+        scenarios=SHARED_FILES_UI_SCENARIOS,
+        accepts_startup_profile_mode=True,
+        accepts_shared_root=True,
+    ),
+    SuiteSpec(
+        name="config-stability-ui",
+        script_name="config-stability-ui-e2e.py",
+        category="ui",
+        scenarios=CONFIG_STABILITY_UI_SCENARIOS,
+        accepts_startup_profile_mode=True,
+        accepts_shared_root=True,
+    ),
+    SuiteSpec(
+        name="shared-hash-ui",
+        script_name="shared-hash-ui-e2e.py",
+        category="ui",
+        accepts_startup_profile_mode=True,
+    ),
+    SuiteSpec(
+        name="startup-profile",
+        script_name="startup-profile-scenarios.py",
+        category="ui",
+        scenarios=STARTUP_PROFILE_SCENARIOS,
+        accepts_startup_profile_mode=True,
+        accepts_shared_root=True,
+    ),
+    SuiteSpec(
+        name="rest-api",
+        script_name="rest-api-smoke.py",
+        category="rest",
+        uses_live_seed_refresh=True,
+        is_rest_api=True,
+    ),
+    SuiteSpec(
+        name="auto-browse-live",
+        script_name="auto-browse-live.py",
+        category="live-wire",
+        uses_live_seed_refresh=True,
+        is_auto_browse=True,
+    ),
+)
+SUITE_NAMES = tuple(spec.name for spec in SUITE_SPECS)
+
+
+def resolve_suite_specs(selected_names: list[str] | None) -> tuple[SuiteSpec, ...]:
+    """Resolves selected suite names while preserving the canonical order."""
+
+    if not selected_names:
+        return SUITE_SPECS
+
+    requested = set(selected_names)
+    return tuple(spec for spec in SUITE_SPECS if spec.name in requested)
+
+
+def build_python_command(python_executable: str) -> list[str]:
+    """Builds the Python executable prefix, including `py -3` when needed."""
+
+    command = [python_executable]
+    if Path(python_executable).stem.lower() == "py":
+        command.append("-3")
+    return command
+
+
+def build_suite_command(
+    *,
+    spec: SuiteSpec,
+    scripts_dir: Path,
+    python_executable: str,
+    workspace_root: Path,
+    configuration: str,
+    artifacts_dir: Path,
+    app_root: Path | None = None,
+    app_exe: Path | None = None,
+    seed_config_dir: Path | None = None,
+    startup_profile_mode: str = "required",
+    shared_root: Path | None = None,
+    skip_live_seed_refresh: bool = False,
+    rest_server_search_count: int = 1,
+    rest_kad_search_count: int = 1,
+    enable_upnp: bool = True,
+    auto_browse_p2p_bind_interface_name: str = "hide.me",
+) -> list[str]:
+    """Builds one child suite command line."""
+
+    command = build_python_command(python_executable)
+    command.extend(
+        [
+            str((scripts_dir / spec.script_name).resolve()),
+            "--workspace-root",
+            str(workspace_root.resolve()),
+            "--configuration",
+            configuration,
+            "--artifacts-dir",
+            str((artifacts_dir / spec.name).resolve()),
+        ]
+    )
+    if app_root is not None:
+        command.extend(["--app-root", str(app_root.resolve())])
+    if app_exe is not None:
+        command.extend(["--app-exe", str(app_exe.resolve())])
+    if seed_config_dir is not None:
+        command.extend(["--seed-config-dir", str(seed_config_dir.resolve())])
+    if spec.accepts_startup_profile_mode:
+        command.extend(["--startup-profile-mode", startup_profile_mode])
+    if spec.accepts_shared_root and shared_root is not None:
+        command.extend(["--shared-root", str(shared_root.resolve())])
+    for scenario in spec.scenarios:
+        command.extend(["--scenario", scenario])
+    if spec.uses_live_seed_refresh and skip_live_seed_refresh:
+        command.append("--skip-live-seed-refresh")
+    if spec.is_rest_api:
+        command.extend(["--server-search-count", str(rest_server_search_count)])
+        command.extend(["--kad-search-count", str(rest_kad_search_count)])
+        if enable_upnp:
+            command.append("--enable-upnp")
+    if spec.is_auto_browse and auto_browse_p2p_bind_interface_name:
+        command.extend(["--p2p-bind-interface-name", auto_browse_p2p_bind_interface_name])
+    return command
+
+
+def run_suite_command(command: list[str]) -> int:
+    """Runs one child suite command and returns its process exit code."""
+
+    completed = subprocess.run(command, check=False)
+    return completed.returncode
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Builds the aggregate live E2E argument parser."""
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace-root")
+    parser.add_argument("--app-root")
+    parser.add_argument("--app-exe")
+    parser.add_argument("--seed-config-dir")
+    parser.add_argument("--artifacts-dir")
+    parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--configuration", choices=["Debug", "Release"], default="Release")
+    parser.add_argument("--startup-profile-mode", choices=["required", "optional"], default="required")
+    parser.add_argument("--shared-root", default=r"C:\tmp\00_long_paths")
+    parser.add_argument("--suite", action="append", choices=SUITE_NAMES)
+    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument("--skip-live-seed-refresh", action="store_true")
+    parser.add_argument("--rest-server-search-count", type=int, default=1)
+    parser.add_argument("--rest-kad-search-count", type=int, default=1)
+    parser.add_argument("--disable-upnp", action="store_true")
+    parser.add_argument("--auto-browse-p2p-bind-interface-name", default="hide.me")
+    return parser
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    """Validates aggregate runner arguments that affect child network searches."""
+
+    if args.rest_server_search_count < 0 or args.rest_kad_search_count < 0:
+        raise ValueError("REST live search counts must be zero or greater.")
+
+
+def run_live_e2e_suite(args: argparse.Namespace, harness_cli_common) -> dict[str, object]:
+    """Runs the selected live E2E suites and returns the aggregate summary."""
+
+    validate_args(args)
+    paths = harness_cli_common.prepare_run_paths(
+        script_file=__file__,
+        suite_name="live-e2e-suite",
+        configuration=args.configuration,
+        workspace_root=args.workspace_root,
+        app_root=args.app_root,
+        app_exe=args.app_exe,
+        artifacts_dir=args.artifacts_dir,
+        keep_artifacts=args.keep_artifacts,
+    )
+    selected_specs = resolve_suite_specs(args.suite)
+    scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+    python_executable = harness_cli_common.find_python_executable()
+    seed_config_dir = Path(args.seed_config_dir).resolve() if args.seed_config_dir else None
+    shared_root = Path(args.shared_root).resolve() if args.shared_root else None
+
+    summary: dict[str, object] = {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "status": "passed",
+        "suite": "live-e2e-suite",
+        "configuration": args.configuration,
+        "app_exe": str(paths.app_exe),
+        "workspace_root": str(paths.workspace_root),
+        "app_root": str(paths.app_root),
+        "artifact_dir": str(paths.run_report_dir),
+        "latest_report_dir": str(paths.latest_report_dir),
+        "source_artifact_dir": str(paths.source_artifacts_dir),
+        "live_seed_source_url": EMULE_SECURITY_HOME_URL,
+        "live_seed_refresh_enabled": not args.skip_live_seed_refresh,
+        "fail_fast": bool(args.fail_fast),
+        "suites": [],
+    }
+
+    for spec in selected_specs:
+        child_artifacts_dir = paths.source_artifacts_dir / spec.name
+        command = build_suite_command(
+            spec=spec,
+            scripts_dir=scripts_dir,
+            python_executable=python_executable,
+            workspace_root=paths.workspace_root,
+            configuration=args.configuration,
+            artifacts_dir=paths.source_artifacts_dir,
+            app_root=paths.app_root,
+            app_exe=paths.app_exe,
+            seed_config_dir=seed_config_dir,
+            startup_profile_mode=args.startup_profile_mode,
+            shared_root=shared_root,
+            skip_live_seed_refresh=args.skip_live_seed_refresh,
+            rest_server_search_count=args.rest_server_search_count,
+            rest_kad_search_count=args.rest_kad_search_count,
+            enable_upnp=not args.disable_upnp,
+            auto_browse_p2p_bind_interface_name=args.auto_browse_p2p_bind_interface_name,
+        )
+        started = time.monotonic()
+        return_code = run_suite_command(command)
+        result = {
+            "name": spec.name,
+            "category": spec.category,
+            "status": "passed" if return_code == 0 else "failed",
+            "return_code": return_code,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "artifacts_dir": str(child_artifacts_dir.resolve()),
+            "command": command,
+            "scenario_names": list(spec.scenarios),
+            "uses_live_seed_refresh": bool(spec.uses_live_seed_refresh and not args.skip_live_seed_refresh),
+        }
+        summary["suites"].append(result)  # type: ignore[index]
+        if return_code != 0:
+            summary["status"] = "failed"
+            if args.fail_fast:
+                break
+
+    result_path = paths.source_artifacts_dir / "result.json"
+    harness_cli_common.write_json_file(result_path, summary)
+    harness_cli_common.publish_run_artifacts(paths)
+    harness_cli_common.publish_latest_report(paths)
+    harness_cli_common.cleanup_source_artifacts(paths)
+    return summary

@@ -7,6 +7,22 @@
 
 #include <vector>
 
+namespace
+{
+	/**
+	 * @brief Builds a compact IP filter seam range for overlap-normalization tests.
+	 */
+	IPFilterSeams::IPRange MakeRange(uint32_t uStart, uint32_t uEnd, uint32_t uLevel, LPCSTR pszDescription)
+	{
+		IPFilterSeams::IPRange range;
+		range.Start = uStart;
+		range.End = uEnd;
+		range.Level = uLevel;
+		range.Description = pszDescription;
+		return range;
+	}
+}
+
 TEST_SUITE_BEGIN("parity");
 
 TEST_CASE("IP-filter seam classifies long path names without fixed-buffer truncation")
@@ -70,6 +86,105 @@ TEST_CASE("IP-filter update seam rejects markup download payloads")
 	CHECK(IPFilterUpdateSeams::LooksLikeMarkupPayload("<!DOCTYPE html>", 15u));
 	CHECK_FALSE(IPFilterUpdateSeams::LooksLikeMarkupPayload("1.2.3.4 - 5.6.7.8 , 100 , test", 33u));
 	CHECK_FALSE(IPFilterUpdateSeams::LooksLikeMarkupPayload("", 0u));
+}
+
+TEST_CASE("IP-filter normalization lets a lower-level narrow overlap win only inside the overlap")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(10, 20, 100, "broad"),
+		MakeRange(15, 17, 50, "narrow"),
+	});
+
+	REQUIRE(normalized.size() == 3u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 14u);
+	CHECK(normalized[0].Level == 100u);
+	CHECK(normalized[1].Start == 15u);
+	CHECK(normalized[1].End == 17u);
+	CHECK(normalized[1].Level == 50u);
+	CHECK(normalized[1].Description == "narrow");
+	CHECK(normalized[2].Start == 18u);
+	CHECK(normalized[2].End == 20u);
+	CHECK(normalized[2].Level == 100u);
+}
+
+TEST_CASE("IP-filter normalization keeps a lower-level broad range effective across narrower overlaps")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(10, 20, 50, "broad"),
+		MakeRange(15, 17, 100, "narrow"),
+	});
+
+	REQUIRE(normalized.size() == 1u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 20u);
+	CHECK(normalized[0].Level == 50u);
+	CHECK(normalized[0].Description == "broad");
+}
+
+TEST_CASE("IP-filter normalization chooses the lowest level for identical ranges")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(10, 20, 100, "original"),
+		MakeRange(10, 20, 25, "stricter"),
+	});
+
+	REQUIRE(normalized.size() == 1u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 20u);
+	CHECK(normalized[0].Level == 25u);
+	CHECK(normalized[0].Description == "stricter");
+}
+
+TEST_CASE("IP-filter normalization merges adjacent same-level ranges")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(10, 20, 100, "first"),
+		MakeRange(21, 30, 100, "second"),
+	});
+
+	REQUIRE(normalized.size() == 1u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 30u);
+	CHECK(normalized[0].Level == 100u);
+	CHECK(normalized[0].Description == "first");
+}
+
+TEST_CASE("IP-filter normalization keeps adjacent different-level ranges separate")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(10, 20, 100, "first"),
+		MakeRange(21, 30, 50, "second"),
+	});
+
+	REQUIRE(normalized.size() == 2u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 20u);
+	CHECK(normalized[0].Level == 100u);
+	CHECK(normalized[1].Start == 21u);
+	CHECK(normalized[1].End == 30u);
+	CHECK(normalized[1].Level == 50u);
+}
+
+TEST_CASE("IP-filter normalization produces sorted non-overlapping output for stacked overlaps")
+{
+	const std::vector<IPFilterSeams::IPRange> normalized = IPFilterSeams::NormalizeIPRanges({
+		MakeRange(30, 40, 100, "late"),
+		MakeRange(10, 35, 80, "early"),
+		MakeRange(20, 25, 20, "strict"),
+		MakeRange(24, 45, 60, "middle"),
+	});
+
+	REQUIRE(normalized.size() == 3u);
+	CHECK(normalized[0].Start == 10u);
+	CHECK(normalized[0].End == 19u);
+	CHECK(normalized[0].Level == 80u);
+	CHECK(normalized[1].Start == 20u);
+	CHECK(normalized[1].End == 25u);
+	CHECK(normalized[1].Level == 20u);
+	CHECK(normalized[2].Start == 26u);
+	CHECK(normalized[2].End == 45u);
+	CHECK(normalized[2].Level == 60u);
 }
 
 TEST_SUITE_END;

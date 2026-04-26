@@ -5,6 +5,8 @@ from pathlib import Path
 from emule_test_harness.live_seed_sources import (
     EMULE_SECURITY_HOME_URL,
     default_seed_sources,
+    fetch_seed_payload_with_retries,
+    LiveSeedSource,
     refresh_seed_files,
 )
 
@@ -37,3 +39,36 @@ def test_refresh_seed_files_writes_payloads_and_reports_hashes(tmp_path: Path) -
         "server.met": 80,
         "nodes.dat": 96,
     }
+    assert all(entry["attempts"] == [{"attempt": 1, "ok": True, "bytes": entry["bytes"]}] for entry in files)
+
+
+def test_fetch_seed_payload_with_retries_recovers_from_transient_errors() -> None:
+    source = LiveSeedSource(
+        name="server_met",
+        url="https://upd.emule-security.org/server.met",
+        file_name="server.met",
+        minimum_bytes=64,
+    )
+    calls: list[str] = []
+    sleeps: list[float] = []
+
+    def flaky_fetch(url: str, _timeout_seconds: float) -> bytes:
+        calls.append(url)
+        if len(calls) < 3:
+            raise OSError("temporary DNS failure")
+        return b"s" * 80
+
+    payload, attempts = fetch_seed_payload_with_retries(
+        source,
+        timeout_seconds=1.0,
+        max_attempts=3,
+        retry_delay_seconds=0.25,
+        fetch_bytes=flaky_fetch,
+        sleep_seconds=sleeps.append,
+    )
+
+    assert payload == b"s" * 80
+    assert calls == [source.url, source.url, source.url]
+    assert sleeps == [0.25, 0.25]
+    assert attempts[-1] == {"attempt": 3, "ok": True, "bytes": 80}
+    assert [attempt["ok"] for attempt in attempts] == [False, False, True]

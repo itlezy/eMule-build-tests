@@ -62,6 +62,9 @@ IDC_TMPLPATH = 2682
 IDC_WEBBINDADDR = 3044
 IDC_WS_MAXFILEUPLOAD = 3067
 IDC_WS_ALLOWEDIPS = 3069
+IDC_AUTOUPDATE_IPFILTER = 3070
+IDC_IPFILTERPERIOD = 3072
+IDC_UPDATEURL = 2797
 
 TV_FIRST = 0x1100
 TVM_EXPAND = TV_FIRST + 2
@@ -415,6 +418,10 @@ def configure_profile(config_dir: Path, app_exe: Path, rest_port: int) -> None:
         ("TxtEditor", "notepad.exe"),
         ("MaxChatHistoryLines", "100"),
         ("MaxMessageSessions", "50"),
+        ("AutoIPFilterUpdate", "0"),
+        ("IPFilterUpdatePeriodDays", "7"),
+        ("LastIPFilterUpdate", str(int(time.time()))),
+        ("IPFilterUpdateUrl", "http://upd.emule-security.org/ipfilter.zip"),
     ):
         text = live_common.patch_ini_value(text, key, value)
 
@@ -519,6 +526,11 @@ def run_preference_roundtrip(paths: harness_cli_common.HarnessRunPaths, args: ar
 
         dialog_hwnd = open_preferences(main_window.handle, process_id)
 
+        select_page(dialog_hwnd, "Security")
+        set_edit_text(find_control(dialog_hwnd, IDC_UPDATEURL, "Edit"), "http://upd.emule-security.org/ipfilter.zip")
+        ensure_checkbox(find_control(dialog_hwnd, IDC_AUTOUPDATE_IPFILTER, "Button"), True)
+        set_edit_text(find_control(dialog_hwnd, IDC_IPFILTERPERIOD, "Edit"), "11")
+
         select_page(dialog_hwnd, "Web Interface")
         ensure_checkbox(find_control(dialog_hwnd, IDC_WSENABLED, "Button"), True)
         set_edit_text(find_control(dialog_hwnd, IDC_WSPORT, "Edit"), str(rest_port))
@@ -564,6 +576,9 @@ def run_preference_roundtrip(paths: harness_cli_common.HarnessRunPaths, args: ar
                 "TxtEditor": "notepad.exe /A",
                 "MaxChatHistoryLines": "321",
                 "MaxMessageSessions": "61",
+                "AutoIPFilterUpdate": "1",
+                "IPFilterUpdatePeriodDays": "11",
+                "IPFilterUpdateUrl": "http://upd.emule-security.org/ipfilter.zip",
             },
             "WebServer": {
                 "Enabled": "1",

@@ -111,10 +111,11 @@ TEST_CASE("Shutdown skips shared startup-cache persistence after interrupted has
 	CHECK_FALSE(SharedFileListSeams::ShouldPersistStartupCacheOnShutdown(true));
 }
 
-TEST_CASE("Startup-cache save scheduling waits longer while deferred hashing is still draining")
+TEST_CASE("Startup-cache save scheduling waits until deferred hashing has drained")
 {
-	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 4999ui64, 0ui64 }));
-	CHECK(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 5000ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 14999ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 15000ui64, 0ui64 }));
+	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, true, 60000ui64, 0ui64 }));
 	CHECK_FALSE(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, false, 14999ui64, 0ui64 }));
 	CHECK(SharedFileListSeams::ShouldStartStartupCacheSave({ true, false, false, false, 15000ui64, 0ui64 }));
 }

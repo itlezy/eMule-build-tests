@@ -380,11 +380,24 @@ def wait_for_source_browse_results(
     deadline = time.time() + timeout_seconds
     observations: list[dict[str, object]] = []
     while time.time() < deadline:
-        payload = fetch_search_results(base_url, api_key, search_id)
+        result = rest_smoke.http_request(base_url, f"/api/v1/search/results?search_id={search_id}", api_key=api_key)
+        if int(result["status"]) == 404:
+            payload = result.get("json")
+            if isinstance(payload, dict) and payload.get("error") == "NOT_FOUND":
+                observation = {
+                    "observed_at": round(time.time(), 3),
+                    "state": "search_tab_pending",
+                    "result_count": 0,
+                }
+                observations.append(observation)
+                time.sleep(5.0)
+                continue
+        payload = require_json_object(result, 200)
         rows = payload.get("results")
         assert isinstance(rows, list), payload
         observation = {
             "observed_at": round(time.time(), 3),
+            "state": "search_tab_ready",
             "result_count": len(rows),
         }
         observations.append(observation)

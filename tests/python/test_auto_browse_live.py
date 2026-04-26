@@ -146,3 +146,49 @@ def test_record_auto_browse_observation_keeps_recent_partial_state(tmp_path: Pat
     assert progress["observations"][0]["observed_at"] == 5.0
     assert progress["last_observation"]["observed_at"] == 24.0
     assert (tmp_path / "result.partial.json").is_file()
+
+
+def test_wait_for_source_browse_results_tolerates_pending_search_tab(monkeypatch) -> None:
+    module = load_auto_browse_module()
+    calls = iter(
+        [
+            {
+                "status": 404,
+                "content_type": "application/json; charset=utf-8",
+                "json": {"error": "NOT_FOUND", "message": "search not found"},
+                "body_text": '{"error":"NOT_FOUND","message":"search not found"}',
+            },
+            {
+                "status": 404,
+                "content_type": "application/json; charset=utf-8",
+                "json": {"error": "NOT_FOUND", "message": "search not found"},
+                "body_text": '{"error":"NOT_FOUND","message":"search not found"}',
+            },
+            {
+                "status": 200,
+                "content_type": "application/json; charset=utf-8",
+                "json": {
+                    "status": "complete",
+                    "results": [{"name": "shared-file.txt", "hash": "a" * 32}],
+                },
+                "body_text": "{}",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(module.rest_smoke, "http_request", lambda *_args, **_kwargs: next(calls))
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    result = module.wait_for_source_browse_results(
+        "http://127.0.0.1:1",
+        "key",
+        "2147483657",
+        30.0,
+    )
+
+    assert result["result_count"] == 1
+    assert [observation["state"] for observation in result["observations"]] == [
+        "search_tab_pending",
+        "search_tab_pending",
+        "search_tab_ready",
+    ]

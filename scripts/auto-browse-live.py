@@ -39,10 +39,19 @@ BOOTSTRAP_TRANSFER_HASH = "28EAB1A0AB1B9416AAF534E27A234941"
 FALLBACK_SEARCH_QUERIES = ("ubuntu", "linux", "debian")
 BOOTSTRAP_SEARCH_METHODS = ("server", "global", "automatic", "kad")
 FALLBACK_SEARCH_METHODS = ("server", "global", "kad", "automatic")
+DIRECT_BOOTSTRAP_TRANSFERS = (
+    {
+        "hash": "0031c9cba65c50dd2015c184b2ca2c88",
+        "name": "ubuntu-24.04.4-desktop-amd64.iso",
+        "size": 6655619072,
+        "method": "direct_ed2k",
+    },
+)
 LIVE_SOURCE_UNAVAILABLE_EXIT_CODE = 2
 PREFERRED_SERVER_ADDRESSES = ("91.148.135.252", "45.82.80.155", "91.148.135.254")
 DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS = 180.0
 DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS = 300.0
+DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS = 180.0
 
 
 class LiveSourceUnavailableError(RuntimeError):
@@ -246,6 +255,12 @@ def build_transfer_acquisition_plan() -> list[tuple[str, list[str]]]:
     plan = [(BOOTSTRAP_TRANSFER_HASH, list(BOOTSTRAP_SEARCH_METHODS))]
     plan.extend((query, list(FALLBACK_SEARCH_METHODS)) for query in FALLBACK_SEARCH_QUERIES)
     return plan
+
+
+def build_direct_bootstrap_transfer_plan() -> list[dict[str, Any]]:
+    """Returns known safe ED2K links used when live keyword search is empty."""
+
+    return [dict(candidate) for candidate in DIRECT_BOOTSTRAP_TRANSFERS]
 
 
 def summarize_selected_transfer_sources(acquisition_attempts: list[dict[str, object]]) -> dict[str, object]:
@@ -509,6 +524,49 @@ def wait_for_transfer_sources(
     raise RuntimeError(f"Timed out waiting for sources on transfer '{transfer_hash}'.")
 
 
+def find_direct_bootstrap_transfer_candidate(
+    base_url: str,
+    api_key: str,
+    *,
+    source_discovery_timeout_seconds: float,
+) -> dict[str, object]:
+    """Adds known safe ED2K transfers until one yields browse-capable live sources."""
+
+    attempts: list[dict[str, object]] = []
+    for result_row in build_direct_bootstrap_transfer_plan():
+        attempt: dict[str, object] = {
+            "query": result_row["name"],
+            "method": result_row.get("method", "direct_ed2k"),
+            "result": result_row,
+        }
+        attempts.append(attempt)
+        try:
+            if not is_safe_download_result(result_row):
+                raise RuntimeError(f"Direct bootstrap transfer is not safe to download: {result_row['name']!r}.")
+            add_payload = add_transfer_from_search_result(base_url, api_key, result_row)
+            attempt["add_response"] = add_payload
+            attempt["sources_ready"] = wait_for_transfer_sources(
+                base_url,
+                api_key,
+                str(add_payload["hash"]),
+                source_discovery_timeout_seconds,
+            )
+            source_rows = attempt["sources_ready"].get("sources")
+            if not isinstance(source_rows, list) or not iter_source_browse_candidates(source_rows):
+                raise RuntimeError("Direct bootstrap transfer had no source candidates with shared-file browsing enabled.")
+            return {
+                "selected": attempt,
+                "attempts": attempts,
+            }
+        except Exception as exc:
+            attempt["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+
+    raise RuntimeError(f"No direct ED2K bootstrap transfer yielded browse-capable live sources. Attempts: {attempts!r}")
+
+
 def wait_for_auto_browse_success(
     base_url: str,
     api_key: str,
@@ -712,6 +770,10 @@ def main() -> int:
                 "natural_auto_browse_seconds": args.natural_auto_browse_timeout_seconds,
                 "auto_browse_seconds": args.auto_browse_timeout_seconds,
                 "fallback_auto_browse_seconds": args.fallback_auto_browse_timeout_seconds,
+                "direct_bootstrap_source_seconds": min(
+                    DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS,
+                    args.source_discovery_timeout_seconds,
+                ),
                 "seed_download_seconds": args.seed_download_timeout_seconds,
             },
         },
@@ -789,7 +851,34 @@ def main() -> int:
         else:
             record_phase(artifacts_dir, report, "transfer_acquisition")
             acquisition_attempts: list[dict[str, object]] = []
+            direct_source_timeout = min(
+                DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS,
+                args.source_discovery_timeout_seconds,
+            )
+            try:
+                acquisition_attempts.append(
+                    find_direct_bootstrap_transfer_candidate(
+                        base_url,
+                        args.api_key,
+                        source_discovery_timeout_seconds=direct_source_timeout,
+                    )
+                )
+            except Exception as exc:
+                acquisition_attempts.append(
+                    {
+                        "query": "direct_ed2k_bootstrap",
+                        "methods": ["direct_ed2k"],
+                        "candidates": build_direct_bootstrap_transfer_plan(),
+                        "source_discovery_timeout_seconds": direct_source_timeout,
+                        "error": {
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    }
+                )
             for query, methods in build_transfer_acquisition_plan():
+                if any(isinstance(item, dict) and item.get("selected") for item in acquisition_attempts):
+                    break
                 try:
                     selection = find_transfer_candidate(
                         base_url,
@@ -831,6 +920,7 @@ def main() -> int:
                 report["checks"]["live_source_availability"] = {
                     "status": "unavailable",
                     "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
+                    "direct_candidates_attempted": build_direct_bootstrap_transfer_plan(),
                     "blocking": False,
                 }
                 raise LiveSourceUnavailableError(
@@ -847,6 +937,13 @@ def main() -> int:
                 record_phase(artifacts_dir, report, "source_browse")
                 selected_transfer = summarize_selected_transfer_sources(acquisition_attempts)
                 selected_sources = get_selected_transfer_sources(acquisition_attempts)
+                report["checks"]["live_source_availability"] = {
+                    "status": "available",
+                    "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
+                    "direct_candidates_attempted": build_direct_bootstrap_transfer_plan(),
+                    "blocking": False,
+                    "selected_transfer": selected_transfer,
+                }
                 report["checks"]["source_browse"] = wait_for_source_browse_success(
                     base_url,
                     args.api_key,

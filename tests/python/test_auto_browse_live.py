@@ -22,10 +22,13 @@ def test_transfer_acquisition_plan_covers_bootstrap_and_public_queries() -> None
     module = load_auto_browse_module()
 
     plan = module.build_transfer_acquisition_plan()
+    direct_plan = module.build_direct_bootstrap_transfer_plan()
 
     assert plan[0] == (module.BOOTSTRAP_TRANSFER_HASH, list(module.BOOTSTRAP_SEARCH_METHODS))
     assert [query for query, _methods in plan[1:]] == list(module.FALLBACK_SEARCH_QUERIES)
     assert all("server" in methods and "kad" in methods for _query, methods in plan)
+    assert direct_plan[0]["name"].endswith(".iso")
+    assert module.is_safe_download_result(direct_plan[0])
     assert module.LIVE_SOURCE_UNAVAILABLE_EXIT_CODE == 2
     assert module.DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS < module.DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS
 
@@ -192,3 +195,41 @@ def test_wait_for_source_browse_results_tolerates_pending_search_tab(monkeypatch
         "search_tab_pending",
         "search_tab_ready",
     ]
+
+
+def test_direct_bootstrap_transfer_candidate_uses_known_safe_link(monkeypatch) -> None:
+    module = load_auto_browse_module()
+    added_rows: list[dict[str, object]] = []
+
+    def fake_add_transfer(_base_url, _api_key, result_row):
+        added_rows.append(result_row)
+        return {
+            "hash": result_row["hash"],
+            "name": result_row["name"],
+        }
+
+    monkeypatch.setattr(module, "add_transfer_from_search_result", fake_add_transfer)
+    monkeypatch.setattr(
+        module,
+        "wait_for_transfer_sources",
+        lambda *_args, **_kwargs: {
+            "sources": [
+                {
+                    "userHash": "b" * 32,
+                    "ip": "1.2.3.4",
+                    "port": 4662,
+                    "viewSharedFiles": True,
+                }
+            ]
+        },
+    )
+
+    result = module.find_direct_bootstrap_transfer_candidate(
+        "http://127.0.0.1:1",
+        "key",
+        source_discovery_timeout_seconds=1.0,
+    )
+
+    assert result["selected"]["method"] == "direct_ed2k"
+    assert added_rows[0]["name"] == module.DIRECT_BOOTSTRAP_TRANSFERS[0]["name"]
+    assert result["selected"]["sources_ready"]["sources"][0]["userHash"] == "b" * 32

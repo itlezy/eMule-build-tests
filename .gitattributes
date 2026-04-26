@@ -4,15 +4,15 @@
 .gitattributes text eol=lf
 .gitignore text eol=lf
 
-*.c text eol=crlf
-*.cc text eol=crlf
-*.cpp text eol=crlf
-*.cxx text eol=crlf
-*.h text eol=crlf
-*.hh text eol=crlf
-*.hpp text eol=crlf
-*.hxx text eol=crlf
-*.inl text eol=crlf
+*.c text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.cxx text eol=lf
+*.h text eol=lf
+*.hh text eol=lf
+*.hpp text eol=lf
+*.hxx text eol=lf
+*.inl text eol=lf
 
 # Resource files are stored as normal UTF-8 text in this repo.
 # Keep Git newline normalization, but do not add any encoding transcoding rule.

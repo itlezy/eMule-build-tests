@@ -4,7 +4,13 @@ root = true
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{c,cc,cpp,cxx,h,hh,hpp,hxx,inl,idl,def,sln,vcxproj,vcxproj.filters,props,targets,txt,ini}]
+[*.{c,cc,cpp,cxx,h,hh,hpp,hxx,inl}]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+tab_width = 4
+
+[*.{idl,def,sln,vcxproj,vcxproj.filters,props,targets,txt,ini}]
 charset = utf-8
 end_of_line = crlf
 indent_style = tab

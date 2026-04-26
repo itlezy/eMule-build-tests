@@ -2,9 +2,62 @@
 #include <climits>
 #include "WebApiCommandSeams.h"
 #include "WebApiSurfaceSeams.h"
+#include "WebServerAuthStateSeams.h"
 #include "WebServerJsonSeams.h"
+#include "WebServerStaticFileSeams.h"
 
 TEST_SUITE_BEGIN("web_api");
+
+TEST_CASE("WebServer static file seam contains requests under the web root")
+{
+	CString path;
+
+	CHECK(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("/assets/site.css"), path));
+	CHECK(PathHelpers::ArePathsEquivalent(path, _T("C:\\webroot\\assets\\site.css")));
+
+	CHECK(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot"), _T("images\\logo.png"), path));
+	CHECK(PathHelpers::ArePathsEquivalent(path, _T("C:\\webroot\\images\\logo.png")));
+
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("/../secret.css"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("/%2e%2e/secret.css"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("/assets%2fsecret.css"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("C:\\Windows\\win.ini"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("C:Windows\\win.ini"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("\\\\server\\share\\x.css"), path));
+	CHECK_FALSE(WebServerStaticFileSeams::TryBuildContainedStaticFilePath(_T("C:\\webroot\\"), _T("/safe.css:stream"), path));
+}
+
+TEST_CASE("WebServer static file seam keeps content metadata and size limits bounded")
+{
+	auto toString = [](const CStringA &rstrValue)
+	{
+		return std::string(static_cast<LPCSTR>(rstrValue));
+	};
+
+	CHECK(toString(WebServerStaticFileSeams::GetStaticContentTypeHeader(_T("/site.css"))) == "Content-Type: text/css\r\n");
+	CHECK(toString(WebServerStaticFileSeams::GetStaticContentTypeHeader(_T("/app.js"))) == "Content-Type: text/javascript\r\n");
+	CHECK(toString(WebServerStaticFileSeams::GetStaticContentTypeHeader(_T("/favicon.ico"))) == "Content-Type: image/x-icon\r\n");
+	CHECK(toString(WebServerStaticFileSeams::GetStaticContentTypeHeader(_T("/photo.jpeg"))) == "Content-Type: image/jpeg\r\n");
+	CHECK(toString(WebServerStaticFileSeams::GetStaticContentTypeHeader(_T("/unknown.txt"))).empty());
+
+	CHECK(WebServerStaticFileSeams::IsStaticFileSizeAllowed(1024ull * 1024ull, 1));
+	CHECK_FALSE(WebServerStaticFileSeams::IsStaticFileSizeAllowed(1024ull * 1024ull + 1ull, 1));
+	CHECK(WebServerStaticFileSeams::IsStaticFileSizeAllowed(0xffffffffffffffffull, 0));
+	CHECK_EQ(WebServerStaticFileSeams::kStaticFileChunkSize, 64u * 1024u);
+}
+
+TEST_CASE("WebServer auth state seam preserves legacy timeout and bad-login thresholds")
+{
+	CHECK_FALSE(WebServerAuthStateSeams::ShouldDenyForBadLoginFaults(4));
+	CHECK(WebServerAuthStateSeams::ShouldDenyForBadLoginFaults(5));
+
+	CHECK_FALSE(WebServerAuthStateSeams::IsBadLoginExpired(1000, 500, 600));
+	CHECK(WebServerAuthStateSeams::IsBadLoginExpired(1100, 500, 600));
+
+	CHECK_FALSE(WebServerAuthStateSeams::IsSessionExpired(299, 5));
+	CHECK(WebServerAuthStateSeams::IsSessionExpired(300, 5));
+	CHECK_FALSE(WebServerAuthStateSeams::IsSessionExpired(100000, 0));
+}
 
 TEST_CASE("Web API exposes stable server priority names for the REST surface")
 {

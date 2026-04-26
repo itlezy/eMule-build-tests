@@ -72,6 +72,7 @@ SCENARIO_NAMES = [
     "hard-kill-during-hash-repeated-cycle-many-files",
 ]
 MAX_CLEAN_SHUTDOWN_DURATION_MS = 20000.0
+SHARED_HASH_DRAIN_TIMEOUT_SECONDS = 300.0
 STARTUP_CACHE_FILE_NAME = "sharedcache.dat"
 DUPLICATE_PATH_CACHE_FILE_NAME = "shareddups.dat"
 HASH_STRESS_FILE_SPECS = [
@@ -259,8 +260,21 @@ def wait_for_hashing_active(startup_profile_path: Path, *, timeout: float = 90.0
     return live_common.wait_for(resolve, timeout=timeout, interval=0.25, description="shared hashing active after readiness")
 
 
-def wait_for_expected_shared_files(main_hwnd: int, process_id: int, expected_names: list[str]) -> dict[str, object]:
+def wait_for_expected_shared_files(
+    main_hwnd: int,
+    process_id: int,
+    expected_names: list[str],
+    *,
+    startup_profile_path: Path | None = None,
+) -> dict[str, object]:
     """Opens the Shared Files page and waits until the expected visible rows converge."""
+
+    hash_drain_state: dict[str, object] | None = None
+    if startup_profile_path is not None:
+        hash_drain_state = wait_for_shared_hash_drain(
+            startup_profile_path,
+            expected_count=len(expected_names),
+        )
 
     list_hwnd = shared_files_ui.open_shared_files_list_page(main_hwnd)
     row_count = shared_files_ui.wait_for_exact_list_count(list_hwnd, len(expected_names))
@@ -275,6 +289,7 @@ def wait_for_expected_shared_files(main_hwnd: int, process_id: int, expected_nam
     return {
         "row_count": row_count,
         "visible_names": visible_names,
+        "hash_drain": hash_drain_state,
     }
 
 
@@ -293,6 +308,81 @@ def get_counter_int(counters: list[dict[str, object]], counter_id: str) -> int:
 
     counter = live_common.get_counter_by_id(counters, counter_id)
     return int(counter["value"]) if counter is not None else 0
+
+
+def read_shared_hash_drain_state(startup_profile_path: Path, *, expected_count: int) -> dict[str, object] | None:
+    """Reads the current startup-profile counters needed to judge shared-hash drain."""
+
+    if not startup_profile_path.exists():
+        return None
+
+    text = startup_profile_path.read_text(encoding="utf-8", errors="ignore")
+    phases = live_common.parse_startup_profile(text)
+    counters = live_common.parse_startup_profile_counters(text)
+    hashing_done_phase = live_common.get_phase_by_id(
+        phases,
+        live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID,
+    )
+    state: dict[str, object] = {
+        "expected_count": expected_count,
+        "completed_files": get_counter_int(counters, "shared.hash.completed_files"),
+        "waiting_queue_depth": get_counter_int(counters, "shared.hash.waiting_queue_depth"),
+        "currently_hashing": get_counter_int(counters, "shared.hash.currently_hashing"),
+        "hashing_done_observed": hashing_done_phase is not None,
+        "hashing_done_shared_files": get_counter_int(counters, "shared.model.hashing_done_shared_files"),
+        "hashing_done_visible_rows": get_counter_int(counters, "shared.model.hashing_done_visible_rows"),
+        "model_shared_files": get_counter_int(counters, "shared.model.shared_files"),
+        "model_visible_rows": get_counter_int(counters, "shared.model.visible_rows"),
+    }
+    if hashing_done_phase is not None:
+        state["hashing_done_absolute_ms"] = float(hashing_done_phase["absolute_ms"])
+    return state
+
+
+def wait_for_shared_hash_drain(
+    startup_profile_path: Path,
+    *,
+    expected_count: int,
+    timeout: float = SHARED_HASH_DRAIN_TIMEOUT_SECONDS,
+) -> dict[str, object]:
+    """Waits until startup profiling shows shared hashing drained for the expected files."""
+
+    deadline = time.time() + timeout
+    last_state: dict[str, object] | str | None = None
+    while time.time() < deadline:
+        try:
+            state = read_shared_hash_drain_state(startup_profile_path, expected_count=expected_count)
+        except Exception as exc:
+            last_state = f"{type(exc).__name__}: {exc}"
+            time.sleep(0.5)
+            continue
+
+        if state is None:
+            last_state = "startup profile not created yet"
+            time.sleep(0.5)
+            continue
+
+        last_state = state
+        hashing_done_observed = bool(state["hashing_done_observed"])
+        completed_files = int(state["completed_files"])
+        waiting_queue_depth = int(state["waiting_queue_depth"])
+        currently_hashing = int(state["currently_hashing"])
+        hashing_done_shared_files = int(state["hashing_done_shared_files"])
+        hashing_done_visible_rows = int(state["hashing_done_visible_rows"])
+
+        if hashing_done_observed:
+            if hashing_done_shared_files >= expected_count and hashing_done_visible_rows >= expected_count:
+                return state
+            raise RuntimeError(
+                "Shared hashing reported completion before the expected rows were present. "
+                f"Last value: {state!r}"
+            )
+        if completed_files >= expected_count and waiting_queue_depth == 0 and currently_hashing == 0:
+            return state
+
+        time.sleep(0.5)
+
+    raise RuntimeError(f"Timed out waiting for shared hashing to drain. Last value: {last_state!r}")
 
 
 def wait_for_partial_hash_progress(
@@ -407,6 +497,7 @@ def wait_for_expected_shared_files_with_summary(
         main_hwnd,
         process_id,
         list(fixture["expected_visible_names"]),
+        startup_profile_path=Path(str(fixture["startup_profile_path"])),
     )
     archive_trace_if_present(
         Path(str(fixture["startup_profile_path"])),
@@ -987,6 +1078,7 @@ def run_reload_during_hash_scenario(
             main_hwnd,
             process_id,
             list(fixture["expected_visible_names"]),
+            startup_profile_path=Path(str(fixture["startup_profile_path"])),
         )
 
         close_started = time.perf_counter()

@@ -93,6 +93,42 @@ def test_partial_hash_progress_rejects_completed_hashing(tmp_path: Path) -> None
         module.wait_for_partial_hash_progress(trace_path, expected_count=3, timeout=0.1)
 
 
+def test_shared_hash_drain_accepts_completed_worker_counters(tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    trace_path = tmp_path / "startup-profile.trace.json"
+    write_startup_trace(
+        trace_path,
+        [
+            counter_event(1000, "shared.hash.completed_files", "files", 3),
+            counter_event(1001, "shared.hash.waiting_queue_depth", "files", 0),
+            counter_event(1002, "shared.hash.currently_hashing", "files", 0),
+        ],
+    )
+
+    summary = module.wait_for_shared_hash_drain(trace_path, expected_count=3, timeout=0.1)
+
+    assert summary["completed_files"] == 3
+    assert summary["waiting_queue_depth"] == 0
+    assert summary["currently_hashing"] == 0
+    assert summary["hashing_done_observed"] is False
+
+
+def test_shared_hash_drain_rejects_hashing_done_with_short_rows(tmp_path: Path) -> None:
+    module = load_shared_hash_module()
+    trace_path = tmp_path / "startup-profile.trace.json"
+    write_startup_trace(
+        trace_path,
+        [
+            counter_event(1000, "shared.model.hashing_done_shared_files", "files", 2),
+            counter_event(1001, "shared.model.hashing_done_visible_rows", "rows", 2),
+            phase_event(1002, module.live_common.STARTUP_PROFILE_SHARED_FILES_HASHING_DONE_PHASE_ID),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="reported completion before the expected rows"):
+        module.wait_for_shared_hash_drain(trace_path, expected_count=3, timeout=0.1)
+
+
 def test_configure_profile_upnp_disables_mapping_and_exit_cleanup(tmp_path: Path) -> None:
     module = load_shared_hash_module()
     config_dir = tmp_path / "config"

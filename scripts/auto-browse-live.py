@@ -52,10 +52,29 @@ PREFERRED_SERVER_ADDRESSES = ("91.148.135.252", "45.82.80.155", "91.148.135.254"
 DEFAULT_NATURAL_AUTO_BROWSE_TIMEOUT_SECONDS = 180.0
 DEFAULT_FALLBACK_AUTO_BROWSE_TIMEOUT_SECONDS = 300.0
 DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS = 180.0
+DEFAULT_SOURCE_BROWSE_TRANSFER_TIMEOUT_SECONDS = 120.0
+DEFAULT_SOURCE_BROWSE_ATTEMPT_TIMEOUT_SECONDS = 20.0
+DEFAULT_SOURCE_BROWSE_READY_SOURCE_TIMEOUT_SECONDS = 60.0
+SOURCE_BROWSE_READY_STATES = {
+    "Connected",
+    "Downloading",
+    "NoNeededParts",
+    "OnQueue",
+    "RemoteQueueFull",
+    "ReqHashSet",
+}
 
 
 class LiveSourceUnavailableError(RuntimeError):
     """Raised when live networks are reachable but no sourced transfer can be acquired."""
+
+
+class TransferCandidateUnavailableError(RuntimeError):
+    """Raised when one live transfer-search plan cannot produce a safe result."""
+
+    def __init__(self, message: str, attempts: list[dict[str, object]]) -> None:
+        super().__init__(message)
+        self.attempts = attempts
 
 
 def compact_http_result(result: dict[str, object]) -> dict[str, object]:
@@ -116,6 +135,12 @@ def record_auto_browse_observation(
     del observations[:-20]
     check["last_observation"] = observation
     checkpoint_report(artifacts_dir, report)
+
+
+def should_promote_cleanup_error(report_status: object, pending_error: Exception | None) -> bool:
+    """Reports whether cleanup failure should become the process-level failure."""
+
+    return pending_error is None and report_status == "passed"
 
 
 def get_tooling_bind_updater(paths: harness_cli_common.HarnessRunPaths) -> Path:
@@ -199,6 +224,79 @@ def fetch_search_results(base_url: str, api_key: str, search_id: str) -> dict[st
     return require_json_object(result, 200)
 
 
+def start_transfer_search(base_url: str, api_key: str, method: str, query: str) -> dict[str, object]:
+    """Starts one file-oriented live search suitable for selecting a safe transfer."""
+
+    response = rest_smoke.http_request(
+        base_url,
+        "/api/v1/search/start",
+        method="POST",
+        api_key=api_key,
+        json_body={
+            "query": query,
+            "method": method,
+            "type": "iso",
+            "ext": "iso",
+        },
+    )
+    return {
+        "ok": int(response["status"]) == 200 and isinstance(response.get("json"), dict) and response["json"].get("search_id"),
+        "attempts": [
+            {
+                "method": method,
+                "request": {
+                    "query": query,
+                    "method": method,
+                    "type": "iso",
+                    "ext": "iso",
+                },
+                "response": response,
+            }
+        ],
+        "selected_method": method if int(response["status"]) == 200 else None,
+        "method_candidates": [method],
+        "response": response,
+    }
+
+
+def wait_for_transfer_search_results(
+    base_url: str,
+    api_key: str,
+    search_id: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Polls a transfer search until downloadable rows appear or the search completes empty."""
+
+    deadline = time.time() + timeout_seconds
+    observations: list[dict[str, object]] = []
+    while time.time() < deadline:
+        result = rest_smoke.http_request(base_url, f"/api/v1/search/results?search_id={search_id}", api_key=api_key)
+        payload = require_json_object(result, 200)
+        rows = payload.get("results")
+        assert isinstance(rows, list), compact_http_result(result)
+        snapshot = {
+            "observed_at": round(time.time(), 3),
+            "status": payload.get("status"),
+            "result_count": len(rows),
+        }
+        observations.append(snapshot)
+        if rows:
+            return {
+                "result": compact_http_result(result),
+                "observations": observations,
+                "terminal_state": payload.get("status"),
+            }
+        if payload.get("status") == "complete":
+            return {
+                "result": compact_http_result(result),
+                "observations": observations,
+                "terminal_state": "complete",
+            }
+        time.sleep(5.0)
+
+    raise RuntimeError(f"Timed out waiting for transfer search results for search '{search_id}'.")
+
+
 def find_transfer_candidate(
     base_url: str,
     api_key: str,
@@ -211,7 +309,7 @@ def find_transfer_candidate(
 
     attempts: list[dict[str, object]] = []
     for method in method_candidates:
-        search = rest_smoke.start_live_search(base_url, api_key, method, query, forced_method=method)
+        search = start_transfer_search(base_url, api_key, method, query)
         attempt: dict[str, object] = {
             "query": query,
             "method": method,
@@ -224,7 +322,7 @@ def find_transfer_candidate(
         search_id = str(require_json_object(search["response"], 200)["search_id"])
         attempt["search_id"] = search_id
         try:
-            attempt["activity"] = rest_smoke.wait_for_search_observation(
+            attempt["activity"] = wait_for_transfer_search_results(
                 base_url,
                 api_key,
                 search_id,
@@ -243,10 +341,18 @@ def find_transfer_candidate(
                         "selected": attempt,
                         "attempts": attempts,
                     }
+        except Exception as exc:
+            attempt["error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
         finally:
             attempt["stop"] = compact_http_result(rest_smoke.stop_live_search(base_url, api_key, search_id))
 
-    raise RuntimeError(f"No downloadable search result found for {query!r} via {method_candidates!r}.")
+    raise TransferCandidateUnavailableError(
+        f"No downloadable search result found for {query!r} via {method_candidates!r}.",
+        attempts,
+    )
 
 
 def build_transfer_acquisition_plan() -> list[tuple[str, list[str]]]:
@@ -306,6 +412,101 @@ def get_selected_transfer_sources(acquisition_attempts: list[dict[str, object]])
     return []
 
 
+def get_selected_transfer_hash(acquisition_attempt: dict[str, object]) -> str | None:
+    """Returns the selected transfer hash from one acquisition record."""
+
+    selected = acquisition_attempt.get("selected")
+    if not isinstance(selected, dict):
+        return None
+
+    for payload_name in ("add_response", "result"):
+        payload = selected.get(payload_name)
+        if not isinstance(payload, dict):
+            continue
+        transfer_hash = payload.get("hash")
+        if isinstance(transfer_hash, str) and transfer_hash.strip():
+            return transfer_hash.strip().lower()
+    return None
+
+
+def positive_source_counter(value: object) -> bool:
+    """Reports whether one source counter contains a positive numeric value."""
+
+    return isinstance(value, int | float) and value > 0
+
+
+def is_source_browse_connection_ready(source: dict[str, Any]) -> bool:
+    """Reports whether one source looks handshaken enough for a browse request."""
+
+    if source.get("viewSharedFiles") is False:
+        return False
+    if str(source.get("clientSoftware") or "").strip():
+        return True
+    if positive_source_counter(source.get("availableParts")) or positive_source_counter(source.get("partCount")):
+        return True
+    return str(source.get("downloadState") or "") in SOURCE_BROWSE_READY_STATES
+
+
+def probe_selected_transfer_source_browse(
+    base_url: str,
+    api_key: str,
+    acquisition_attempt: dict[str, object],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Attempts source-browse against one acquired transfer and returns a compact probe result."""
+
+    selected_transfer = summarize_selected_transfer_sources([acquisition_attempt])
+    transfer_hash = get_selected_transfer_hash(acquisition_attempt)
+    if transfer_hash is None:
+        raise RuntimeError(f"Selected transfer has no hash: {selected_transfer!r}")
+
+    source_browse_sources = get_selected_transfer_sources([acquisition_attempt])
+    result: dict[str, object] = {
+        "ok": False,
+        "timeout_seconds": timeout_seconds,
+        "selected_transfer": selected_transfer,
+    }
+    try:
+        refreshed_sources = wait_for_source_browse_candidates(
+            base_url,
+            api_key,
+            transfer_hash,
+            min(DEFAULT_SOURCE_BROWSE_READY_SOURCE_TIMEOUT_SECONDS, max(1.0, timeout_seconds)),
+        )
+        result["source_refresh"] = refreshed_sources
+        refreshed_rows = refreshed_sources.get("sources")
+        if isinstance(refreshed_rows, list):
+            source_browse_sources = refreshed_rows + source_browse_sources
+    except Exception as exc:
+        result["source_refresh"] = {
+            "error": {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+        }
+
+    try:
+        source_browse = wait_for_source_browse_success(
+            base_url,
+            api_key,
+            transfer_hash,
+            source_browse_sources,
+            timeout_seconds,
+        )
+        result["source_browse"] = source_browse
+        result["ok"] = bool(source_browse.get("ok"))
+    except Exception as exc:
+        result["source_browse"] = {
+            "ok": False,
+            "timeout_seconds": timeout_seconds,
+            "error": {
+                "type": type(exc).__name__,
+                "message": str(exc),
+            },
+        }
+    return result
+
+
 def is_valid_source_user_hash(value: object) -> bool:
     """Reports whether one source user hash is useful as a stable selector."""
 
@@ -315,20 +516,46 @@ def is_valid_source_user_hash(value: object) -> bool:
     return len(text) == 32 and text != "0" * 32 and all(ch in "0123456789abcdef" for ch in text)
 
 
-def build_source_browse_selector(source: dict[str, Any]) -> dict[str, object] | None:
-    """Builds the selector accepted by the REST source-browse endpoint."""
+def build_source_browse_selectors(source: dict[str, Any]) -> list[dict[str, object]]:
+    """Builds resilient REST source-browse selectors for one transfer source."""
 
-    selector: dict[str, object] = {}
+    selectors: list[dict[str, object]] = []
+    user_hash_selector: dict[str, object] = {}
     if is_valid_source_user_hash(source.get("userHash")):
-        selector["userHash"] = str(source["userHash"]).strip().lower()
+        user_hash_selector["userHash"] = str(source["userHash"]).strip().lower()
 
     ip = str(source.get("ip") or "").strip()
     port = source.get("port")
+    endpoint_selector: dict[str, object] = {}
     if ip and isinstance(port, int) and 0 < port <= 65535:
-        selector["ip"] = ip
-        selector["port"] = port
+        endpoint_selector = {
+            "ip": ip,
+            "port": port,
+        }
 
-    return selector or None
+    if endpoint_selector:
+        selectors.append(endpoint_selector)
+    if user_hash_selector:
+        selectors.append(user_hash_selector)
+    if user_hash_selector and endpoint_selector:
+        selectors.append({**user_hash_selector, **endpoint_selector})
+
+    unique_selectors: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for selector in selectors:
+        selector_key = json.dumps(selector, sort_keys=True)
+        if selector_key in seen:
+            continue
+        seen.add(selector_key)
+        unique_selectors.append(selector)
+    return unique_selectors
+
+
+def build_source_browse_selector(source: dict[str, Any]) -> dict[str, object] | None:
+    """Builds the preferred selector accepted by the REST source-browse endpoint."""
+
+    selectors = build_source_browse_selectors(source)
+    return selectors[0] if selectors else None
 
 
 def iter_source_browse_candidates(sources: list[object]) -> list[dict[str, object]]:
@@ -341,10 +568,10 @@ def iter_source_browse_candidates(sources: list[object]) -> list[dict[str, objec
             continue
         if source.get("viewSharedFiles") is False:
             continue
-        selector = build_source_browse_selector(source)
-        if selector is None:
+        selectors = build_source_browse_selectors(source)
+        if not selectors:
             continue
-        selector_key = json.dumps(selector, sort_keys=True)
+        selector_key = json.dumps(selectors, sort_keys=True)
         if selector_key in seen:
             continue
         seen.add(selector_key)
@@ -353,10 +580,12 @@ def iter_source_browse_candidates(sources: list[object]) -> list[dict[str, objec
                 (
                     not bool(source.get("ip")),
                     bool(source.get("lowId")),
+                    not is_source_browse_connection_ready(source),
                     "emule" not in str(source.get("clientSoftware") or "").lower(),
                 ),
                 {
-                    "selector": selector,
+                    "selector": selectors[0],
+                    "selectors": selectors,
                     "source": source,
                 },
             )
@@ -447,38 +676,50 @@ def wait_for_source_browse_success(
         remaining = deadline - time.time()
         if remaining <= 1.0:
             break
-        selector = candidate["selector"]
-        assert isinstance(selector, dict)
-        attempt: dict[str, object] = {
-            "selector": selector,
-            "source": candidate["source"],
-        }
-        attempts.append(attempt)
-        try:
-            response = request_source_browse(base_url, api_key, transfer_hash, selector)
-            attempt["response"] = response
-            search_id = str(response["search_id"])
-            attempt["results"] = wait_for_source_browse_results(
-                base_url,
-                api_key,
-                search_id,
-                min(60.0, max(1.0, deadline - time.time())),
-            )
-            return {
-                "ok": True,
-                "attempts": attempts,
-                "selected": attempt,
+        selectors = candidate.get("selectors")
+        if not isinstance(selectors, list):
+            selectors = [candidate.get("selector")]
+        for selector in selectors:
+            if not isinstance(selector, dict):
+                continue
+            remaining = deadline - time.time()
+            if remaining <= 1.0:
+                break
+            attempt: dict[str, object] = {
+                "selector": selector,
+                "source": candidate["source"],
             }
-        except Exception as exc:
-            attempt["error"] = {
-                "type": type(exc).__name__,
-                "message": str(exc),
-            }
+            attempts.append(attempt)
+            try:
+                response = request_source_browse(base_url, api_key, transfer_hash, selector)
+                attempt["response"] = response
+                search_id = str(response["search_id"])
+                attempt["results"] = wait_for_source_browse_results(
+                    base_url,
+                    api_key,
+                    search_id,
+                    min(DEFAULT_SOURCE_BROWSE_ATTEMPT_TIMEOUT_SECONDS, max(1.0, deadline - time.time())),
+                )
+                return {
+                    "ok": True,
+                    "attempts": attempts,
+                    "selected": attempt,
+                }
+            except Exception as exc:
+                attempt["error"] = {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
 
-    raise RuntimeError(
-        "No browse-capable transfer source returned shared-file rows. "
-        f"Candidate count: {len(candidates)}. Last attempts: {attempts[-5:]!r}"
-    )
+    return {
+        "ok": False,
+        "attempts": attempts,
+        "candidate_count": len(candidates),
+        "error": {
+            "type": "RuntimeError",
+            "message": "No browse-capable transfer source returned shared-file rows.",
+        },
+    }
 
 
 def add_transfer_from_search_result(base_url: str, api_key: str, result_row: dict[str, Any]) -> dict[str, Any]:
@@ -522,6 +763,57 @@ def wait_for_transfer_sources(
         time.sleep(5.0)
 
     raise RuntimeError(f"Timed out waiting for sources on transfer '{transfer_hash}'.")
+
+
+def wait_for_source_browse_candidates(
+    base_url: str,
+    api_key: str,
+    transfer_hash: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    """Waits for browse candidates, preferring sources with completed handshakes."""
+
+    deadline = time.time() + timeout_seconds
+    observations: list[dict[str, object]] = []
+    best_candidate_result: dict[str, object] | None = None
+    while time.time() < deadline:
+        result = rest_smoke.http_request(base_url, f"/api/v1/transfers/{transfer_hash}/sources", api_key=api_key)
+        assert int(result["status"]) == 200, compact_http_result(result)
+        payload = result.get("json")
+        assert isinstance(payload, list), compact_http_result(result)
+        candidates = iter_source_browse_candidates(payload)
+        ready_candidates = [
+            candidate
+            for candidate in candidates
+            if isinstance(candidate.get("source"), dict) and is_source_browse_connection_ready(candidate["source"])
+        ]
+        snapshot = {
+            "observed_at": round(time.time(), 3),
+            "source_count": len(payload),
+            "candidate_count": len(candidates),
+            "ready_candidate_count": len(ready_candidates),
+        }
+        observations.append(snapshot)
+        if candidates:
+            best_candidate_result = {
+                "observations": list(observations),
+                "sources": payload,
+                "candidate_count": len(candidates),
+                "ready_candidate_count": len(ready_candidates),
+            }
+        if ready_candidates:
+            return best_candidate_result if best_candidate_result is not None else {
+                "observations": observations,
+                "sources": payload,
+                "candidate_count": len(candidates),
+                "ready_candidate_count": len(ready_candidates),
+            }
+        time.sleep(5.0)
+
+    if best_candidate_result is not None:
+        best_candidate_result["fallback_unready_candidates"] = True
+        return best_candidate_result
+    raise RuntimeError(f"Timed out waiting for browse-capable sources on transfer '{transfer_hash}'.")
 
 
 def find_direct_bootstrap_transfer_candidate(
@@ -770,6 +1062,9 @@ def main() -> int:
                 "natural_auto_browse_seconds": args.natural_auto_browse_timeout_seconds,
                 "auto_browse_seconds": args.auto_browse_timeout_seconds,
                 "fallback_auto_browse_seconds": args.fallback_auto_browse_timeout_seconds,
+                "source_browse_transfer_seconds": DEFAULT_SOURCE_BROWSE_TRANSFER_TIMEOUT_SECONDS,
+                "source_browse_attempt_seconds": DEFAULT_SOURCE_BROWSE_ATTEMPT_TIMEOUT_SECONDS,
+                "source_browse_ready_source_seconds": DEFAULT_SOURCE_BROWSE_READY_SOURCE_TIMEOUT_SECONDS,
                 "direct_bootstrap_source_seconds": min(
                     DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS,
                     args.source_discovery_timeout_seconds,
@@ -851,18 +1146,46 @@ def main() -> int:
         else:
             record_phase(artifacts_dir, report, "transfer_acquisition")
             acquisition_attempts: list[dict[str, object]] = []
+            source_browse_attempts: list[dict[str, object]] = []
+            selected_source_browse: dict[str, object] | None = None
+            browsed_transfer_hashes: set[str] = set()
+            remaining_timeout = max(1.0, args.auto_browse_timeout_seconds - args.natural_auto_browse_timeout_seconds)
+            fallback_timeout = max(1.0, min(args.fallback_auto_browse_timeout_seconds, remaining_timeout))
+            source_browse_timeout = max(
+                1.0,
+                min(DEFAULT_SOURCE_BROWSE_TRANSFER_TIMEOUT_SECONDS, fallback_timeout),
+            )
+            report["checks"]["bootstrap_strategy"] = {
+                "mode": "fallback-transfer-bootstrap",
+            }
             direct_source_timeout = min(
                 DEFAULT_DIRECT_BOOTSTRAP_SOURCE_TIMEOUT_SECONDS,
                 args.source_discovery_timeout_seconds,
             )
             try:
-                acquisition_attempts.append(
-                    find_direct_bootstrap_transfer_candidate(
+                direct_selection = find_direct_bootstrap_transfer_candidate(
+                    base_url,
+                    args.api_key,
+                    source_discovery_timeout_seconds=direct_source_timeout,
+                )
+                acquisition_attempts.append(direct_selection)
+                transfer_hash = get_selected_transfer_hash(direct_selection)
+                if transfer_hash is not None:
+                    browsed_transfer_hashes.add(transfer_hash)
+                    record_phase(artifacts_dir, report, "source_browse")
+                    source_browse_attempt = probe_selected_transfer_source_browse(
                         base_url,
                         args.api_key,
-                        source_discovery_timeout_seconds=direct_source_timeout,
+                        direct_selection,
+                        source_browse_timeout,
                     )
-                )
+                    source_browse_attempts.append(source_browse_attempt)
+                    report["checks"]["source_browse_attempts"] = source_browse_attempts
+                    report["checks"]["source_browse"] = source_browse_attempt.get("source_browse")
+                    report["checks"]["source_browse_source_refresh"] = source_browse_attempt.get("source_refresh")
+                    checkpoint_report(artifacts_dir, report)
+                    if bool(source_browse_attempt.get("ok")):
+                        selected_source_browse = source_browse_attempt
             except Exception as exc:
                 acquisition_attempts.append(
                     {
@@ -877,7 +1200,7 @@ def main() -> int:
                     }
                 )
             for query, methods in build_transfer_acquisition_plan():
-                if any(isinstance(item, dict) and item.get("selected") for item in acquisition_attempts):
+                if selected_source_browse is not None:
                     break
                 try:
                     selection = find_transfer_candidate(
@@ -903,20 +1226,42 @@ def main() -> int:
                     if not isinstance(source_rows, list) or not iter_source_browse_candidates(source_rows):
                         raise RuntimeError("Sourced transfer had no source candidates with shared-file browsing enabled.")
                     acquisition_attempts.append(selection)
-                    break
-                except Exception as exc:
-                    acquisition_attempts.append(
-                        {
-                            "query": query,
-                            "methods": methods,
-                            "error": {
-                                "type": type(exc).__name__,
-                                "message": str(exc),
-                            },
-                        }
+                    transfer_hash = get_selected_transfer_hash(selection)
+                    if transfer_hash is None:
+                        raise RuntimeError("Selected sourced transfer had no transfer hash.")
+                    if transfer_hash in browsed_transfer_hashes:
+                        continue
+                    browsed_transfer_hashes.add(transfer_hash)
+                    record_phase(artifacts_dir, report, "source_browse")
+                    source_browse_attempt = probe_selected_transfer_source_browse(
+                        base_url,
+                        args.api_key,
+                        selection,
+                        source_browse_timeout,
                     )
+                    source_browse_attempts.append(source_browse_attempt)
+                    report["checks"]["source_browse_attempts"] = source_browse_attempts
+                    report["checks"]["source_browse"] = source_browse_attempt.get("source_browse")
+                    report["checks"]["source_browse_source_refresh"] = source_browse_attempt.get("source_refresh")
+                    checkpoint_report(artifacts_dir, report)
+                    if bool(source_browse_attempt.get("ok")):
+                        selected_source_browse = source_browse_attempt
+                        break
+                except Exception as exc:
+                    failed_attempt: dict[str, object] = {
+                        "query": query,
+                        "methods": methods,
+                        "error": {
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    }
+                    if isinstance(exc, TransferCandidateUnavailableError):
+                        failed_attempt["attempts"] = exc.attempts
+                    acquisition_attempts.append(failed_attempt)
             report["checks"]["transfer_acquisition"] = acquisition_attempts
-            if not any(isinstance(item, dict) and item.get("selected") for item in acquisition_attempts):
+            selected_acquisition_count = sum(1 for item in acquisition_attempts if isinstance(item, dict) and item.get("selected"))
+            if selected_acquisition_count == 0:
                 report["checks"]["live_source_availability"] = {
                     "status": "unavailable",
                     "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
@@ -928,15 +1273,8 @@ def main() -> int:
                     "from the configured live-search plan."
                 )
 
-            remaining_timeout = max(1.0, args.auto_browse_timeout_seconds - args.natural_auto_browse_timeout_seconds)
-            fallback_timeout = max(1.0, min(args.fallback_auto_browse_timeout_seconds, remaining_timeout))
-            report["checks"]["bootstrap_strategy"] = {
-                "mode": "fallback-transfer-bootstrap",
-            }
-            try:
-                record_phase(artifacts_dir, report, "source_browse")
-                selected_transfer = summarize_selected_transfer_sources(acquisition_attempts)
-                selected_sources = get_selected_transfer_sources(acquisition_attempts)
+            if selected_source_browse is not None:
+                selected_transfer = selected_source_browse.get("selected_transfer", {})
                 report["checks"]["live_source_availability"] = {
                     "status": "available",
                     "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
@@ -944,32 +1282,34 @@ def main() -> int:
                     "blocking": False,
                     "selected_transfer": selected_transfer,
                 }
-                report["checks"]["source_browse"] = wait_for_source_browse_success(
-                    base_url,
-                    args.api_key,
-                    str(selected_transfer["hash"]),
-                    selected_sources,
-                    fallback_timeout,
-                )
-            except RuntimeError as exc:
-                report["checks"]["source_browse"] = {
-                    "ok": False,
-                    "timeout_seconds": fallback_timeout,
-                    "error": {
-                        "type": type(exc).__name__,
-                        "message": str(exc),
-                    },
-                }
+                report["checks"]["source_browse"] = selected_source_browse.get("source_browse")
+                report["checks"]["source_browse_source_refresh"] = selected_source_browse.get("source_refresh")
+            else:
+                last_source_browse_attempt = source_browse_attempts[-1] if source_browse_attempts else {}
+                if isinstance(last_source_browse_attempt, dict):
+                    report["checks"]["source_browse"] = last_source_browse_attempt.get(
+                        "source_browse",
+                        report["checks"].get("source_browse"),
+                    )
+                    report["checks"]["source_browse_source_refresh"] = last_source_browse_attempt.get(
+                        "source_refresh",
+                        report["checks"].get("source_browse_source_refresh"),
+                    )
+                    selected_transfer = last_source_browse_attempt.get("selected_transfer", summarize_selected_transfer_sources(acquisition_attempts))
+                else:
+                    selected_transfer = summarize_selected_transfer_sources(acquisition_attempts)
                 report["checks"]["live_source_availability"] = {
                     "status": "shared_file_response_unavailable",
                     "queries_attempted": [query for query, _methods in build_transfer_acquisition_plan()],
+                    "direct_candidates_attempted": build_direct_bootstrap_transfer_plan(),
                     "blocking": False,
-                    "selected_transfer": summarize_selected_transfer_sources(acquisition_attempts),
+                    "selected_transfer": selected_transfer,
+                    "selected_transfer_count": selected_acquisition_count,
                 }
                 raise LiveSourceUnavailableError(
-                    "A safe live transfer was acquired, but no selected source returned shared-file "
-                    "rows during the source-browse observation window."
-                ) from exc
+                    "Safe live transfers were acquired, but no selected source returned shared-file "
+                    "rows during the source-browse observation windows."
+                )
         report["status"] = "passed"
         record_phase(artifacts_dir, report, "passed")
     except Exception as exc:
@@ -1005,7 +1345,7 @@ def main() -> int:
                 except Exception as exc:
                     cleanup["app_closed"] = False
                     cleanup["app_close_error"] = repr(exc)
-                    if pending_error is None:
+                    if should_promote_cleanup_error(report.get("status"), pending_error):
                         pending_error = exc
                         report["status"] = "failed"
                         report["error"] = {

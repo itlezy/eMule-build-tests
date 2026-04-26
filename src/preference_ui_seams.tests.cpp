@@ -50,6 +50,8 @@ TEST_CASE("Preference UI seam normalizes exposed hidden-option modes")
 
 TEST_CASE("Preference UI seam bounds diagnostic numeric options")
 {
+	CHECK(PreferenceUiSeams::kDefaultLogFileSizeBytes == 16u * 1024u * 1024u);
+	CHECK(PreferenceUiSeams::kDefaultLogBufferKiB == 256u);
 	CHECK(PreferenceUiSeams::IsLogFileSizeKiBAllowed(0));
 	CHECK(PreferenceUiSeams::IsLogFileSizeKiBAllowed(PreferenceUiSeams::kMaxLogFileSizeKiB));
 	CHECK_FALSE(PreferenceUiSeams::IsLogFileSizeKiBAllowed(PreferenceUiSeams::kMaxLogFileSizeKiB + 1));

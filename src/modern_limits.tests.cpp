@@ -11,6 +11,17 @@ namespace
 	constexpr unsigned kMinTimeoutSeconds = 5u;
 	constexpr unsigned kDefaultConnectionTimeoutSeconds = 30u;
 	constexpr unsigned kDefaultDownloadTimeoutSeconds = 75u;
+	constexpr unsigned kDefaultKadFileSearchTotal = 750u;
+	constexpr unsigned kDefaultKadKeywordSearchTotal = 750u;
+	constexpr unsigned kDefaultKadFileSearchLifetimeSeconds = 90u;
+	constexpr unsigned kDefaultKadKeywordSearchLifetimeSeconds = 90u;
+	constexpr unsigned kMinKadSearchTotal = 100u;
+	constexpr unsigned kMaxKadSearchTotal = 5000u;
+	constexpr unsigned kMinKadSearchLifetimeSeconds = 30u;
+	constexpr unsigned kMaxKadSearchLifetimeSeconds = 180u;
+	constexpr bool kDefaultGeoLocationEnabled = true;
+	constexpr unsigned kDefaultGeoLocationCheckDays = 30u;
+	constexpr int kDefaultCreateCrashDumpMode = 1;
 
 	constexpr unsigned long NormalizeTimeoutSeconds(const unsigned seconds, const unsigned defaultSeconds) noexcept
 	{
@@ -41,6 +52,21 @@ TEST_CASE("Modern limits exposed defaults match the FEAT_019 targets")
 	CHECK_EQ(static_cast<unsigned>(MAX_SOURCES_FILE_SOFT), 1000u);
 	CHECK_EQ(static_cast<unsigned>(MAX_SOURCES_FILE_UDP), 100u);
 	CHECK_EQ(static_cast<unsigned>(UPLOAD_CLIENT_MAXDATARATE), 8u * 1024u * 1024u);
+}
+
+TEST_CASE("Search and bootstrap defaults match the reviewed preference targets")
+{
+	CHECK_EQ(kDefaultKadFileSearchTotal, 750u);
+	CHECK_EQ(kDefaultKadKeywordSearchTotal, 750u);
+	CHECK_EQ(kDefaultKadFileSearchLifetimeSeconds, 90u);
+	CHECK_EQ(kDefaultKadKeywordSearchLifetimeSeconds, 90u);
+	CHECK_EQ(kMinKadSearchTotal, 100u);
+	CHECK_EQ(kMaxKadSearchTotal, 5000u);
+	CHECK_EQ(kMinKadSearchLifetimeSeconds, 30u);
+	CHECK_EQ(kMaxKadSearchLifetimeSeconds, 180u);
+	CHECK(kDefaultGeoLocationEnabled);
+	CHECK_EQ(kDefaultGeoLocationCheckDays, 30u);
+	CHECK_EQ(kDefaultCreateCrashDumpMode, 1);
 }
 
 TEST_CASE("Modern limits timeout normalization keeps invalid values bounded")

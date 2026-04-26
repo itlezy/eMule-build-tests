@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kademlia/utils/FastKad.h"
+#include "kademlia/utils/KadPersistenceSeams.h"
 #include "kademlia/utils/KadPublishGuard.h"
 #include "kademlia/utils/NodesDatSupport.h"
 #include "kademlia/utils/SafeKad.h"
@@ -101,6 +102,27 @@ namespace
 	}
 
 	/**
+	 * Writes a deterministic `preferencesKad.dat` fixture with the current saver shape.
+	 */
+	void WriteKadPrefsFixture(LPCTSTR pszPath, bool bComplete)
+	{
+		FILE *pFile = NULL;
+		REQUIRE(_wfopen_s(&pFile, pszPath, L"wb") == 0);
+		REQUIRE(pFile != NULL);
+
+		const uint32 uIP = 0x01020304u;
+		const uint16 uUnused = 0;
+		const byte abyClientID[16] = { 1 };
+		const uint8 uNoTags = 0;
+		REQUIRE(fwrite(&uIP, 1, sizeof uIP, pFile) == sizeof uIP);
+		REQUIRE(fwrite(&uUnused, 1, sizeof uUnused, pFile) == sizeof uUnused);
+		REQUIRE(fwrite(abyClientID, 1, bComplete ? sizeof abyClientID : sizeof abyClientID - 1u, pFile) == (bComplete ? sizeof abyClientID : sizeof abyClientID - 1u));
+		if (bComplete)
+			REQUIRE(fwrite(&uNoTags, 1, sizeof uNoTags, pFile) == sizeof uNoTags);
+		fclose(pFile);
+	}
+
+	/**
 	 * Reads a whole file into a byte vector for replacement assertions.
 	 */
 	std::vector<char> ReadWholeFile(LPCTSTR pszPath)
@@ -117,6 +139,24 @@ namespace
 		REQUIRE(fread(data.data(), 1, data.size(), pFile) == data.size());
 		fclose(pFile);
 		return data;
+	}
+
+	BOOL WINAPI AlwaysFailMoveFileEx(LPCTSTR, LPCTSTR, DWORD)
+	{
+		return FALSE;
+	}
+
+	DWORD WINAPI ReturnAccessDenied()
+	{
+		return ERROR_ACCESS_DENIED;
+	}
+
+	PartFilePersistenceSeams::FileSystemOps MakePromotionFailureOps()
+	{
+		PartFilePersistenceSeams::FileSystemOps ops = PartFilePersistenceSeams::GetDefaultFileSystemOps();
+		ops.MoveFileEx = AlwaysFailMoveFileEx;
+		ops.GetLastError = ReturnAccessDenied;
+		return ops;
 	}
 }
 
@@ -343,6 +383,121 @@ TEST_CASE("Nodes.dat replacement atomically swaps the target file contents")
 	CHECK(std::equal(targetData.begin(), targetData.end(), szNewData));
 
 	::DeleteFile(strTargetPath);
+}
+
+TEST_CASE("Kad persistence seams validate preferences candidates before promotion")
+{
+	const CString strTargetPath = CreateFastKadTempPath();
+	const CString strGoodPath = CreateFastKadTempPath();
+	const CString strTruncatedPath = CreateFastKadTempPath();
+
+	WriteKadPrefsFixture(strTargetPath, true);
+	WriteKadPrefsFixture(strGoodPath, true);
+	WriteKadPrefsFixture(strTruncatedPath, false);
+
+	CHECK(Kademlia::InspectKadPrefsCandidate(strGoodPath));
+	CHECK_FALSE(Kademlia::InspectKadPrefsCandidate(strTruncatedPath));
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(Kademlia::InstallPreparedKadPrefsCandidate(strTruncatedPath, strTargetPath, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_INVALID_DATA));
+	CHECK(Kademlia::InspectKadPrefsCandidate(strTargetPath));
+
+	::DeleteFile(strTargetPath);
+	::DeleteFile(strGoodPath);
+	::DeleteFile(strTruncatedPath);
+}
+
+TEST_CASE("Kad preferences promotion failure leaves live file intact")
+{
+	const CString strTargetPath = CreateFastKadTempPath();
+	const CString strSourcePath = CreateFastKadTempPath();
+
+	FILE *pTarget = NULL;
+	REQUIRE(_wfopen_s(&pTarget, strTargetPath, L"wb") == 0);
+	REQUIRE(pTarget != NULL);
+	const char szOldData[] = "old prefs";
+	REQUIRE(fwrite(szOldData, 1, sizeof szOldData, pTarget) == sizeof szOldData);
+	fclose(pTarget);
+
+	WriteKadPrefsFixture(strSourcePath, true);
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	const PartFilePersistenceSeams::FileSystemOps ops = MakePromotionFailureOps();
+	CHECK_FALSE(Kademlia::PromotePreparedKadFileWithOps(strSourcePath, strTargetPath, &dwLastError, ops));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_ACCESS_DENIED));
+	CHECK(::PathFileExists(strSourcePath));
+
+	const std::vector<char> targetData = ReadWholeFile(strTargetPath);
+	CHECK_EQ(targetData.size(), sizeof szOldData);
+	CHECK(std::equal(targetData.begin(), targetData.end(), szOldData));
+
+	::DeleteFile(strTargetPath);
+	::DeleteFile(strSourcePath);
+}
+
+TEST_CASE("Nodes.dat replacement failure leaves live file intact and candidate available")
+{
+	const CString strTargetPath = CreateFastKadTempPath();
+	const CString strSourcePath = CreateFastKadTempPath();
+
+	FILE *pTarget = NULL;
+	REQUIRE(_wfopen_s(&pTarget, strTargetPath, L"wb") == 0);
+	REQUIRE(pTarget != NULL);
+	const char szOldData[] = "old nodes";
+	REQUIRE(fwrite(szOldData, 1, sizeof szOldData, pTarget) == sizeof szOldData);
+	fclose(pTarget);
+
+	WriteNodesDatFixture(strSourcePath, false);
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	const PartFilePersistenceSeams::FileSystemOps ops = MakePromotionFailureOps();
+	CHECK_FALSE(Kademlia::ReplaceNodesDatFileWithOps(strSourcePath, strTargetPath, &dwLastError, ops));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_ACCESS_DENIED));
+	CHECK(::PathFileExists(strSourcePath));
+
+	const std::vector<char> targetData = ReadWholeFile(strTargetPath);
+	CHECK_EQ(targetData.size(), sizeof szOldData);
+	CHECK(std::equal(targetData.begin(), targetData.end(), szOldData));
+
+	::DeleteFile(strTargetPath);
+	::DeleteFile(strSourcePath);
+}
+
+TEST_CASE("Nodes.dat install rejects bootstrap-only candidates and preserves live file")
+{
+	const CString strTargetPath = CreateFastKadTempPath();
+	const CString strBootstrapPath = CreateFastKadTempPath();
+
+	FILE *pTarget = NULL;
+	REQUIRE(_wfopen_s(&pTarget, strTargetPath, L"wb") == 0);
+	REQUIRE(pTarget != NULL);
+	const char szOldData[] = "old nodes";
+	REQUIRE(fwrite(szOldData, 1, sizeof szOldData, pTarget) == sizeof szOldData);
+	fclose(pTarget);
+
+	WriteNodesDatFixture(strBootstrapPath, true);
+
+	DWORD dwLastError = ERROR_SUCCESS;
+	CHECK_FALSE(Kademlia::InstallPreparedNodesDatFile(strBootstrapPath, strTargetPath, &dwLastError));
+	CHECK_EQ(dwLastError, static_cast<DWORD>(ERROR_INVALID_DATA));
+
+	const std::vector<char> targetData = ReadWholeFile(strTargetPath);
+	CHECK_EQ(targetData.size(), sizeof szOldData);
+	CHECK(std::equal(targetData.begin(), targetData.end(), szOldData));
+
+	::DeleteFile(strTargetPath);
+	::DeleteFile(strBootstrapPath);
+}
+
+TEST_CASE("Kad persistence seams preserve bootstrap guard and Fast Kad sidecar ordering")
+{
+	CHECK(Kademlia::ShouldSkipNodesDatSaveForBootstrapOnly(true, 0));
+	CHECK_FALSE(Kademlia::ShouldSkipNodesDatSaveForBootstrapOnly(true, 1));
+	CHECK_FALSE(Kademlia::ShouldSkipNodesDatSaveForBootstrapOnly(false, 0));
+
+	CHECK(Kademlia::ShouldSaveFastKadSidecarAfterNodesPromotion(true));
+	CHECK_FALSE(Kademlia::ShouldSaveFastKadSidecarAfterNodesPromotion(false));
 }
 
 TEST_CASE("Safe Kad bans a verified node that flips identities too quickly when strict mode is enabled")

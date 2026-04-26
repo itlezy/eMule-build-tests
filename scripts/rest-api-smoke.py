@@ -322,7 +322,7 @@ def compact_http_result(result: dict[str, object]) -> dict[str, object]:
 
     compact: dict[str, object] = {
         "status": int(result["status"]),
-        "content_type": result["content_type"],
+        "content_type": result.get("content_type"),
     }
     if isinstance(result.get("json"), dict | list):
         compact["json"] = result["json"]

@@ -157,6 +157,7 @@
     <ClCompile Include="src\encrypted_stream_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
     <ClCompile Include="src\fastkad_flow.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\kademlia\utils\FastKad.h') and Exists('$(VCToolsInstallDir)atlmfc\include\afximpl.h')" />
     <ClCompile Include="src\format_safety.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
+    <ClCompile Include="src\helper_thread_launch.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\HelperThreadLaunchSeams.h')" />
     <ClCompile Include="src\full_hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\hash_probe.cpp" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClCompile Include="src\i18n.tests.cpp" Condition="Exists('$(AppRoot)\srchybrid\I18nSeams.h')" />
@@ -247,6 +248,7 @@
     <ClInclude Include="$(AppRoot)\srchybrid\EncryptedDatagramSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedDatagramSocketFlowSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h" Condition="Exists('$(AppRoot)\srchybrid\EncryptedStreamSocketFlowSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\FormatSafetySeams.h" Condition="Exists('$(AppRoot)\srchybrid\FormatSafetySeams.h')" />
+    <ClInclude Include="$(AppRoot)\srchybrid\HelperThreadLaunchSeams.h" Condition="Exists('$(AppRoot)\srchybrid\HelperThreadLaunchSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\MappedFileReader.h" Condition="Exists('$(AppRoot)\srchybrid\MappedFileReader.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\NullGuardSeams.h" Condition="Exists('$(AppRoot)\srchybrid\NullGuardSeams.h')" />
     <ClInclude Include="$(AppRoot)\srchybrid\OtherFunctionsSeams.h" Condition="Exists('$(AppRoot)\srchybrid\OtherFunctionsSeams.h')" />

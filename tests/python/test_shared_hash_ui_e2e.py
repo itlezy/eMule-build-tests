@@ -136,6 +136,41 @@ def test_launch_app_with_fresh_startup_trace_removes_stale_trace(monkeypatch, tm
     assert launched == [profile_base]
 
 
+def test_deferred_hashing_boundary_allows_startup_complete_jitter() -> None:
+    module = load_shared_hash_module()
+    live_common = module.live_common
+    phases = [
+        {
+            "phase_id": live_common.STARTUP_PROFILE_DEFERRED_SHARED_HASHING_START_PHASE_ID,
+            "absolute_us": 1_000_000,
+        },
+        {
+            "phase_id": live_common.STARTUP_PROFILE_COMPLETE_PHASE_ID,
+            "absolute_us": 1_080_000,
+        },
+    ]
+
+    live_common.enforce_deferred_shared_hashing_boundary(phases, "jitter")
+
+
+def test_deferred_hashing_boundary_rejects_large_startup_lead() -> None:
+    module = load_shared_hash_module()
+    live_common = module.live_common
+    phases = [
+        {
+            "phase_id": live_common.STARTUP_PROFILE_DEFERRED_SHARED_HASHING_START_PHASE_ID,
+            "absolute_us": 1_000_000,
+        },
+        {
+            "phase_id": live_common.STARTUP_PROFILE_COMPLETE_PHASE_ID,
+            "absolute_us": 1_300_000,
+        },
+    ]
+
+    with pytest.raises(RuntimeError, match="300.000 ms before startup.complete"):
+        live_common.enforce_deferred_shared_hashing_boundary(phases, "large-lead")
+
+
 def test_shared_hash_snapshot_does_not_require_details_static(monkeypatch) -> None:
     module = load_shared_hash_module()
     opened_pages: list[int] = []
